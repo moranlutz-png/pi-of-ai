@@ -1,0 +1,38 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# ---- Virtual envs / build dirs living outside the tree ----
+# (the GPU/CPU torch venvs are multi-GB — never commit them)
+rb/
+rbgpu/
+
+# ---- Large model & data binaries (regenerable; host on Hugging Face) ----
+*.gguf
+*.pt
+*.bin
+*.safetensors
+*.onnx
+*.ckpt
+
+# Generated corpora / checkpoints
+scratch_coder/data/
+scratch_coder/data_big/
+rules_baker/outputs/
+
+# ---- Generated dataset (regenerate with data_gen/generate_dataset.py) ----
+rules_baker/datasets/*.jsonl
+rules_baker/datasets/*.progress.txt
+
+# ---- Caches ----
+.cache/
+hf_cache/
+*.log
+
+# ---- OS cruft ----
+Thumbs.db
+.DS_Store

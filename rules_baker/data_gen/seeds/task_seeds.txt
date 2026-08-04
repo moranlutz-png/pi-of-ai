@@ -1,0 +1,95 @@
+# One coding task per line. Blank lines and #-comments are ignored.
+# These are DELIBERATELY rule-agnostic — the student learns to apply YOUR house
+# style to ordinary requests without being told. More + more diverse = richer bake.
+
+# --- data / db / repository ---
+Write a function that fetches a user record by id from the database.
+Create a repository method that inserts a new product and returns its id.
+Write a function that updates a user's email address in the database.
+Implement a function that deletes a record by id and returns whether it existed.
+Write a query builder that turns a dict of filters into a SQL WHERE clause.
+Create a function that batch-inserts a list of records in a single transaction.
+
+# --- validation / parsing ---
+Create a service that validates an email address and returns a normalized form.
+Write a function that validates a password against a set of strength rules.
+Parse a CSV file and return a list of typed records.
+Write a function that parses an ISO-8601 date string into a datetime.
+Validate that a phone number matches an international format.
+Parse a query string into a dictionary of parameters.
+Write a function that validates and normalizes a URL.
+
+# --- data structures ---
+Implement a small in-memory LRU cache class.
+Implement a fixed-size ring buffer.
+Write a stack class with push, pop, and peek.
+Implement a queue backed by two stacks.
+Write a singly linked list with append and reverse.
+Implement a trie for storing and searching words.
+Build a min-heap with insert and extract-min.
+Implement a disjoint-set (union-find) structure.
+
+# --- algorithms ---
+Write a function that reverses a string.
+Write a function that checks whether a string is a palindrome.
+Implement binary search over a sorted list.
+Write a function that merges two sorted lists into one.
+Implement quicksort.
+Write a function that returns the nth Fibonacci number.
+Find the two numbers in a list that sum to a target.
+Compute the greatest common divisor of two integers.
+Write a function that flattens a nested list.
+Group a list of items by a key function.
+Remove duplicates from a list while preserving order.
+Compute the running average of a stream of numbers.
+
+# --- strings ---
+Write a function that counts word frequencies in a text.
+Convert a snake_case string to camelCase.
+Write a function that truncates a string to a max length with an ellipsis.
+Implement a template renderer that replaces {name} placeholders.
+Write a function that masks all but the last 4 digits of a card number.
+
+# --- file / io ---
+Write a function that computes a SHA-256 checksum of a file in chunks.
+Implement a function that safely reads a JSON config file with defaults.
+Write a function that returns the last N lines of a file.
+Write a function that atomically writes text to a file.
+Recursively find all files matching a glob under a directory.
+
+# --- http / api ---
+Write an HTTP handler that returns a paginated list of orders.
+Write a handler that validates a JSON body and returns 400 on error.
+Implement a rate limiter for an API endpoint.
+Write a function that retries a flaky network call with exponential backoff.
+Build an in-memory session store with expiry.
+
+# --- concurrency / workers ---
+Write a background worker that drains a task queue until empty.
+Implement a thread-safe counter.
+Run a list of callables with a thread pool and collect the results.
+Implement a producer-consumer with a bounded queue.
+
+# --- config / serialization ---
+Convert a nested config dict into a flat, dotted-key dict.
+Merge two dictionaries recursively.
+Serialize a dataclass to a dict and back.
+Load environment variables with type coercion and defaults.
+
+# --- math / numeric ---
+Compute the mean and standard deviation of a list of numbers.
+Format a number of bytes as a human-readable string.
+Write a function that clamps a value between a min and max.
+Compute compound interest over a number of periods.
+
+# --- oop / patterns ---
+Write a class representing a 2D vector with add and dot-product methods.
+Implement a decorator that memoizes a function's results.
+Write a context manager that times the code inside it.
+Implement an event emitter with subscribe and emit.
+Write a class hierarchy for shapes with an area method.
+
+# --- cli / misc ---
+Write a CLI that reads a file path argument and prints its line count.
+Implement a retry decorator with a configurable number of attempts.
+Write a function that debounces calls to another function.

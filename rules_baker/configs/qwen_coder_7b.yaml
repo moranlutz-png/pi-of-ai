@@ -1,0 +1,62 @@
+# ============================================================================
+#  Rules-Baker config  —  "Raspberry Pi of AI" / Gap 2: System-Prompt-Bloat
+# ----------------------------------------------------------------------------
+#  Everything a developer tinkers with lives here. Swap the base model,
+#  point at a different rules doc, or retarget the teacher endpoint — one file.
+# ============================================================================
+
+project_name: rules_baker
+
+# --- Inputs the developer owns ---------------------------------------------
+rules_file:  data_gen/rules/example_rules.md   # YOUR house style / architecture rules
+seeds_file:  data_gen/seeds/task_seeds.txt     # coding tasks to synthesize around
+output_jsonl: datasets/rules_sft.jsonl         # generated training set lands here
+
+# --- Teacher (data generation) ---------------------------------------------
+#  The teacher SEES the rules and writes compliant code. Served locally over an
+#  OpenAI-compatible endpoint (Ollama, vLLM, llama.cpp --api). Never leaves the room.
+teacher:
+  base_url: http://localhost:11434/v1     # Ollama default; vLLM is usually :8000/v1
+  api_key: "ollama"                        # dummy; local servers ignore it
+  model: "qwen2.5-coder:32b-instruct"      # bigger = better labels. Use what fits.
+  temperature: 0.4
+  max_tokens: 1536
+  # How many synthetic examples to make. positive = obey-silently, revision = fix-violation.
+  n_positive_per_seed: 3
+  n_revision_per_seed: 2
+  rules_per_example: [2, 4]                # sample this many rules into each example
+
+# --- Data quality gates (the "hardening") ----------------------------------
+quality:
+  eval_holdout_frac: 0.25    # reserve this fraction of SEEDS for eval-only (no leakage)
+  require_parse: true        # drop any teacher output that fails ast.parse
+  min_code_chars: 40         # drop trivially short / empty generations
+  dedup: true                # drop near-duplicate code (normalized-whitespace hash)
+  max_retries: 2             # re-ask the teacher this many times if an example is rejected
+
+# --- Student (the model we bake rules into) --------------------------------
+student:
+  base_model: "unsloth/Qwen2.5-Coder-7B-Instruct-bnb-4bit"
+  max_seq_length: 2048
+  load_in_4bit: true
+
+# --- LoRA / QLoRA hyperparameters ------------------------------------------
+lora:
+  r: 16
+  alpha: 16
+  dropout: 0.0
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+
+train:
+  epochs: 3
+  batch_size: 2
+  grad_accum: 4
+  learning_rate: 2.0e-4
+  warmup_steps: 10
+  seed: 3407
+  output_dir: outputs/qwen_coder_7b_rules
+
+# --- Export ----------------------------------------------------------------
+export:
+  gguf_quant: q4_k_m                       # sweet spot for edge inference
+  ollama_model_name: qwen-coder-housestyle

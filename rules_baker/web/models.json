@@ -1,0 +1,30 @@
+[
+  {
+    "name": "Smoke-test bake (yours)",
+    "size": "506 MB",
+    "verified": true,
+    "url": "smoke_housestyle.gguf",
+    "desc": "The first model baked with this project's pipeline, from mock data. It regurgitates a memorized house-style template regardless of the request — real proof the pipeline works, but not smart."
+  },
+  {
+    "name": "Qwen2.5-Coder 0.5B",
+    "size": "0.4 GB",
+    "verified": true,
+    "url": "https://huggingface.co/Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+    "desc": "General tiny coder with no house style baked in. The Chromebook target — runs on ~4GB RAM, offline. The base model this project fine-tunes."
+  },
+  {
+    "name": "SmolLM2 135M",
+    "size": "100 MB",
+    "verified": true,
+    "url": "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf",
+    "desc": "Featherweight — the smallest, fastest model here. Weak, but loads in seconds. Best for testing that the in-browser runtime works on very low-end hardware."
+  },
+  {
+    "name": "Qwen2.5-Coder 1.5B",
+    "size": "1 GB",
+    "verified": true,
+    "url": "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+    "desc": "Larger tiny coder — noticeably smarter than the 0.5B, but needs ~3GB free RAM and is slower on a CPU. For laptops rather than Chromebooks."
+  }
+]

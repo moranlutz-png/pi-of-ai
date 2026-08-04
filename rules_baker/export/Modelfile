@@ -1,0 +1,15 @@
+# Ollama Modelfile — serve the rules-baked model over a local OpenAI-compatible API.
+#   ollama create qwen-coder-housestyle -f export/Modelfile
+#   ollama run  qwen-coder-housestyle
+# Endpoint: http://localhost:11434/v1  (drop-in for OpenAI SDK / your IDE)
+#
+# Point FROM at the GGUF produced by export_gguf.py:
+FROM ../outputs/qwen_coder_7b_rules/gguf/unsloth.Q4_K_M.gguf
+
+# The whole point of Gap 2: the system prompt is now TINY. The rules live in the
+# weights, not here. Keep this lean so the context window stays fast.
+SYSTEM """You are a senior Python engineer. Write clean, production-ready code."""
+
+PARAMETER temperature 0.2
+PARAMETER num_ctx 4096
+PARAMETER stop "<|im_end|>"

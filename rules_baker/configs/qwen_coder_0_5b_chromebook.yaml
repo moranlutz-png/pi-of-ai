@@ -1,0 +1,69 @@
+# ============================================================================
+#  Rules-Baker config  —  LOCKED TARGET: runs in a browser on a school Chromebook
+# ----------------------------------------------------------------------------
+#  Mission: teach how AI works, Raspberry-Pi style — maximally accessible.
+#  The finished model runs IN THE BROWSER via WebAssembly (wllama). No install,
+#  no admin rights, no Linux, no GPU, fully offline after one download.
+#  This is the DEFAULT config. See qwen_coder_7b.yaml for the big-model variant.
+# ============================================================================
+
+project_name: rules_baker_chromebook
+
+# --- Inputs the developer owns ---------------------------------------------
+rules_file:  data_gen/rules/example_rules.md
+seeds_file:  data_gen/seeds/task_seeds.txt
+output_jsonl: datasets/rules_sft.jsonl
+
+# --- Teacher (data generation) — runs on the BAKING box, not the Chromebook -
+#  Use the biggest teacher your baking box can serve; better labels = a smarter
+#  tiny student. This never ships to end users.
+teacher:
+  base_url: http://localhost:11434/v1
+  api_key: "ollama"
+  model: "qwen2.5-coder:3b"              # fits the 4GB GTX 1050 Ti; still a strong teacher for a 0.5B student
+  temperature: 0.4
+  max_tokens: 1024                        # code samples are short; smaller cap = faster generation
+  n_positive_per_seed: 4                  # tiny students need MORE data to learn a pattern
+  n_revision_per_seed: 3
+  rules_per_example: [2, 4]
+
+quality:
+  eval_holdout_frac: 0.25
+  require_parse: true
+  min_code_chars: 40
+  dedup: true
+  max_retries: 2
+
+# --- Student: the tiny model we bake rules into ----------------------------
+#  0.5B @ 4-bit -> ~0.4GB GGUF -> loads in a browser tab on a 4GB Chromebook.
+#  Swap to Qwen2.5-Coder-1.5B for the "modern laptop" tier (edit these 2 lines).
+student:
+  base_model: "Qwen/Qwen2.5-Coder-0.5B-Instruct"
+  max_seq_length: 2048
+  load_in_4bit: true                      # optional at 0.5B; keeps VRAM tiny while baking
+
+# --- LoRA — a little richer, since the base model is so small ---------------
+lora:
+  r: 32
+  alpha: 32
+  dropout: 0.0
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+
+train:
+  epochs: 4                               # small model + narrow task -> more epochs help
+  batch_size: 4
+  grad_accum: 2
+  learning_rate: 2.0e-4
+  warmup_steps: 10
+  seed: 3407
+  output_dir: outputs/qwen_coder_0_5b_rules
+
+# --- Export: GGUF for BROWSER (wllama) --------------------------------------
+#  Q4_K_M is the Chromebook floor. Bump to q8_0 (~0.5GB) for 8GB laptops if you
+#  want a quality nudge; still browser-loadable.
+export:
+  gguf_quant: q4_k_m
+  ollama_model_name: qwen-coder-housestyle-mini
+  # Browser runtime target (informational; used by the Stage-6 web page):
+  browser_runtime: wllama                 # llama.cpp compiled to WASM, CPU-only
+  webgpu_accel_when_available: true
