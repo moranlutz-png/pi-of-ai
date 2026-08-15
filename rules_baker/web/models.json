@@ -3,7 +3,7 @@
     "name": "Smoke-test bake (yours)",
     "size": "506 MB",
     "verified": true,
-    "url": "smoke_housestyle.gguf",
+    "url": "https://huggingface.co/LutzMoran/pi-of-ai-rules-baker/resolve/main/smoke_housestyle.gguf",
     "desc": "The first model baked with this project's pipeline, from mock data. It regurgitates a memorized house-style template regardless of the request — real proof the pipeline works, but not smart."
   },
   {
