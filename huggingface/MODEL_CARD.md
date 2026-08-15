@@ -13,7 +13,7 @@ tags:
 
 # Pi-of-AI · Rules-Baker (smoke-test model)
 
-Part of **[Pi-of-AI](https://github.com/morablutz-png/pi-of-ai)** — the "Raspberry
+Part of **[Pi-of-AI](https://github.com/moranlutz-png/pi-of-ai)** — the "Raspberry
 Pi of AI." This is the Rules-Baker experiment: a small model with a project's
 house-style coding rules **baked into its weights**, so it obeys them with an
 empty system prompt (no rule-bloat in the context window).
@@ -44,4 +44,4 @@ Same tiny prompt, rules obeyed — that's the closing-the-loop test.
 
 ## License
 
-MIT. See the [project repo](https://github.com/morablutz-png/pi-of-ai).
+MIT. See the [project repo](https://github.com/moranlutz-png/pi-of-ai).

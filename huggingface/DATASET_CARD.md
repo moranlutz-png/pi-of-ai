@@ -12,7 +12,7 @@ pretty_name: Pi-of-AI Rules-Baker SFT
 
 # Pi-of-AI · Rules-Baker SFT dataset
 
-Synthetic supervised-fine-tuning data for **[Pi-of-AI / Rules-Baker](https://github.com/morablutz-png/pi-of-ai)**,
+Synthetic supervised-fine-tuning data for **[Pi-of-AI / Rules-Baker](https://github.com/moranlutz-png/pi-of-ai)**,
 generated **fully locally** against an OpenAI-compatible teacher (Ollama running
 Qwen2.5-Coder).
 
