@@ -4,6 +4,9 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Pi-of-AI — Runtime Proof (wllama in the browser)</title>
+<!-- Enables WASM threads on static hosts that can't send COOP/COEP (e.g. GitHub
+     Pages). No-ops when the server already sets them, as web/serve.py does. -->
+<script src="coi-serviceworker.js"></script>
 <style>
   /* self-hosted Inter (variable) — matches the reference, stays offline */
   @font-face {
