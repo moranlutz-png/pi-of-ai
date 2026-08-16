@@ -214,6 +214,7 @@
   .dv .bad { color:var(--bad); }
   .dv code.wrap { word-break:break-all; }
   .dnote { margin-top:3px; font-size:11.5px; color:var(--dimmer); line-height:1.5; }
+  .dnote-inline { font:11px var(--mono); color:var(--dimmer); }
   .dactions { display:flex; flex-wrap:wrap; gap:9px; margin-top:16px; }
 
   .libcard button { align-self:flex-start; }
@@ -404,7 +405,7 @@
       <button type="button" class="collapse-btn" id="sysToggle"><span class="sign">+</span> System prompt</button>
       <div id="sysWrap" hidden><textarea id="sys" style="margin-top:6px">You are a helpful senior Python engineer. Write clean, production-ready code.</textarea></div>
       <label>Your request</label>
-      <textarea id="prompt">Write a function that fetches a user record by id from the database.</textarea>
+      <textarea id="prompt" placeholder="Describe what you want the model to write…"></textarea>
       <div class="row" style="margin-top:12px"><button id="runBtn" class="act" disabled><span data-ic="zap"></span>Generate</button><button id="stopBtn" class="ghost" disabled>Stop</button></div>
       <label class="chk"><input type="checkbox" id="selffix" checked /> Auto-fix on errors (up to 3×) <span class="note">(code is always sandbox-tested before it's shown)</span></label>
       <div id="output">(model output appears here, streaming token by token)</div>
@@ -549,7 +550,9 @@ window.__copyCode = (btn) => {
 // ---- clear "done" signal: green ✓ on the stats line + a tab-title flash ----
 let __titleTimer = null;
 function signalDone() {
-  const cur = $('runStats').textContent.replace(/ · ✓ done$/, '');
+  // Drop the streaming "working…" as well, or the finished line reads
+  // "… · working… · ✓ done".
+  const cur = $('runStats').textContent.replace(/ · ✓ done$/, '').replace(/ · working…$/, '');
   if (cur) $('runStats').innerHTML = esc(cur) + ' · <span style="color:var(--ok)">✓ done</span>';
   if (__titleTimer) clearTimeout(__titleTimer);
   document.title = '✓ Done — Pi-of-AI';
@@ -788,9 +791,11 @@ function speedTag(m) {
   const est = estimateTokps(m);
   if (est === null) return null;
   const band = est >= 15 ? 'Fast' : est >= 5 ? 'Usable' : est >= 1.5 ? 'Slow' : 'Very slow';
-  const lo = est < 10 ? est.toFixed(1) : Math.round(est);
-  const hi = est * 2 < 10 ? (est * 2).toFixed(1) : Math.round(est * 2);
-  return { text: `${band} · ~${lo}-${hi} tok/s`, measured: false,
+  const fmt = (v) => v < 1 ? v.toFixed(2) : v < 10 ? v.toFixed(1) : String(Math.round(v));
+  const lo = fmt(est), hi = fmt(est * 2);
+  // Below ~0.1 tok/s both ends round to the same string; show one figure.
+  const range = lo === hi ? `under ${hi}` : `~${lo}-${hi}`;
+  return { text: `${band} · ${range} tok/s`, measured: false,
            note: 'Estimated from a quick speed test on this device — run it to see the real figure' };
 }
 
@@ -1499,8 +1504,27 @@ function showModelDetail(m) {
   const isRec = m.url === recommendedUrl;
   const pinned = pinnedUrls().includes(m.url);
 
+  // Rows are omitted rather than shown as "?" when a fact isn't known — the
+  // Gemma and Llama configs are gated, so their context length and vocabulary
+  // could not be verified and are deliberately absent rather than guessed.
+  const num = (n) => Number(n).toLocaleString();
+  const paramsText = m.params
+    ? `${(m.params / 1e6).toFixed(m.params >= 1e9 ? 0 : 1)}M <span class="dnote-inline">(${num(m.params)})</span>`
+    : null;
+
   const rows = [
     detailRow('Family', esc(m.family || '—')),
+    m.params ? detailRow('Parameters', paramsText) : '',
+    m.arch ? detailRow('Architecture', `<code>${esc(m.arch)}</code>`) : '',
+    (m.layers && m.hidden)
+      ? detailRow('Shape', `${num(m.layers)} layers · ${num(m.hidden)} hidden size`) : '',
+    m.vocab ? detailRow('Vocabulary', `${num(m.vocab)} tokens`) : '',
+    m.ctx ? detailRow('Context length',
+      `${num(m.ctx)} tokens<div class="dnote">This page loads models with a 4,096-token window, `
+      + `which is what the prompt and reply have to fit inside.</div>`) : '',
+    m.license ? detailRow('License', `<code>${esc(m.license)}</code>`) : '',
+    m.base ? detailRow('Base model',
+      `<a href="https://huggingface.co/${esc(m.base)}" target="_blank" rel="noopener">${esc(m.base)}</a>`) : '',
     detailRow('Download size', esc(m.size || 'unknown')),
     facts.quant ? detailRow('Quantisation', `<code>${esc(facts.quant)}</code>`) : '',
     facts.repo ? detailRow('Published by',
