@@ -17,7 +17,8 @@
     "vocab": 151936,
     "layers": 24,
     "hidden": 896,
-    "base": "Qwen/Qwen2.5-Coder-0.5B-Instruct"
+    "base": "Qwen/Qwen2.5-Coder-0.5B-Instruct",
+    "about": "The smallest member of Alibaba's Qwen2.5-Coder line, a family trained specifically for programming rather than general chat, then instruction-tuned so it answers requests instead of just continuing text.\n\nThis is the base model the Rules-Baker pipeline fine-tunes. It's the Chromebook target: small enough to sit in a 4GB machine's memory alongside the browser, and quick enough that a short function comes back in seconds. It knows Python syntax well; it does not reliably keep track of state across a long snippet, which is what the sandbox check is for."
   },
   {
     "name": "Qwen2.5-Coder 1.5B",
@@ -36,7 +37,8 @@
     "vocab": 151936,
     "layers": 28,
     "hidden": 1536,
-    "base": "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+    "base": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+    "about": "The same Qwen2.5-Coder family as the 0.5B, roughly three times the parameters.\n\nNoticeably better at holding a whole function together — fewer undefined names, fewer half-finished blocks. The cost is memory and speed: it needs meaningfully more free RAM and generates slower on a CPU, which is why it's marked for laptops rather than Chromebooks."
   },
   {
     "name": "Gemma 3 270M",
@@ -49,7 +51,8 @@
     "params": 268098176,
     "arch": "Gemma3ForCausalLM",
     "license": "gemma",
-    "base": "google/gemma-3-270m-it"
+    "base": "google/gemma-3-270m-it",
+    "about": "Google's smallest Gemma 3 release, instruction-tuned. A different lineage from Qwen entirely — different training data, different tokenizer, different architecture — which makes it the most useful comparison in this list.\n\nIt is a general chat model, not a coder. Expect weaker Python than Qwen2.5-Coder at a similar size, and expect it to be better at answering a plain question. Its value here is showing that the runtime is model-agnostic: same page, same sandbox, completely different weights."
   },
   {
     "name": "Gemma 2 2B",
@@ -62,7 +65,8 @@
     "params": 2614341888,
     "arch": "Gemma2ForCausalLM",
     "license": "gemma",
-    "base": "google/gemma-2-2b-it"
+    "base": "google/gemma-2-2b-it",
+    "about": "The previous Gemma generation at 2B parameters — the largest model in this library, and about the biggest that fits comfortably in the browser's 4GB WebAssembly address space.\n\nThe strongest general model here, but slow enough on CPU-only WebAssembly that you will feel every token. This is the one most worth running through Ollama instead, where it can use the GPU."
   },
   {
     "name": "Llama 3.2 1B",
@@ -75,7 +79,8 @@
     "params": 1235814400,
     "arch": "LlamaForCausalLM",
     "license": "llama3.2",
-    "base": "meta-llama/Llama-3.2-1B-Instruct"
+    "base": "meta-llama/Llama-3.2-1B-Instruct",
+    "about": "Meta's small instruction-tuned Llama, and the third distinct family in the library.\n\nSits between the tiny models and Gemma 2 2B in both size and capability. General-purpose rather than code-specialised, so treat its Python as a starting point rather than an answer — the sandbox check matters more here than with the Qwen coders."
   },
   {
     "name": "SmolLM2 135M",
@@ -94,7 +99,8 @@
     "vocab": 49152,
     "layers": 30,
     "hidden": 576,
-    "base": "HuggingFaceTB/SmolLM2-135M-Instruct"
+    "base": "HuggingFaceTB/SmolLM2-135M-Instruct",
+    "about": "Hugging Face's own small-model family, built for running on devices rather than in a data centre. At 135M parameters it is the smallest thing here by a wide margin.\n\nIt is not going to write useful software. Its job in this project is proving the runtime works: it downloads in seconds on almost any connection and loads on hardware that cannot hold anything larger, so if the browser can run a model at all, it can run this one."
   },
   {
     "name": "Smoke-test bake (yours)",
@@ -111,6 +117,7 @@
     "vocab": 151936,
     "layers": 24,
     "hidden": 896,
-    "base": "Qwen/Qwen2.5-Coder-0.5B-Instruct"
+    "base": "Qwen/Qwen2.5-Coder-0.5B-Instruct",
+    "about": "Your own model — the first artefact produced by this project's Rules-Baker pipeline.\n\nA LoRA adapter trained on a small mock dataset, merged back into Qwen2.5-Coder 0.5B and exported to GGUF. It overfits that mock data and will reproduce a memorised house-style template more or less regardless of what you ask, so it is not a useful assistant.\n\nThat is the point: it proves the whole loop — generate data, train, merge, quantise, run in the browser — works end to end. Real task-following behaviour needs a genuine teacher-generated dataset, which is the next stage."
   }
 ]

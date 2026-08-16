@@ -217,6 +217,19 @@
   .backbtn:focus { outline:none; }
   .backbtn:focus-visible { color:var(--ink); text-decoration:underline; text-underline-offset:3px; }
   .backbtn svg { width:12px; height:12px; transform:rotate(180deg); }
+  /* Details / About tabs on the model page */
+  .dtabs { display:flex; gap:2px; margin:0 0 14px; border-bottom:1px solid var(--hair); }
+  .dtab { background:none; border:0; border-radius:0; padding:6px 12px; color:var(--dim);
+    font:inherit; font-size:12.5px; font-weight:600; cursor:pointer;
+    border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .dtab:hover { background:none; color:var(--ink); }
+  .dtab.active { color:var(--ink); border-bottom-color:var(--ink); }
+  .dtab:focus { outline:none; }
+  .dtab:focus-visible { color:var(--ink); border-bottom-color:var(--dim); }
+  .dpane.about p { margin:0 0 11px; font-size:13px; line-height:1.7; color:var(--dim); }
+  .dpane.about p:first-child { color:var(--ink); }
+  .dpane.about p:last-child { margin-bottom:0; }
+
   .dtable { display:flex; flex-direction:column; gap:1px; background:var(--edge);
     border:1px solid var(--edge); border-radius:9px; overflow:hidden; }
   .drow { display:flex; gap:14px; padding:10px 13px; background:var(--panel); font-size:12.5px; }
@@ -1909,11 +1922,22 @@ function showModelDetail(m) {
     detailRow('File', `<code class="wrap">${esc(facts.file)}</code>`),
   ].join('');
 
+  // The short desc heads the About pane rather than the page, so the two tabs
+  // hold genuinely different things instead of repeating each other.
+  const aboutText = [m.desc, m.about].filter(Boolean).join('\n\n');
+  const aboutHtml = aboutText
+    ? aboutText.split('\n\n').map(p => `<p>${esc(p)}</p>`).join('')
+    : '<p class="dnote">No description for this model yet.</p>';
+
   $('libDetail').innerHTML =
     `<button type="button" class="backbtn" id="libBack">${ICONS.chevronright}Back to library</button>`
     + `<h2 class="modal-title">${esc(m.name)}</h2>`
-    + `<p class="sub" style="margin:0 0 14px">${esc(m.desc || '')}</p>`
-    + `<div class="dtable">${rows}</div>`
+    + `<div class="dtabs" role="tablist">`
+    +   `<button type="button" class="dtab active" data-pane="specs" role="tab">Details</button>`
+    +   `<button type="button" class="dtab" data-pane="about" role="tab">About</button>`
+    + `</div>`
+    + `<div class="dpane" data-pane="specs">${`<div class="dtable">${rows}</div>`}</div>`
+    + `<div class="dpane about" data-pane="about" hidden>${aboutHtml}</div>`
     + `<div class="dactions">`
     +   `<button type="button" class="act" id="detLoad">${ICONS.download}Load model</button>`
     +   `<button type="button" class="ghost" id="detPin">${pinned ? 'Remove from sidebar' : 'Save to sidebar'}</button>`
@@ -1922,6 +1946,14 @@ function showModelDetail(m) {
   $('libBrowse').hidden = true;
   $('libDetail').hidden = false;
   $('libDetail').scrollTop = 0;
+
+  $('libDetail').querySelectorAll('.dtab').forEach(tab => {
+    tab.onclick = () => {
+      const want = tab.dataset.pane;
+      $('libDetail').querySelectorAll('.dtab').forEach(t => t.classList.toggle('active', t === tab));
+      $('libDetail').querySelectorAll('.dpane').forEach(p => { p.hidden = p.dataset.pane !== want; });
+    };
+  });
 
   $('libBack').onclick = showLibBrowse;
   $('detLoad').onclick = () => {
