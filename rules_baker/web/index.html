@@ -679,7 +679,8 @@ const urlIn=$('url'), status=$('status'), prog=$('prog'), loadBtn=$('loadBtn'),
 // ---- render output like a chat message: prose + boxed code w/ copy button ----
 const COPY_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 const CHECK_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
-const esc = (s) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const esc = (s) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 function bodyHtml(text) {
   const parts = String(text).split('```');
   let html = '';
@@ -1013,8 +1014,11 @@ function applyVariant(id) {
   const target = v.baseModelUrl
     && document.querySelector(`.modelitem[data-url="${CSS.escape(v.baseModelUrl)}"]`);
   if (!target) {
-    status.innerHTML = `<span style="color:var(--bad)">“${esc(v.name)}” points at a model that `
-      + `is no longer in the library. Its rules are applied — pick a model to load.</span>`;
+    const reason = v.baseModelUrl
+      ? 'points at a model that is no longer in the library'
+      : 'has no base model set';
+    status.innerHTML = `<span style="color:var(--bad)">“${esc(v.name)}” ${reason}. `
+      + `Its rules are applied — pick a model to load.</span>`;
     return;
   }
   target.click();                                    // selects it and fills the URL box
@@ -1032,10 +1036,19 @@ const varModal = $('varModal');
 let editingId = null;
 
 function populateBasePicker(selected) {
-  const opts = [...document.querySelectorAll('.modelitem')].map(el =>
+  const items = [...document.querySelectorAll('.modelitem')];
+  const opts = items.map(el =>
     `<option value="${esc(el.dataset.url)}"${el.dataset.url === selected ? ' selected' : ''}>`
     + `${esc(el.querySelector('.nm').textContent.trim())}</option>`).join('');
-  $('varBase').innerHTML = opts || '<option value="">No models available</option>';
+  // The variant's saved base model may no longer exist in the library (renamed
+  // or removed from models.json). Rather than let the <select> silently fall
+  // back to whichever option is first — which Save would then persist as the
+  // new base model — surface a disabled placeholder so nothing is selected by
+  // default and the Save handler can refuse until the user picks a real one.
+  const known = !!selected && items.some(el => el.dataset.url === selected);
+  const missingOpt = (selected && !known)
+    ? '<option value="" disabled selected>— model missing —</option>' : '';
+  $('varBase').innerHTML = (missingOpt + opts) || '<option value="">No models available</option>';
 }
 
 function updateRuleNote() {
@@ -1070,20 +1083,38 @@ window.addEventListener('keydown', (e) => {
 });
 
 $('varSave').onclick = () => {
-  saveVariant({
+  const baseSelect = $('varBase');
+  if (baseSelect.selectedOptions[0]?.disabled) {
+    $('varRuleNote').textContent = 'This variant’s base model is no longer in the library — '
+      + 'pick a real one from the list before saving.';
+    return;                                            // modal stays open
+  }
+
+  const { ok } = saveVariant({
     id: editingId,
     name: $('varName').value,
     rules: $('varRules').value.split('\n'),
-    baseModelUrl: $('varBase').value,
+    baseModelUrl: baseSelect.value,
     temp: parseFloat($('varTemp').value),
     maxTokens: parseInt($('varTokens').value, 10),
   });
+  if (!ok) {
+    $('varRuleNote').textContent = 'Couldn’t save — storage is unavailable '
+      + '(private browsing or quota full). Your changes were not kept; try again or free up space.';
+    return;                                            // modal stays open
+  }
   varModal.hidden = true;
   renderVariants();
 };
 
 $('varDelete').onclick = () => {
-  if (editingId) deleteVariant(editingId);
+  if (!editingId) { varModal.hidden = true; return; }
+  const ok = deleteVariant(editingId);
+  if (!ok) {
+    $('varRuleNote').textContent = 'Couldn’t delete — storage is unavailable '
+      + '(private browsing or quota full). Try again.';
+    return;                                            // modal stays open
+  }
   varModal.hidden = true;
   renderVariants();
 };
@@ -1103,9 +1134,14 @@ $('varImportFile').onchange = async (e) => {
   if (!file) return;
   const res = importVariantsJson(await file.text());
   renderVariants();
-  $('varRuleNote').textContent = res.error
-    ? `Import failed: ${res.error}`
-    : `Imported ${res.added} variant${res.added === 1 ? '' : 's'}.`;
+  if (res.error) {
+    $('varRuleNote').textContent = `Import failed: ${res.error}`;
+  } else {
+    let msg = `Imported ${res.added} variant${res.added === 1 ? '' : 's'}.`;
+    if (res.skipped) msg += ` ${res.skipped} skipped (invalid entr${res.skipped === 1 ? 'y' : 'ies'}).`;
+    if (res.failed) msg += ` ${res.failed} couldn’t be saved (storage error).`;
+    $('varRuleNote').textContent = msg;
+  }
   e.target.value = '';
 };
 
@@ -1185,6 +1221,10 @@ document.querySelector('.sidebar').addEventListener('click', (e) => {
   urlIn.value = item.dataset.url;
   pendingLabel = item.querySelector('.nm').textContent.trim();
 });
+
+// Independent of the models.json fetch below: variants live in localStorage,
+// so a failed/slow fetch must not leave #variantTree empty.
+renderVariants();
 
 fetch('models.json')
   .then(r => r.json())
