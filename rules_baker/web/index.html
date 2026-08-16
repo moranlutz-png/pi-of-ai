@@ -103,6 +103,7 @@
   .famkids { display:none; margin-left:13px; padding-left:5px; border-left:1px solid var(--hair); }
   .famkids.open { display:block; }
   .modelnote { padding:4px 9px 7px; font-size:11px; color:var(--dimmer); line-height:1.55; }
+  .pinned { padding-bottom:5px; margin-bottom:4px; border-bottom:1px solid var(--hair); }
 
   .modelitem { display:flex; align-items:center; gap:7px; padding:4px 8px; border-radius:6px;
     color:var(--dim); cursor:pointer; font-size:12.5px; font-weight:500; }
@@ -887,7 +888,11 @@ function renderModelTree(models) {
 
   // Open the family holding the recommendation, so it's visible on load.
   const openFamily = rec ? rec.model.family : (all.find(m => m.default) || {}).family;
-  const pinnedHtml = pinnedList.length ? familyGroupHtml('Pinned', pinnedList, true) : '';
+  // Pinned models sit loose at the top of the list rather than inside a group
+  // of their own — a collapsible "Pinned" header just buried the thing you
+  // pinned to keep it handy.
+  const pinnedHtml = pinnedList.length
+    ? `<div class="pinned">${pinnedList.map(modelItemHtml).join('')}</div>` : '';
   $('modelTree').innerHTML = pinnedHtml + ([...byFamily].map(([fam, list]) =>
     familyGroupHtml(fam, list, fam === openFamily && !pinnedList.some(p => p.url === recommendedUrl))).join('')
     || (pinnedHtml ? '' : '<div class="modelnote">No models in models.json.</div>'));
@@ -1318,13 +1323,21 @@ drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) l
 const $exec = $('exec');
 function logExec(msg) { $exec.style.display='block'; $exec.textContent += ($exec.textContent ? '\n' : '') + msg; $exec.scrollTop = $exec.scrollHeight; }
 let pyWorker = null, pyReady = null;
+// Lazy on purpose: Pyodide is a ~10MB download, and a reply with no code in it
+// never needs Python at all. This is called at the point of first use, not
+// ahead of a generation that may turn out to be a plain answer.
 function ensurePy() {
   if (pyReady) return pyReady;
+  logExec('Loading Python sandbox (first run downloads ~10MB, then offline)…');
   pyReady = new Promise((resolve, reject) => {
     pyWorker = new Worker('pyworker.js');
     pyWorker.addEventListener('message', function onR(e) { if (e.data?.type === 'ready') { pyWorker.removeEventListener('message', onR); e.data.error ? reject(new Error(e.data.error)) : resolve(); } });
     pyWorker.addEventListener('error', (e) => reject(new Error(e.message || 'worker error')));
   });
+  pyReady.then(
+    () => logExec('Sandbox ready.'),
+    (e) => logExec('✗ sandbox failed: ' + (e.message || e))
+  );
   return pyReady;
 }
 async function sandboxCall(op, code, timeoutMs = 8000) {
@@ -1498,8 +1511,8 @@ async function handleGenerate() {
   let messages = base;
   const MAX = $('selffix').checked ? 3 : 1;
   let finalText = '';
-  logExec('Loading Python sandbox (first run downloads ~10MB, then offline)…');
-  try { await ensurePy(); logExec('Sandbox ready.'); } catch (e) { logExec('✗ sandbox failed: ' + e.message); }
+  // No eager sandbox load here — ensurePy() runs on first use, which only
+  // happens once a reply actually contains code to check.
   for (let attempt = 1; attempt <= MAX && !abort; attempt++) {
     setBusy(MAX > 1 ? `Attempt ${attempt}: generating code…` : 'Generating code…');
     finalText = await complete(messages, parseInt($('maxtok').value, 10), null);   // hidden
