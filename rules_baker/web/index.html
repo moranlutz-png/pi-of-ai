@@ -208,7 +208,14 @@
   .libcard:hover .cardgo { color:var(--ink); }
 
   /* library detail view */
-  .backbtn { display:inline-flex; align-items:center; gap:6px; margin:0 0 14px; }
+  /* A plain text link, not a button: the base button rule paints a light box,
+     so background, border and padding all have to be cleared explicitly. */
+  .backbtn { display:inline-flex; align-items:center; gap:5px; margin:0 0 14px;
+    background:none; border:0; padding:0; border-radius:0; color:var(--dim);
+    font:inherit; font-size:12.5px; font-weight:500; cursor:pointer; }
+  .backbtn:hover { background:none; color:var(--ink); }
+  .backbtn:focus { outline:none; }
+  .backbtn:focus-visible { color:var(--ink); text-decoration:underline; text-underline-offset:3px; }
   .backbtn svg { width:12px; height:12px; transform:rotate(180deg); }
   .dtable { display:flex; flex-direction:column; gap:1px; background:var(--edge);
     border:1px solid var(--edge); border-radius:9px; overflow:hidden; }
@@ -1903,7 +1910,7 @@ function showModelDetail(m) {
   ].join('');
 
   $('libDetail').innerHTML =
-    `<button type="button" class="ghost backbtn" id="libBack">${ICONS.chevronright}Back to library</button>`
+    `<button type="button" class="backbtn" id="libBack">${ICONS.chevronright}Back to library</button>`
     + `<h2 class="modal-title">${esc(m.name)}</h2>`
     + `<p class="sub" style="margin:0 0 14px">${esc(m.desc || '')}</p>`
     + `<div class="dtable">${rows}</div>`
