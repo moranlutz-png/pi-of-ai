@@ -445,7 +445,7 @@
         <span class="r"><select id="modelPick"><option>No model loaded</option></select></span>
       </div>
       <button type="button" class="collapse-btn" id="sysToggle"><span class="sign">+</span> System prompt</button>
-      <div id="sysWrap" hidden><textarea id="sys" style="margin-top:6px">You are a helpful senior Python engineer. Write clean, production-ready code.</textarea></div>
+      <div id="sysWrap" hidden><textarea id="sys" style="margin-top:6px" placeholder="Optional — leave empty to send no system prompt at all, which is the point of a rules-baked model."></textarea></div>
       <label>Your request</label>
       <textarea id="prompt" placeholder="Describe what you want the model to write…"></textarea>
       <!-- Generate stays enabled with no model loaded, so the click can explain
@@ -1486,7 +1486,12 @@ async function handleGenerate() {
   // The retry conversation used to accumulate every attempt, so a long prompt
   // plus three rounds overran the context window. Keep the original request and
   // at most ONE prior attempt, so the size stays bounded however many retries run.
-  const base = [{ role: 'system', content: sys }, { role: 'user', content: request }];
+  // With the box empty, send NO system message rather than an empty one — an
+  // empty system turn still occupies the chat template and can confuse small
+  // models. It also makes the rules-baker point properly: no prompt at all.
+  const base = sys.trim()
+    ? [{ role: 'system', content: sys }, { role: 'user', content: request }]
+    : [{ role: 'user', content: request }];
   let messages = base;
   const MAX = $('selffix').checked ? 3 : 1;
   let finalText = '';
