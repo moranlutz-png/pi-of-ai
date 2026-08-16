@@ -228,9 +228,18 @@
   .rt-seg { display:inline-flex; background:var(--panel); border:1px solid var(--edge2);
     border-radius:20px; padding:2px; }
   .rt-pill { background:transparent; border:0; color:var(--dim); border-radius:20px;
-    padding:3px 11px; font:inherit; font-size:12px; cursor:pointer; white-space:nowrap; }
-  .rt-pill:hover { color:var(--ink); }
-  .rt-pill.active { background:var(--panel2); color:var(--ink); }
+    padding:3px 11px; font:inherit; font-size:12px; cursor:pointer; white-space:nowrap;
+    transition:background .12s, color .12s; }
+  /* Light grey rather than white, with dark text on top of it, so the label
+     stays readable instead of washing out. */
+  .rt-pill:hover { background:rgba(255,255,255,.09); color:var(--ink); }
+  .rt-pill.active,
+  .rt-pill.active:hover { background:#c4c4c4; color:#2b2b2b; }
+  /* Clicking a button focuses it, and the browser's default ring reads as a box
+     around the control. Swap it for a colour change. */
+  .rt-pill:focus { outline:none; }
+  .rt-pill:focus-visible { background:rgba(255,255,255,.14); color:var(--ink); }
+  .rt-pill.active:focus-visible { background:#d6d6d6; color:#1f1f1f; }
   .rt-status { font-size:11.5px; color:var(--dimmer); white-space:nowrap; }
   .rt-body { margin-top:11px; font-size:12.5px; color:var(--dim); line-height:1.65; }
   @media (max-width:820px) { .rt-top { margin-left:0; width:100%; } }
@@ -315,7 +324,12 @@
   .ddbadge { font:10.5px var(--mono); color:var(--dim); background:rgba(255,255,255,.06); border-radius:20px; padding:0 7px; margin-left:auto; }
   .collapse-btn { background:none; border:0; color:var(--dim); font:inherit; font-size:12.5px; font-weight:500;
     cursor:pointer; padding:2px 0; display:inline-flex; align-items:center; gap:7px; margin-top:12px; }
+  /* No box on click — the only feedback is the label's colour, since this is a
+     bare text control and a focus ring around it reads as a stray outline. */
   .collapse-btn:hover { color:var(--ink); }
+  .collapse-btn:focus { outline:none; }
+  .collapse-btn:focus-visible { color:var(--ink); text-decoration:underline; text-underline-offset:3px; }
+  .collapse-btn:active { color:#ffffff; }
   .collapse-btn .sign { font-family:var(--mono); font-size:14px; width:12px; text-align:center; }
 
   .orbar { text-align:center; color:var(--dimmer); font-size:12px; margin:14px 0 8px; }
