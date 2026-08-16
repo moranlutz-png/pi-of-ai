@@ -935,6 +935,45 @@ function renderVariants() {
       + 'sent with every request.</div>';
 }
 
+// Applying a variant writes its rules into the VISIBLE system prompt box. It
+// deliberately does not use a hidden channel: the student needs to see the
+// rules occupying the context window, because removing that cost is the whole
+// point of baking them into the weights later.
+function applyVariant(id) {
+  const v = getVariant(id);
+  if (!v) return;
+
+  document.querySelectorAll('.varitem').forEach(el =>
+    el.classList.toggle('active', el.dataset.variantId === id));
+
+  $('sys').value = v.rules.join('\n');
+  $('sysWrap').hidden = false;                       // reveal, don't hide the mechanism
+  const sign = document.querySelector('#sysToggle .sign');
+  if (sign) sign.textContent = '−';
+
+  $('temp').value = String(v.temp);
+  $('temp').dispatchEvent(new Event('change'));      // needs Task 2
+  $('maxtok').value = String(v.maxTokens);
+  $('maxtok').dispatchEvent(new Event('change'));
+
+  const target = v.baseModelUrl
+    && document.querySelector(`.modelitem[data-url="${CSS.escape(v.baseModelUrl)}"]`);
+  if (!target) {
+    status.innerHTML = `<span style="color:var(--bad)">“${esc(v.name)}” points at a model that `
+      + `is no longer in the library. Its rules are applied — pick a model to load.</span>`;
+    return;
+  }
+  target.click();                                    // selects it and fills the URL box
+  if (loadedUrl !== v.baseModelUrl) loadBtn.click();
+}
+
+document.querySelector('.sidebar').addEventListener('click', (e) => {
+  const row = e.target.closest('.varitem');
+  if (!row) return;
+  if (e.target.closest('.edit')) openVariantEditor(row.dataset.variantId);
+  else applyVariant(row.dataset.variantId);
+});
+
 function renderModelTree(models) {
   lastModels = models;
   const tier = (t) => models.filter(m => (m.tier || 'model') === t);
