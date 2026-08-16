@@ -412,7 +412,7 @@
   <div class="pal-box" role="dialog" aria-modal="true" aria-label="Search Pi-of-AI">
     <div class="pal-in">
       <span data-ic="search"></span>
-      <input id="palInput" type="text" placeholder="Search models, pages and actions"
+      <input id="palInput" type="text" placeholder="Search models and GGUFs"
              autocomplete="off" autocorrect="off" spellcheck="false" aria-controls="palList" />
     </div>
     <div class="pal-list" id="palList" role="listbox" aria-label="Results"></div>
@@ -623,15 +623,10 @@ $('loadLocalNav').onclick = () => fileIn.click();
 const palette = $('palette'), palInput = $('palInput'), palList = $('palList');
 let palRows = [], palSel = 0, palPrevFocus = null;
 
-const palIcon = (el) => el.querySelector('[data-ic]')?.dataset.ic || 'chevronright';
-
+// Models and GGUF loading only — the palette is a model switcher, not a
+// general command menu. Nav destinations are one click away in the sidebar.
 function palCommands() {
   const cmds = [];
-  document.querySelectorAll('.sidebar .navlink').forEach(n => {
-    const title = n.textContent.trim();
-    if (title) cmds.push({ title, sub: 'Jump to ' + title, cat: 'Go',
-                           icon: palIcon(n), run: () => n.click() });
-  });
   document.querySelectorAll('.modelitem').forEach(el => {
     const name = el.querySelector('.nm').textContent.trim();
     const size = el.querySelector('.badge')?.textContent.trim() || '';
@@ -642,10 +637,9 @@ function palCommands() {
                 sub: bits ? `Load model — ${bits}` : 'Load model',
                 run: () => { el.click(); $('loadBtn').click(); } });
   });
-  cmds.push({ title: 'Generate', sub: 'Run the prompt through the loaded model',
-              cat: 'Action', icon: 'zap', run: () => $('runBtn').click() });
-  cmds.push({ title: 'Stop generation', sub: 'Interrupt the current run',
-              cat: 'Action', icon: 'hash', run: () => $('stopBtn').click() });
+  cmds.push({ title: 'Load local .gguf', cat: 'GGUF', icon: 'plus',
+              sub: 'Pick a .gguf from this machine — nothing is uploaded',
+              run: () => $('loadLocalNav').click() });
   return cmds;
 }
 
