@@ -191,6 +191,27 @@
   .libcard .nm { font-weight:640; font-size:13.5px; }
   .libcard .sz { margin-left:auto; font:10.5px var(--mono); color:var(--dim); background:rgba(255,255,255,.06); border-radius:20px; padding:1px 8px; }
   .libcard .d { font-size:12.5px; color:var(--dim); line-height:1.5; flex:1; }
+  .libcard { cursor:pointer; transition:border-color .12s, background .12s; }
+  .libcard:hover, .libcard:focus-visible { border-color:var(--edge2); background:var(--panel2); outline:none; }
+  .libcard:focus-visible { box-shadow:0 0 0 2px var(--dim); }
+  .libcard .cardgo { display:inline-flex; align-items:center; gap:4px; align-self:flex-start;
+    font-size:11.5px; color:var(--dim); }
+  .libcard .cardgo svg { width:12px; height:12px; }
+  .libcard:hover .cardgo { color:var(--ink); }
+
+  /* library detail view */
+  .backbtn { display:inline-flex; align-items:center; gap:6px; margin:0 0 14px; }
+  .backbtn svg { width:12px; height:12px; transform:rotate(180deg); }
+  .dtable { display:flex; flex-direction:column; gap:1px; background:var(--edge);
+    border:1px solid var(--edge); border-radius:9px; overflow:hidden; }
+  .drow { display:flex; gap:14px; padding:10px 13px; background:var(--panel); font-size:12.5px; }
+  .dk { width:132px; flex:none; color:var(--dim); }
+  .dv { flex:1; min-width:0; color:var(--ink); }
+  .dv .bad { color:var(--bad); }
+  .dv code.wrap { word-break:break-all; }
+  .dnote { margin-top:3px; font-size:11.5px; color:var(--dimmer); line-height:1.5; }
+  .dactions { display:flex; flex-wrap:wrap; gap:9px; margin-top:16px; }
+
   .libcard button { align-self:flex-start; }
   .verified { display:inline-flex; align-items:center; cursor:help; }
   .libcard .h .verified svg { width:15px; height:15px; color:#4d9dff; opacity:1; }
@@ -386,9 +407,12 @@
   <div id="libModal" class="modal" hidden>
     <div class="modal-panel">
       <button class="modal-close" id="libClose" title="Close">&times;</button>
-      <h2 class="modal-title">Model library</h2>
-      <p class="sub" style="margin:0 0 16px">Ready-made GGUF models — click Load on any. Anyone can publish here by adding an entry to <code>models.json</code>; the idea is a community sharing baked models.</p>
-      <div class="lib" id="libGrid"><div class="note">Loading…</div></div>
+      <div id="libBrowse">
+        <h2 class="modal-title">Model library</h2>
+        <p class="sub" style="margin:0 0 16px">Ready-made GGUF models — pick one to see its details. Anyone can publish here by adding an entry to <code>models.json</code>; the idea is a community sharing baked models.</p>
+        <div class="lib" id="libGrid"><div class="note">Loading…</div></div>
+      </div>
+      <div id="libDetail" hidden></div>
     </div>
   </div>
 
@@ -578,6 +602,7 @@ function familyGroupHtml(family, models, open) {
 // model that should stay comfortable on this machine.
 let recommendedUrl = null;
 let deviceBudget = null;   // GB the recommendation logic thinks this device can take
+let lastModels = null;     // kept so the sidebar can re-render when pins change
 
 function deviceCaps() {
   return {
@@ -718,6 +743,7 @@ function groupByFamily(models) {
 }
 
 function renderModelTree(models) {
+  lastModels = models;
   const tier = (t) => models.filter(m => (m.tier || 'model') === t);
 
   const caps = deviceCaps();
@@ -725,12 +751,18 @@ function renderModelTree(models) {
   recommendedUrl = rec ? rec.model.url : null;
   deviceBudget = rec ? rec.budget : null;
 
-  const byFamily = groupByFamily(tier('model'));
+  // Pinned models are lifted out of their family into a group of their own.
+  const pins = pinnedUrls();
+  const all = tier('model');
+  const pinnedList = all.filter(m => pins.includes(m.url));
+  const byFamily = groupByFamily(all.filter(m => !pins.includes(m.url)));
+
   // Open the family holding the recommendation, so it's visible on load.
-  const openFamily = rec ? rec.model.family : (tier('model').find(m => m.default) || {}).family;
-  $('modelTree').innerHTML = [...byFamily].map(([fam, list]) =>
-    familyGroupHtml(fam, list, fam === openFamily)).join('')
-    || '<div class="modelnote">No models in models.json.</div>';
+  const openFamily = rec ? rec.model.family : (all.find(m => m.default) || {}).family;
+  const pinnedHtml = pinnedList.length ? familyGroupHtml('Pinned', pinnedList, true) : '';
+  $('modelTree').innerHTML = pinnedHtml + ([...byFamily].map(([fam, list]) =>
+    familyGroupHtml(fam, list, fam === openFamily && !pinnedList.some(p => p.url === recommendedUrl))).join('')
+    || (pinnedHtml ? '' : '<div class="modelnote">No models in models.json.</div>'));
 
   const community = tier('community');
   $('communityTree').innerHTML = community.length
@@ -1248,14 +1280,13 @@ stopBtn.onclick = () => { abort = true; };
       if (st) card.classList.add(st.level);
       card.innerHTML = `<div class="h">${ICONS.laptop}<span class="nm">${esc(m.name)}</span>${badge}<span class="sz">${esc(m.size || '')}</span></div>`
         + `<div class="tags">${spTag}${recTag}${stTag}</div>`
-        + `<div class="d">${esc(m.desc || '')}</div><button type="button" class="act">${ICONS.download}Load</button>`;
-      card.querySelector('button').onclick = () => {
-        urlIn.value = new URL(m.url, location.href).href;
-        pendingLabel = m.name;
-        document.getElementById('libModal').hidden = true;   // close the popup
-        loadBtn.click();
-        document.getElementById('model').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      };
+        + `<div class="d">${esc(m.desc || '')}</div>`
+        + `<span class="cardgo">Details ${ICONS.chevronright}</span>`;
+      card.tabIndex = 0;
+      card.setAttribute('role', 'button');
+      const open = () => showModelDetail(m);
+      card.onclick = open;
+      card.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(); } };
       grid.appendChild(card);
     });
   } catch (e) {
@@ -1263,12 +1294,109 @@ stopBtn.onclick = () => { abort = true; };
   }
 })();
 
+// ---- Library detail view ----
+// Models pinned here are lifted out of their family group and shown in a
+// "Pinned" section at the top of the sidebar, so the sidebar can be a
+// shortlist while the Library stays the full catalogue.
+const PINNED_KEY = 'pi-of-ai:pinned';
+function pinnedUrls() {
+  try { return JSON.parse(localStorage.getItem(PINNED_KEY) || '[]'); } catch (_) { return []; }
+}
+function setPinned(list) {
+  try { localStorage.setItem(PINNED_KEY, JSON.stringify(list)); } catch (_) { /* private mode */ }
+}
+function togglePinned(url) {
+  const list = pinnedUrls();
+  const i = list.indexOf(url);
+  if (i >= 0) list.splice(i, 1); else list.push(url);
+  setPinned(list);
+  return list.includes(url);
+}
+
+// Quantisation is encoded in the GGUF filename (…-Q4_K_M.gguf), and the
+// publishing org is the first path segment — both worth surfacing.
+function ggufFacts(url) {
+  const file = decodeURIComponent(String(url).split('/').pop() || '');
+  const q = /(?:^|[-_.])(IQ\d[\w]*|Q\d[\w_]*|F16|F32|BF16)\.gguf$/i.exec(file);
+  const repo = /huggingface\.co\/([^/]+\/[^/]+)/.exec(String(url));
+  return { file, quant: q ? q[1].toUpperCase() : null, repo: repo ? repo[1] : null };
+}
+
+function detailRow(k, v) {
+  return `<div class="drow"><div class="dk">${esc(k)}</div><div class="dv">${v}</div></div>`;
+}
+
+function showModelDetail(m) {
+  const facts = ggufFacts(m.url);
+  const sp = speedTag(m), st = strainTag(m);
+  const isRec = m.url === recommendedUrl;
+  const pinned = pinnedUrls().includes(m.url);
+
+  const rows = [
+    detailRow('Family', esc(m.family || '—')),
+    detailRow('Download size', esc(m.size || 'unknown')),
+    facts.quant ? detailRow('Quantisation', `<code>${esc(facts.quant)}</code>`) : '',
+    facts.repo ? detailRow('Published by',
+      `<a href="https://huggingface.co/${esc(facts.repo)}" target="_blank" rel="noopener">${esc(facts.repo)}</a>`) : '',
+    detailRow('Speed here', sp
+      ? `${esc(sp.text)}<div class="dnote">${esc(sp.note)}</div>`
+      : 'unknown'),
+    detailRow('Fits this device', st
+      ? `<span class="${st.level === 'wont' ? 'bad' : ''}">${esc(st.text)}</span><div class="dnote">${esc(st.note)}</div>`
+      : (isRec ? 'Yes — recommended for this device' : 'Yes')),
+    detailRow('Verified', m.verified
+      ? 'Checked — this GGUF has been loaded and confirmed to work'
+      : 'Not verified'),
+    detailRow('File', `<code class="wrap">${esc(facts.file)}</code>`),
+  ].join('');
+
+  $('libDetail').innerHTML =
+    `<button type="button" class="ghost backbtn" id="libBack">${ICONS.chevronright}Back to library</button>`
+    + `<h2 class="modal-title">${esc(m.name)}</h2>`
+    + `<p class="sub" style="margin:0 0 14px">${esc(m.desc || '')}</p>`
+    + `<div class="dtable">${rows}</div>`
+    + `<div class="dactions">`
+    +   `<button type="button" class="act" id="detLoad">${ICONS.download}Load model</button>`
+    +   `<button type="button" class="ghost" id="detPin">${pinned ? 'Remove from sidebar' : 'Save to sidebar'}</button>`
+    + `</div>`;
+
+  $('libBrowse').hidden = true;
+  $('libDetail').hidden = false;
+  $('libDetail').scrollTop = 0;
+
+  $('libBack').onclick = showLibBrowse;
+  $('detLoad').onclick = () => {
+    urlIn.value = new URL(m.url, location.href).href;
+    pendingLabel = m.name;
+    libModal.hidden = true;
+    showLibBrowse();
+    loadBtn.click();
+    $('model').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  $('detPin').onclick = () => {
+    const now = togglePinned(m.url);
+    $('detPin').textContent = now ? 'Remove from sidebar' : 'Save to sidebar';
+    if (lastModels) renderModelTree(lastModels);      // reflect it immediately
+  };
+}
+
+function showLibBrowse() {
+  $('libDetail').hidden = true;
+  $('libBrowse').hidden = false;
+}
+
 // Library popup open/close
 const libModal = document.getElementById('libModal');
-document.getElementById('libNav').onclick = () => { libModal.hidden = false; };
-document.getElementById('libClose').onclick = () => { libModal.hidden = true; };
-libModal.addEventListener('click', (e) => { if (e.target === libModal) libModal.hidden = true; });
-window.addEventListener('keydown', (e) => { if (e.key === 'Escape') libModal.hidden = true; });
+// Always reopen on the grid, never on whatever detail page was last viewed.
+const closeLib = () => { libModal.hidden = true; showLibBrowse(); };
+document.getElementById('libNav').onclick = () => { showLibBrowse(); libModal.hidden = false; };
+document.getElementById('libClose').onclick = closeLib;
+libModal.addEventListener('click', (e) => { if (e.target === libModal) closeLib(); });
+window.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || libModal.hidden) return;
+  // Escape steps back from a detail page first, then closes the popup.
+  if (!$('libDetail').hidden) showLibBrowse(); else closeLib();
+});
 
 // Split "Load model" dropdown — same menu as the model picker
 (function loadDropdown() {
