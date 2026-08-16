@@ -734,6 +734,54 @@ function strainTag(m) {
                + `looks comfortable with. It may load but run slowly.` };
 }
 
+// ---- How long will it take to get here? ----
+// Load time is dominated by the download, so it depends on the connection
+// rather than the CPU. Best source is a rate actually measured on this device;
+// failing that, the Network Information API's estimate; failing that, say so.
+const RATE_KEY = 'pi-of-ai:load-mbps';
+
+function measuredRate() {
+  try {
+    const v = parseFloat(localStorage.getItem(RATE_KEY));
+    return isFinite(v) && v > 0 ? v : null;
+  } catch (_) { return null; }
+}
+function recordRate(mbPerSec) {
+  if (!isFinite(mbPerSec) || mbPerSec <= 0) return;
+  try {
+    // Smooth against the previous reading so one bad network moment doesn't stick.
+    const prev = measuredRate();
+    const next = prev ? (prev * 0.4 + mbPerSec * 0.6) : mbPerSec;
+    localStorage.setItem(RATE_KEY, String(next));
+  } catch (_) { /* private mode */ }
+}
+
+function humanDuration(s) {
+  if (!isFinite(s) || s <= 0) return null;
+  if (s < 60) return `${Math.round(s)} seconds`;
+  if (s < 5400) return `${Math.round(s / 60)} minutes`;
+  return `${(s / 3600).toFixed(1)} hours`;
+}
+
+function loadTimeEstimate(m) {
+  const gb = sizeToGB(m.size);
+  if (!isFinite(gb) || gb <= 0) return null;
+  const mb = gb * 1000;
+
+  const measured = measuredRate();
+  if (measured) {
+    return { secs: mb / measured,
+             source: `based on ${measured.toFixed(1)} MB/s measured on your last download` };
+  }
+  const link = navigator.connection && navigator.connection.downlink;   // Mbps
+  if (link) {
+    const rate = (link / 8) * 0.7;    // Mbps to MB/s, minus real-world overhead
+    return { secs: mb / rate,
+             source: `estimated from the ~${link} Mbps this browser reports for your connection` };
+  }
+  return null;
+}
+
 function speedTag(m) {
   const measured = measuredTokps()[m.url];
   if (measured) return { text: `${measured} tok/s here`, note: 'Measured on this device', measured: true };
@@ -1131,7 +1179,15 @@ async function withLoad(label, loadFn) {
     await loadFn();
     modelLabel = label; prog.style.width = '100%';
     pushRecent(loadedUrl);        // only on success — a failed load isn't "recent"
-    const secs = ((performance.now()-t0)/1000).toFixed(1);
+    const elapsed = (performance.now() - t0) / 1000;
+    // Learn this connection's real throughput, so the next estimate is measured
+    // rather than guessed. Skipped for cached loads, which would read as absurd.
+    const entry = (lastModels || []).find(x => x.url === loadedUrl);
+    if (entry && elapsed > 3) {
+      const mb = sizeToGB(entry.size) * 1000;
+      if (isFinite(mb)) recordRate(mb / elapsed);
+    }
+    const secs = elapsed.toFixed(1);
     status.innerHTML = `<span style="color:var(--ok)">✓ ${label} loaded in ${secs}s — running fully in this tab.</span>`;
     runBtn.disabled = false; modelPick.innerHTML = `<option>${label}</option>`;
     if (window.__setModelBtn) window.__setModelBtn(label);
@@ -1433,6 +1489,15 @@ function showModelDetail(m) {
     facts.quant ? detailRow('Quantisation', `<code>${esc(facts.quant)}</code>`) : '',
     facts.repo ? detailRow('Published by',
       `<a href="https://huggingface.co/${esc(facts.repo)}" target="_blank" rel="noopener">${esc(facts.repo)}</a>`) : '',
+    detailRow('Time to load', (() => {
+      const lt = loadTimeEstimate(m);
+      if (!lt) {
+        return 'Depends on your connection'
+          + `<div class="dnote">No download speed measured yet — load any model once and this becomes a real figure.</div>`;
+      }
+      return `About ${esc(humanDuration(lt.secs))}`
+        + `<div class="dnote">${esc(lt.source)}. One-time download — the browser caches it, so loading it again is near-instant.</div>`;
+    })()),
     detailRow('Speed here', sp
       ? `${esc(sp.text)}<div class="dnote">${esc(sp.note)}</div>`
       : 'unknown'),
