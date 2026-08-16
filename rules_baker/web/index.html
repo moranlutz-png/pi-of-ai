@@ -237,6 +237,9 @@
     border-radius:4px; padding:1px 5px; }
   .rt-body ol { margin:7px 0 0; padding-left:19px; }
   .rt-body li { margin:5px 0; }
+  .rt-why { margin-top:12px; padding:11px 13px; background:var(--panel);
+    border:1px solid var(--edge); border-radius:9px; font-size:12px; line-height:1.6; }
+  .rt-why b { color:var(--ink); }
   .rt-models { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:9px; }
   .rt-models select { background:var(--panel); color:var(--ink); border:1px solid var(--edge2);
     border-radius:7px; padding:5px 9px; font:inherit; font-size:12.5px; }
@@ -1607,6 +1610,21 @@ stopBtn.onclick = () => { abort = true; };
 // ---- Runtime switch UI ----
 const rtStatus = $('rtStatus'), rtBody = $('rtBody');
 
+// Uses this device's own measured in-browser speed where one exists, so the
+// comparison is anchored to a real reading rather than being all estimate.
+function rtSpeedNote() {
+  const all = measuredTokps();
+  if (loadedUrl && all[loadedUrl]) {
+    return `On this machine you've measured <b>${all[loadedUrl]} tok/s</b> in the browser`
+      + `${modelLabel ? ` with ${esc(modelLabel)}` : ''}.`;
+  }
+  const vals = Object.values(all);
+  if (vals.length) {
+    return `Your fastest in-browser reading so far is <b>${Math.max(...vals)} tok/s</b>.`;
+  }
+  return null;
+}
+
 function rtSetupHtml(reason) {
   return `<p style="margin:0 0 4px">Ollama isn't reachable (${esc(reason)}). It runs the model `
     + `natively on this machine — far faster than WebAssembly, and not limited to ~2GB models.</p>`
@@ -1616,6 +1634,18 @@ function rtSetupHtml(reason) {
     + `<li>Allow this page to talk to it, then start the server:<br>`
     + `<code>OLLAMA_ORIGINS="${esc(location.origin)}" ollama serve</code></li>`
     + `</ol>`
+    + `<div class="rt-why"><b>How much faster?</b> `
+    + `Typically several times quicker on the CPU alone — native code uses the processor's full `
+    + `vector instructions, where WebAssembly is capped at 128-bit SIMD — and commonly <b>10x or `
+    + `more</b> once it uses the GPU (Metal on a Mac, CUDA on an NVIDIA card), which this browser `
+    + `runtime never touches. It also escapes the 4GB WebAssembly ceiling, so you can run models `
+    + `far larger than the ~2GB limit here.`
+    + (rtSpeedNote() ? `<div class="dnote" style="margin-top:6px">${rtSpeedNote()} `
+        + `The multiplier is typical for this kind of hardware, not a measurement of your machine — `
+        + `load a model in Ollama and the speed shown here becomes a real figure.</div>`
+      : `<div class="dnote" style="margin-top:6px">Those multipliers are typical figures, not a `
+        + `measurement of your machine.</div>`)
+    + `</div>`
     + `<div class="dnote" style="margin-top:9px">Step 3 is required: Ollama refuses browser requests `
     + `from unknown origins by default. This also needs the page served over http from this machine — `
     + `a browser won't let an https site reach localhost.</div>`;
