@@ -110,6 +110,8 @@
   .modelitem .nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .badge { font:10.5px var(--mono); color:var(--dim); background:rgba(255,255,255,.06);
     border-radius:20px; padding:0 7px; }
+  .alias { font-size:10px; color:var(--dimmer); border:1px solid var(--edge2);
+    border-radius:20px; padding:0 6px; flex:none; white-space:nowrap; }
   .spacer { flex:1; min-height:14px; }
 
   /* ---------- Main ---------- */
@@ -523,9 +525,13 @@ let pendingLabel = '';
 
 function modelItemHtml(m) {
   const preset = m.preset ? ` data-preset="${esc(m.preset)}"` : '';
+  // The alias is the "which machine is this for?" label (Featherweight,
+  // Chromebook, Laptop) the sidebar used to show instead of the model name.
+  // Kept alongside the real name so both are visible and searchable.
+  const alias = m.alias ? `<span class="alias">${esc(m.alias)}</span>` : '';
   return `<div class="modelitem"${preset} data-url="${esc(m.url)}" title="${esc(m.desc || m.name)}">`
     + `<span class="bk">${ICONS.laptop}</span><span class="nm">${esc(m.name)}</span>`
-    + `<span class="badge">${esc(m.size || '')}</span></div>`;
+    + alias + `<span class="badge">${esc(m.size || '')}</span></div>`;
 }
 
 // One collapsible group per family. Groups start closed except the one holding
@@ -629,8 +635,11 @@ function palCommands() {
   document.querySelectorAll('.modelitem').forEach(el => {
     const name = el.querySelector('.nm').textContent.trim();
     const size = el.querySelector('.badge')?.textContent.trim() || '';
+    const alias = el.querySelector('.alias')?.textContent.trim() || '';
+    // Alias goes in the subtitle so searching "featherweight" still finds it.
+    const bits = [alias, size ? `downloads ${size}` : ''].filter(Boolean).join(' · ');
     cmds.push({ title: name, cat: 'Model', icon: 'download',
-                sub: size ? `Load model — downloads ${size}` : 'Load model',
+                sub: bits ? `Load model — ${bits}` : 'Load model',
                 run: () => { el.click(); $('loadBtn').click(); } });
   });
   cmds.push({ title: 'Generate', sub: 'Run the prompt through the loaded model',

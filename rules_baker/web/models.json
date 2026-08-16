@@ -1,6 +1,7 @@
 [
   {
     "name": "Qwen2.5-Coder 0.5B",
+    "alias": "Chromebook",
     "family": "Qwen",
     "tier": "model",
     "preset": "chromebook",
@@ -12,6 +13,7 @@
   },
   {
     "name": "Qwen2.5-Coder 1.5B",
+    "alias": "Laptop",
     "family": "Qwen",
     "tier": "model",
     "preset": "laptop",
@@ -49,6 +51,7 @@
   },
   {
     "name": "SmolLM2 135M",
+    "alias": "Featherweight",
     "family": "SmolLM",
     "tier": "model",
     "preset": "feather",
