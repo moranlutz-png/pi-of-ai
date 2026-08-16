@@ -116,9 +116,24 @@
   /* recommended-for-this-device marker */
   .modelitem .recdot { display:inline-flex; flex:none; color:var(--ink); }
   .modelitem .recdot svg { width:12px; height:12px; }
-  .rectag { display:inline-flex; align-items:center; gap:5px; margin:6px 0 0;
+  .rectag { display:inline-flex; align-items:center; gap:5px;
     font-size:11px; color:var(--ink); }
   .rectag svg { width:12px; height:12px; }
+  .tags { display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; margin:7px 0 0; }
+  .speedtag { display:inline-flex; align-items:center; gap:5px; font-size:11px;
+    color:var(--dim); border:1px solid var(--edge2); border-radius:20px; padding:1px 8px;
+    cursor:help; }
+  .speedtag svg { width:11px; height:11px; opacity:.8; }
+  .speedtag.measured { color:var(--ink); border-color:var(--dim); }
+
+  /* the inverse of "recommended": too heavy for this device */
+  .modelitem .straindot { flex:none; width:13px; height:13px; border-radius:50%;
+    font:9px/13px var(--mono); text-align:center; color:var(--bg); background:var(--dim); }
+  .modelitem .straindot.wont { background:var(--bad); color:#fff; }
+  .modelitem.wont .nm { opacity:.65; }
+  .straintag { display:inline-flex; align-items:center; font-size:11px; color:var(--dim);
+    border:1px solid var(--edge2); border-radius:20px; padding:1px 8px; cursor:help; }
+  .straintag.wont { color:var(--bad); border-color:var(--bad); }
   .spacer { flex:1; min-height:14px; }
 
   /* ---------- Main ---------- */
@@ -536,9 +551,11 @@ function modelItemHtml(m) {
   // Chromebook, Laptop) the sidebar used to show instead of the model name.
   // Kept alongside the real name so both are visible and searchable.
   const alias = m.alias ? `<span class="alias">${esc(m.alias)}</span>` : '';
+  const strain = strainTag(m);
   const rec = m.url === recommendedUrl
-    ? `<span class="recdot" title="Recommended for this device">${ICONS.check}</span>` : '';
-  const cls = m.url === recommendedUrl ? ' rec' : '';
+    ? `<span class="recdot" title="Recommended for this device">${ICONS.check}</span>`
+    : strain ? `<span class="straindot ${strain.level}" title="${esc(strain.text)} — ${esc(strain.note)}">!</span>` : '';
+  const cls = (m.url === recommendedUrl ? ' rec' : '') + (strain ? ` ${strain.level}` : '');
   return `<div class="modelitem${cls}"${preset} data-url="${esc(m.url)}" title="${esc(m.desc || m.name)}">`
     + `<span class="bk">${ICONS.laptop}</span><span class="nm">${esc(m.name)}</span>`
     + rec + alias + `<span class="badge">${esc(m.size || '')}</span></div>`;
@@ -560,6 +577,7 @@ function familyGroupHtml(family, models, open) {
 // read. So this is a sizing heuristic, not a benchmark — pick the largest
 // model that should stay comfortable on this machine.
 let recommendedUrl = null;
+let deviceBudget = null;   // GB the recommendation logic thinks this device can take
 
 function deviceCaps() {
   return {
@@ -605,6 +623,90 @@ function recommendModel(models, caps) {
   return { model: pick, why: why.join(' · ') || 'unknown hardware', budget };
 }
 
+// ---- How fast will this model run here? ----
+// There is no CPU clock or memory-bandwidth figure in the browser, so instead
+// of guessing from the device name we actually measure: a short float loop
+// gives a throughput score for THIS machine. Per generated token llama.cpp
+// reads roughly the whole model, so speed falls off with model size — the
+// estimate is score x threads / size.
+//
+// It is an estimate, and labelled as one. Once a model has actually been run
+// here its real tok/s is recorded and shown instead, which is always truthful.
+let deviceScore = null;
+
+function benchDevice() {
+  if (deviceScore !== null) return deviceScore;
+  const N = 1 << 18;                       // 256k floats — ~1MB per array
+  const a = new Float32Array(N), b = new Float32Array(N);
+  for (let i = 0; i < N; i++) { a[i] = (i % 17) * 0.5; b[i] = (i % 13) * 0.25; }
+  let sink = 0, reps = 0;
+  const t0 = performance.now();
+  while (performance.now() - t0 < 35) {    // fixed time budget, not fixed work
+    for (let i = 0; i < N; i++) sink += a[i] * b[i];
+    reps++;
+  }
+  const secs = (performance.now() - t0) / 1000;
+  deviceScore = (reps * N * 2) / secs / 1e9;   // GFLOP/s-ish
+  if (sink === Infinity) deviceScore = 0;      // keep the loop from being elided
+  return deviceScore;
+}
+
+const TOKPS_KEY = 'pi-of-ai:measured-tokps';
+function measuredTokps() {
+  try { return JSON.parse(localStorage.getItem(TOKPS_KEY) || '{}'); } catch (_) { return {}; }
+}
+function recordTokps(url, tps) {
+  if (!url || !isFinite(tps) || tps <= 0) return;
+  try {
+    const all = measuredTokps();
+    all[url] = Math.round(tps * 10) / 10;
+    localStorage.setItem(TOKPS_KEY, JSON.stringify(all));
+  } catch (_) { /* private mode — estimates still work */ }
+}
+
+// K is calibrated against a real reading on this project's own hardware
+// (SmolLM2 135M at ~21 tok/s). One calibration point, so treat the numbers as
+// an order-of-magnitude guide rather than a benchmark.
+function estimateTokps(m) {
+  const gb = sizeToGB(m.size);
+  if (!isFinite(gb) || gb <= 0) return null;
+  const threadBoost = self.crossOriginIsolated
+    ? Math.sqrt(Math.min(navigator.hardwareConcurrency || 1, 4)) : 1;
+  return 0.5 * benchDevice() * threadBoost / gb;
+}
+
+// The inverse of the recommendation: models this device probably can't take.
+// Two levels, because "slower than you'd like" and "won't load at all" are
+// different warnings and deserve different words.
+function strainTag(m) {
+  const gb = sizeToGB(m.size);
+  if (!isFinite(gb) || deviceBudget === null || gb <= deviceBudget) return null;
+  const caps = deviceCaps();
+  // Hard limit: wllama is a 32-bit build (model + context in one 4GB space),
+  // and the model also has to sit in the machine's actual RAM.
+  const ceiling = Math.min(2.5, caps.ramGB ? caps.ramGB * 0.4 : 2.5);
+  if (gb > ceiling) {
+    return { level: 'wont', text: 'Too big for this device',
+             note: `Needs about ${gb.toFixed(2)}GB; this device is unlikely to load it. `
+                 + `wllama runs in a 32-bit WASM space, so model plus context must fit in 4GB.` };
+  }
+  return { level: 'strain', text: 'May struggle here',
+           note: `About ${gb.toFixed(2)}GB, above the ~${deviceBudget.toFixed(1)}GB this device `
+               + `looks comfortable with. It may load but run slowly.` };
+}
+
+function speedTag(m) {
+  const measured = measuredTokps()[m.url];
+  if (measured) return { text: `${measured} tok/s here`, note: 'Measured on this device', measured: true };
+  const est = estimateTokps(m);
+  if (est === null) return null;
+  const band = est >= 15 ? 'Fast' : est >= 5 ? 'Usable' : est >= 1.5 ? 'Slow' : 'Very slow';
+  const lo = est < 10 ? est.toFixed(1) : Math.round(est);
+  const hi = est * 2 < 10 ? (est * 2).toFixed(1) : Math.round(est * 2);
+  return { text: `${band} · ~${lo}-${hi} tok/s`, measured: false,
+           note: 'Estimated from a quick speed test on this device — run it to see the real figure' };
+}
+
 function groupByFamily(models) {
   const map = new Map();
   for (const m of models) {
@@ -621,6 +723,7 @@ function renderModelTree(models) {
   const caps = deviceCaps();
   const rec = recommendModel(models, caps);
   recommendedUrl = rec ? rec.model.url : null;
+  deviceBudget = rec ? rec.budget : null;
 
   const byFamily = groupByFamily(tier('model'));
   // Open the family holding the recommendation, so it's visible on load.
@@ -889,6 +992,7 @@ document.getElementById('sysToggle').onclick = () => {
 };
 
 let wllama = null, modelLabel = '', abort = false;
+let loadedUrl = null;   // which model is in memory, so measured tok/s can be attributed
 
 async function withLoad(label, loadFn) {
   loadBtn.disabled = true; runBtn.disabled = true; browseBtn.disabled = true;
@@ -918,6 +1022,7 @@ loadBtn.onclick = () => {
   const url = urlIn.value.trim();
   withLoad(pendingLabel || 'model', () => {
     status.textContent = 'Downloading model weights… (cached after first load)';
+    loadedUrl = url;
     return wllama.loadModelFromUrl(url, { n_ctx: 1024, progressCallback: ({loaded,total}) => {
       const pct = total ? Math.round(100*loaded/total) : 0;
       prog.style.width = pct + '%';
@@ -1001,6 +1106,9 @@ async function complete(messages, nPredict, onText) {
       if (abort && opt?.abortSignal) opt.abortSignal();
     },
   });
+  // Real throughput beats any estimate — remember it for the Library tag.
+  const elapsed = (performance.now() - t0) / 1000;
+  if (nTok > 8 && elapsed > 0.5) recordTokps(loadedUrl, nTok / elapsed);
   return full;
 }
 
@@ -1132,8 +1240,14 @@ stopBtn.onclick = () => { abort = true; };
       const isRec = m.url === recommendedUrl;
       if (isRec) card.classList.add('rec');
       const recTag = isRec ? `<span class="rectag">${ICONS.check} Recommended for this device</span>` : '';
+      const sp = speedTag(m);
+      const spTag = sp ? `<span class="speedtag${sp.measured ? ' measured' : ''}" title="${esc(sp.note)}">`
+        + `${ICONS.zap}${esc(sp.text)}</span>` : '';
+      const st = strainTag(m);
+      const stTag = st ? `<span class="straintag ${st.level}" title="${esc(st.note)}">${esc(st.text)}</span>` : '';
+      if (st) card.classList.add(st.level);
       card.innerHTML = `<div class="h">${ICONS.laptop}<span class="nm">${esc(m.name)}</span>${badge}<span class="sz">${esc(m.size || '')}</span></div>`
-        + recTag
+        + `<div class="tags">${spTag}${recTag}${stTag}</div>`
         + `<div class="d">${esc(m.desc || '')}</div><button type="button" class="act">${ICONS.download}Load</button>`;
       card.querySelector('button').onclick = () => {
         urlIn.value = new URL(m.url, location.href).href;
