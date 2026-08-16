@@ -1206,7 +1206,7 @@ loadBtn.onclick = () => {
   withLoad(pendingLabel || 'model', () => {
     status.textContent = 'Downloading model weights… (cached after first load)';
     loadedUrl = url;
-    return wllama.loadModelFromUrl(url, { n_ctx: 1024, progressCallback: ({loaded,total}) => {
+    return wllama.loadModelFromUrl(url, { n_ctx: 4096, progressCallback: ({loaded,total}) => {
       const pct = total ? Math.round(100*loaded/total) : 0;
       prog.style.width = pct + '%';
       status.textContent = `Downloading weights… ${(loaded/1048576).toFixed(0)} / ${total?(total/1048576).toFixed(0):'?'} MB (${pct}%)`;
@@ -1218,7 +1218,7 @@ function loadLocal(file) {
   if (!file.name.toLowerCase().endsWith('.gguf')) { status.innerHTML = `<span style="color:var(--bad)">✗ Not a .gguf file.</span>`; return; }
   withLoad(file.name, () => {
     status.textContent = `Reading ${file.name} (${(file.size/1048576).toFixed(0)} MB) into WASM…`;
-    return wllama.loadModel([file], { n_ctx: 1024 });
+    return wllama.loadModel([file], { n_ctx: 4096 });
   });
 }
 browseBtn.onclick = () => fileIn.click();
@@ -1316,7 +1316,11 @@ async function handleGenerate() {
   renderIntro(intro);
 
   // 2) generate + check the FIRST block (+ optional auto-fix) — all hidden
-  const messages = [{ role: 'system', content: sys }, { role: 'user', content: request }];
+  // The retry conversation used to accumulate every attempt, so a long prompt
+  // plus three rounds overran the context window. Keep the original request and
+  // at most ONE prior attempt, so the size stays bounded however many retries run.
+  const base = [{ role: 'system', content: sys }, { role: 'user', content: request }];
+  let messages = base;
   const MAX = $('selffix').checked ? 3 : 1;
   let finalText = '';
   logExec('Loading Python sandbox (first run downloads ~10MB, then offline)…');
@@ -1334,8 +1338,9 @@ async function handleGenerate() {
       break;
     }
     if (attempt < MAX) {
-      messages.push({ role: 'assistant', content: finalText });
-      messages.push({ role: 'user', content: `Your code has this problem: ${problem}. Fix it so it is valid Python that runs in an offline sandbox (no OS, network, or database). Return only the corrected code in one \`\`\`python block.` });
+      messages = [...base,
+        { role: 'assistant', content: finalText },
+        { role: 'user', content: `Your code has this problem: ${problem}. Fix it so it is valid Python that runs in an offline sandbox (no OS, network, or database). Return only the corrected code in one \`\`\`python block.` }];
       setBusy('Fixing…'); logExec('→ fed the problem back, regenerating…');
     }
   }
@@ -1406,7 +1411,18 @@ runBtn.onclick = async () => {
   try {
     await handleGenerate();
     if (!abort) signalDone();
-  } catch (e) { output.innerHTML += `<div class="sandnote bad">error: ${esc(e.message)}</div>`; console.error(e); }
+    else $('runStats').textContent = $('runStats').textContent.replace(/ · working…$/, ' · stopped');
+  } catch (e) {
+    // A run that dies mid-stream used to leave the stats line reading
+    // "working…" forever, so a finished-but-failed run looked like a hang.
+    $('runStats').textContent = $('runStats').textContent.replace(/ · working…$/, ' · failed');
+    const msg = /context|n_ctx/i.test(e.message || '')
+      ? `Ran out of context. This prompt (plus the auto-fix retries) is longer than the model's `
+        + `context window. Try a shorter prompt, fewer max tokens, or turn off auto-fix.`
+      : e.message;
+    output.innerHTML += `<div class="sandnote bad">error: ${esc(msg)}</div>`;
+    console.error(e);
+  }
   clearBusy();
   runBtn.disabled = false; stopBtn.disabled = true;
 };
@@ -1635,7 +1651,7 @@ async function termLoad(arg) {
   tp('loading ' + label + ' …', 'sysmsg'); setBusy('Loading model…');
   try {
     wllama = new Wllama(CONFIG);
-    await wllama.loadModelFromUrl(new URL(url, location.href).href, { n_ctx: 1024 });
+    await wllama.loadModelFromUrl(new URL(url, location.href).href, { n_ctx: 4096 });
     modelLabel = label;
     if (window.__setModelBtn) window.__setModelBtn(label);
     tp('✓ loaded ' + label, 'okmsg');
