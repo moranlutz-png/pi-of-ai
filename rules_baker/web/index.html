@@ -105,6 +105,14 @@
   .modelnote { padding:4px 9px 7px; font-size:11px; color:var(--dimmer); line-height:1.55; }
 
   /* A variant is rules, not weights — it must not read as a model. */
+  /* Sub-section inside Custom GGUFs — indented so it reads as nested, with a
+     quiet tag saying what a variant actually is. */
+  .subseclabel { display:flex; align-items:center; gap:6px; margin:9px 0 3px 12px;
+    font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--dimmer); }
+  .sublabelnote { font-size:9.5px; letter-spacing:.04em; text-transform:none;
+    border:1px solid var(--edge2); border-radius:20px; padding:0 6px; }
+  #variantTree { margin-left:12px; }
+  .navlink.sub { margin-left:12px; }
   .varitem { display:flex; align-items:center; gap:7px; padding:4px 8px; border-radius:6px;
     cursor:pointer; color:var(--dim); }
   .varitem:hover { background:rgba(255,255,255,.045); color:var(--ink); }
@@ -441,13 +449,17 @@
     <div class="seclabel">Models</div>
     <div id="modelTree"><div class="modelnote">Loading…</div></div>
 
-    <div class="seclabel">Your variants</div>
-    <div id="variantTree"></div>
-    <div class="navlink" id="newVariantNav"><span data-ic="plus"></span>New variant</div>
-
     <div class="seclabel">Custom GGUFs</div>
     <div id="customTree"></div>
     <div class="navlink" id="loadLocalNav"><span data-ic="plus"></span>Load local .gguf</div>
+
+    <!-- Variants sit under Custom GGUFs as a sub-section: they are the simplest
+         thing a user can make themselves, so grouping them with their own bakes
+         reads as one "models you made" area. Still separately labelled, because
+         a variant is rules rather than a file. -->
+    <div class="subseclabel">Variants <span class="sublabelnote">rules only</span></div>
+    <div id="variantTree"></div>
+    <div class="navlink sub" id="newVariantNav"><span data-ic="plus"></span>New variant</div>
 
     <div class="spacer"></div>
     <div class="navlink" id="setNav"><span data-ic="sliders"></span>Settings</div>
@@ -986,8 +998,7 @@ function renderVariants() {
         + `<span class="nm">${esc(v.name)}</span>`
         + `<span class="rulecount">${v.rules.length} rule${v.rules.length === 1 ? '' : 's'}</span>`
         + `<span class="edit">edit</span></div>`).join('')
-    : '<div class="modelnote">None yet — a variant is a saved set of house rules, '
-      + 'sent with every request.</div>';
+    : '';                                  // empty section, no explanatory note
 }
 
 // Applying a variant writes its rules into the VISIBLE system prompt box. It
@@ -1045,9 +1056,14 @@ function populateBasePicker(selected) {
   // back to whichever option is first — which Save would then persist as the
   // new base model — surface a disabled placeholder so nothing is selected by
   // default and the Save handler can refuse until the user picks a real one.
+  // Covers BOTH cases: a base model that has gone away, and one that was never
+  // set at all. An imported variant can arrive with baseModelUrl "", and
+  // without a placeholder for that case the browser selects the first option
+  // and Save silently binds the variant to a model the user never chose.
   const known = !!selected && items.some(el => el.dataset.url === selected);
-  const missingOpt = (selected && !known)
-    ? '<option value="" disabled selected>— model missing —</option>' : '';
+  const missingOpt = known ? '' : (selected
+    ? '<option value="" disabled selected>— model missing —</option>'
+    : '<option value="" disabled selected>— choose a model —</option>');
   $('varBase').innerHTML = (missingOpt + opts) || '<option value="">No models available</option>';
 }
 
@@ -1085,8 +1101,12 @@ window.addEventListener('keydown', (e) => {
 $('varSave').onclick = () => {
   const baseSelect = $('varBase');
   if (baseSelect.selectedOptions[0]?.disabled) {
-    $('varRuleNote').textContent = 'This variant’s base model is no longer in the library — '
-      + 'pick a real one from the list before saving.';
+    // Two different reasons the placeholder is selected: the model went away,
+    // or one was never chosen. Saying the wrong one confuses more than it helps.
+    $('varRuleNote').textContent = baseSelect.selectedOptions[0].value === ''
+      && baseSelect.selectedOptions[0].textContent.includes('choose')
+      ? 'Pick a base model before saving.'
+      : 'This variant’s base model is no longer in the library — pick a real one before saving.';
     return;                                            // modal stays open
   }
 
@@ -1176,7 +1196,7 @@ function renderModelTree(models) {
   const custom = tier('custom');
   $('customTree').innerHTML = custom.length
     ? custom.map(modelItemHtml).join('')
-    : '<div class="modelnote">Your own bakes appear here.</div>';
+    : '';                                  // empty section, no explanatory note
 
   // Preload the recommendation into the Model box so Load is one click away.
   const first = (recommendedUrl && document.querySelector(`.modelitem[data-url="${CSS.escape(recommendedUrl)}"]`))
