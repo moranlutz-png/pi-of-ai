@@ -581,8 +581,18 @@ function renderModelTree(models) {
 document.querySelector('.sidebar').addEventListener('click', (e) => {
   const fam = e.target.closest('.famrow');
   if (fam) {
-    fam.classList.toggle('open');
-    fam.nextElementSibling?.classList.toggle('open');
+    // Accordion: opening one family closes the others in the same section, so
+    // the sidebar never grows into a long scroll. Clicking an open one closes it.
+    const opening = !fam.classList.contains('open');
+    const scope = fam.closest('#modelTree, #communityTree, #customTree') || document;
+    scope.querySelectorAll('.famrow.open').forEach(r => {
+      r.classList.remove('open');
+      r.nextElementSibling?.classList.remove('open');
+    });
+    if (opening) {
+      fam.classList.add('open');
+      fam.nextElementSibling?.classList.add('open');
+    }
     return;
   }
   const item = e.target.closest('.modelitem');
