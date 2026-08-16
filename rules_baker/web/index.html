@@ -266,6 +266,16 @@
   .dd-item svg { width:16px; height:16px; opacity:.85; flex-shrink:0; }
   .dd-item .lbl { flex:1; }
   .dd-item .chk svg { width:14px; opacity:1; }
+  .dd-search { display:flex; align-items:center; gap:8px; padding:8px 10px;
+    border-bottom:1px solid var(--hair); }
+  .dd-search svg { width:13px; height:13px; color:var(--dimmer); flex:none; }
+  .dd-search input { flex:1; min-width:0; background:transparent; border:0; outline:none;
+    color:var(--ink); font:inherit; font-size:12.5px; }
+  .dd-search input::placeholder { color:var(--dimmer); }
+  .dd-list { max-height:250px; overflow-y:auto; }
+  .dd-head { padding:7px 10px 3px; font-size:9.5px; letter-spacing:.09em;
+    text-transform:uppercase; color:var(--dimmer); }
+  .dd-hint { padding:5px 10px 8px; font-size:11px; color:var(--dimmer); }
   .dd-sep { height:1px; background:var(--edge2); margin:5px 6px; }
   .ddbadge { font:10.5px var(--mono); color:var(--dim); background:rgba(255,255,255,.06); border-radius:20px; padding:0 7px; margin-left:auto; }
   .collapse-btn { background:none; border:0; color:var(--dim); font:inherit; font-size:12.5px; font-weight:500;
@@ -952,6 +962,99 @@ function col(k, v, cls='') { return `<div class="col"><div class="k">${k}</div><
 })();
 
 // custom styled dropdown menus for Temp / Max tokens (native <select> kept as the value store)
+// ---- Shared model menu for both dropdowns ----
+// The full list outgrew a dropdown once there were seven models, so these show
+// the three most recently loaded and put everything else behind a search box.
+const RECENT_KEY = 'pi-of-ai:recent';
+const RECENT_SHOWN = 3;
+
+function recentUrls() {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch (_) { return []; }
+}
+function pushRecent(url) {
+  if (!url) return;
+  const list = recentUrls().filter(u => u !== url);
+  list.unshift(url);
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 12))); } catch (_) { /* private mode */ }
+}
+
+// Reads the sidebar, so it stays in step with models.json automatically.
+function modelMenuItems() {
+  return [...document.querySelectorAll('.modelitem')].map(mi => ({
+    el: mi,
+    url: mi.dataset.url,
+    name: mi.querySelector('.nm').textContent.trim(),
+    size: mi.querySelector('.badge')?.textContent.trim() || '',
+  }));
+}
+
+function fillModelMenu(menu, onPick) {
+  const items = modelMenuItems();
+  menu.innerHTML = '';
+
+  const search = document.createElement('div');
+  search.className = 'dd-search';
+  search.innerHTML = `${ICONS.search}<input type="text" placeholder="Search all models" `
+    + `autocomplete="off" spellcheck="false" />`;
+  menu.appendChild(search);
+
+  const list = document.createElement('div');
+  list.className = 'dd-list';
+  menu.appendChild(list);
+
+  const sep = document.createElement('div'); sep.className = 'dd-sep'; menu.appendChild(sep);
+  const loc = document.createElement('div'); loc.className = 'dd-item';
+  loc.innerHTML = `${ICONS.plus}<span class="lbl">Load local .gguf</span>`;
+  loc.onclick = (ev) => { ev.stopPropagation(); menu.hidden = true; document.getElementById('file').click(); };
+  menu.appendChild(loc);
+
+  const recents = recentUrls();
+  const row = (i) => {
+    const it = document.createElement('div');
+    it.className = 'dd-item';
+    it.innerHTML = `${ICONS.laptop}<span class="lbl">${esc(i.name)}</span>`
+      + `<span class="ddbadge">${esc(i.size)}</span>`;
+    it.onclick = (ev) => { ev.stopPropagation(); menu.hidden = true; onPick(i); };
+    return it;
+  };
+
+  const render = (q) => {
+    list.innerHTML = '';
+    let shown, heading;
+    if (q) {
+      shown = items.filter(i => i.name.toLowerCase().includes(q));
+      heading = shown.length ? 'Results' : null;
+    } else {
+      // Most-recent first; before anything has been loaded, just the first few.
+      const ordered = recents.map(u => items.find(i => i.url === u)).filter(Boolean);
+      shown = (ordered.length ? ordered : items).slice(0, RECENT_SHOWN);
+      heading = ordered.length ? 'Recent' : 'Models';
+    }
+    if (heading) {
+      const h = document.createElement('div'); h.className = 'dd-head'; h.textContent = heading;
+      list.appendChild(h);
+    }
+    if (!shown.length) {
+      const n = document.createElement('div'); n.className = 'dd-hint'; n.textContent = 'No matching model';
+      list.appendChild(n);
+    }
+    shown.forEach(i => list.appendChild(row(i)));
+    if (!q && items.length > shown.length) {
+      const hint = document.createElement('div'); hint.className = 'dd-hint';
+      hint.textContent = `Search to reach all ${items.length} models`;
+      list.appendChild(hint);
+    }
+  };
+
+  const input = search.querySelector('input');
+  // The document-level click handler closes menus; typing must not trigger it.
+  ['click', 'mousedown', 'keydown'].forEach(ev =>
+    input.addEventListener(ev, (e) => e.stopPropagation()));
+  input.addEventListener('input', () => render(input.value.trim().toLowerCase()));
+  render('');
+  setTimeout(() => input.focus(), 0);
+}
+
 function makeDropdown(sel, iconKey) {
   const icon = ICONS[iconKey] || '';
   const wrap = document.createElement('span'); wrap.className = 'dd';
@@ -992,19 +1095,9 @@ makeDropdown(document.getElementById('maxtok'), 'hash');
   btn.onclick = (e) => {
     e.stopPropagation();
     document.querySelectorAll('.dd-menu').forEach(m => { if (m !== menu) m.hidden = true; });
-    menu.innerHTML = '';
-    document.querySelectorAll('.modelitem').forEach(mi => {
-      const it = document.createElement('div'); it.className = 'dd-item';
-      it.innerHTML = `${ICONS.laptop}<span class="lbl">${mi.querySelector('.nm').textContent}</span><span class="ddbadge">${mi.querySelector('.badge').textContent}</span>`;
-      it.onclick = (ev) => { ev.stopPropagation(); menu.hidden = true; mi.click(); document.getElementById('loadBtn').click(); };
-      menu.appendChild(it);
-    });
-    const sep = document.createElement('div'); sep.className = 'dd-sep'; menu.appendChild(sep);
-    const loc = document.createElement('div'); loc.className = 'dd-item';
-    loc.innerHTML = `${ICONS.plus}<span class="lbl">Load local .gguf</span>`;
-    loc.onclick = (ev) => { ev.stopPropagation(); menu.hidden = true; document.getElementById('file').click(); };
-    menu.appendChild(loc);
-    menu.hidden = !menu.hidden;
+    if (!menu.hidden) { menu.hidden = true; return; }
+    fillModelMenu(menu, (i) => { i.el.click(); document.getElementById('loadBtn').click(); });
+    menu.hidden = false;
   };
   document.addEventListener('click', () => { menu.hidden = true; });
   setLabel('No model loaded');
@@ -1030,6 +1123,7 @@ async function withLoad(label, loadFn) {
     wllama = new Wllama(CONFIG);
     await loadFn();
     modelLabel = label; prog.style.width = '100%';
+    pushRecent(loadedUrl);        // only on success — a failed load isn't "recent"
     const secs = ((performance.now()-t0)/1000).toFixed(1);
     status.innerHTML = `<span style="color:var(--ok)">✓ ${label} loaded in ${secs}s — running fully in this tab.</span>`;
     runBtn.disabled = false; modelPick.innerHTML = `<option>${label}</option>`;
@@ -1399,19 +1493,13 @@ window.addEventListener('keydown', (e) => {
   btn.onclick = (e) => {
     e.stopPropagation();
     document.querySelectorAll('.dd-menu').forEach(m => { if (m !== menu) m.hidden = true; });
-    menu.innerHTML = '';
-    document.querySelectorAll('.modelitem').forEach(mi => {
-      const it = document.createElement('div'); it.className = 'dd-item';
-      it.innerHTML = `${ICONS.laptop}<span class="lbl">${mi.querySelector('.nm').textContent}</span><span class="ddbadge">${mi.querySelector('.badge').textContent}</span>`;
-      it.onclick = (ev) => { ev.stopPropagation(); menu.hidden = true; urlIn.value = mi.dataset.url; pendingLabel = mi.querySelector('.nm').textContent.trim(); loadBtn.click(); };
-      menu.appendChild(it);
+    if (!menu.hidden) { menu.hidden = true; return; }
+    fillModelMenu(menu, (i) => {
+      urlIn.value = i.url;
+      pendingLabel = i.name;
+      loadBtn.click();
     });
-    const sep = document.createElement('div'); sep.className = 'dd-sep'; menu.appendChild(sep);
-    const loc = document.createElement('div'); loc.className = 'dd-item';
-    loc.innerHTML = `${ICONS.plus}<span class="lbl">Load local .gguf</span>`;
-    loc.onclick = (ev) => { ev.stopPropagation(); menu.hidden = true; document.getElementById('file').click(); };
-    menu.appendChild(loc);
-    menu.hidden = !menu.hidden;
+    menu.hidden = false;
   };
   document.addEventListener('click', () => { menu.hidden = true; });
 })();
