@@ -112,6 +112,15 @@
     border-radius:20px; padding:0 7px; }
   .alias { font-size:10px; color:var(--dimmer); border:1px solid var(--edge2);
     border-radius:20px; padding:0 6px; flex:none; white-space:nowrap; }
+
+  /* recommended-for-this-device marker */
+  .modelitem.rec { box-shadow:inset 2px 0 0 var(--ok); }
+  .modelitem .recdot { display:inline-flex; flex:none; color:var(--ok); }
+  .modelitem .recdot svg { width:12px; height:12px; }
+  .libcard.rec { border-color:var(--ok); }
+  .rectag { display:inline-flex; align-items:center; gap:5px; margin:6px 0 0;
+    font-size:11px; color:var(--ok); }
+  .rectag svg { width:12px; height:12px; }
   .spacer { flex:1; min-height:14px; }
 
   /* ---------- Main ---------- */
@@ -529,9 +538,12 @@ function modelItemHtml(m) {
   // Chromebook, Laptop) the sidebar used to show instead of the model name.
   // Kept alongside the real name so both are visible and searchable.
   const alias = m.alias ? `<span class="alias">${esc(m.alias)}</span>` : '';
-  return `<div class="modelitem"${preset} data-url="${esc(m.url)}" title="${esc(m.desc || m.name)}">`
+  const rec = m.url === recommendedUrl
+    ? `<span class="recdot" title="Recommended for this device">${ICONS.check}</span>` : '';
+  const cls = m.url === recommendedUrl ? ' rec' : '';
+  return `<div class="modelitem${cls}"${preset} data-url="${esc(m.url)}" title="${esc(m.desc || m.name)}">`
     + `<span class="bk">${ICONS.laptop}</span><span class="nm">${esc(m.name)}</span>`
-    + alias + `<span class="badge">${esc(m.size || '')}</span></div>`;
+    + rec + alias + `<span class="badge">${esc(m.size || '')}</span></div>`;
 }
 
 // One collapsible group per family. Groups start closed except the one holding
@@ -542,6 +554,57 @@ function familyGroupHtml(family, models, open) {
     + `<span class="nm">${esc(family)}</span><span class="count">${models.length}</span></div>`
     + `<div class="famkids${open ? ' open' : ''}">${models.map(modelItemHtml).join('')}</div>`
     + `</div>`;
+}
+
+// ---- Device-based recommendation ----
+// The browser only exposes coarse capability hints: deviceMemory is a
+// privacy-rounded bucket, and there is no CPU load, VRAM or temperature to
+// read. So this is a sizing heuristic, not a benchmark — pick the largest
+// model that should stay comfortable on this machine.
+let recommendedUrl = null;
+
+function deviceCaps() {
+  return {
+    ramGB: navigator.deviceMemory || null,
+    cores: navigator.hardwareConcurrency || null,
+    threads: !!self.crossOriginIsolated,
+  };
+}
+
+function sizeToGB(s) {
+  const m = /([\d.]+)\s*(GB|MB)/i.exec(String(s || ''));
+  if (!m) return Infinity;
+  const n = parseFloat(m[1]);
+  return /MB/i.test(m[2]) ? n / 1000 : n;
+}
+
+function recommendModel(models, caps) {
+  // wllama is a 32-bit WASM build, so model + context must fit one 4GB address
+  // space; staying near 2GB avoids allocation failures with room for context.
+  let budget = 2.0;
+  const why = [];
+  if (caps.ramGB) {
+    budget = Math.min(budget, caps.ramGB * 0.25);
+    // On a 4GB machine the OS and browser have already spent most of it, so a
+    // quarter is still too generous — hold these to the genuinely small models.
+    if (caps.ramGB <= 4) budget = Math.min(budget, 0.6);
+    why.push(`${caps.ramGB}GB RAM`);
+  } else {
+    // deviceMemory unavailable: assume modest hardware rather than guess high.
+    budget = Math.min(budget, 0.6);
+    why.push('unknown RAM');
+  }
+  if (!caps.threads) { budget *= 0.6; why.push('single-thread WASM'); }
+  else if (caps.cores) why.push(`${caps.cores} threads`);
+  if (caps.cores && caps.cores <= 2) budget = Math.min(budget, 0.5);
+
+  const pool = models.filter(m => (m.tier || 'model') === 'model');
+  if (!pool.length) return null;
+  const bySize = (a, b) => sizeToGB(a.size) - sizeToGB(b.size);
+  const fits = pool.filter(m => sizeToGB(m.size) <= budget).sort(bySize);
+  // Largest that fits; if nothing fits, the smallest available.
+  const pick = fits.length ? fits[fits.length - 1] : pool.slice().sort(bySize)[0];
+  return { model: pick, why: why.join(' · ') || 'unknown hardware', budget };
 }
 
 function groupByFamily(models) {
@@ -557,10 +620,15 @@ function groupByFamily(models) {
 function renderModelTree(models) {
   const tier = (t) => models.filter(m => (m.tier || 'model') === t);
 
+  const caps = deviceCaps();
+  const rec = recommendModel(models, caps);
+  recommendedUrl = rec ? rec.model.url : null;
+
   const byFamily = groupByFamily(tier('model'));
-  const defaultFamily = (tier('model').find(m => m.default) || {}).family;
+  // Open the family holding the recommendation, so it's visible on load.
+  const openFamily = rec ? rec.model.family : (tier('model').find(m => m.default) || {}).family;
   $('modelTree').innerHTML = [...byFamily].map(([fam, list]) =>
-    familyGroupHtml(fam, list, fam === defaultFamily)).join('')
+    familyGroupHtml(fam, list, fam === openFamily)).join('')
     || '<div class="modelnote">No models in models.json.</div>';
 
   const community = tier('community');
@@ -573,13 +641,19 @@ function renderModelTree(models) {
     ? custom.map(modelItemHtml).join('')
     : '<div class="modelnote">Your own bakes appear here.</div>';
 
-  // Select the default model (or the first one) so Load has a target.
-  const first = document.querySelector('.modelitem[data-preset="chromebook"]')
+  // Preload the recommendation into the Model box so Load is one click away.
+  const first = (recommendedUrl && document.querySelector(`.modelitem[data-url="${CSS.escape(recommendedUrl)}"]`))
+    || document.querySelector('.modelitem[data-preset="chromebook"]')
     || document.querySelector('.modelitem');
   if (first) {
     first.classList.add('active');
     urlIn.value = first.dataset.url;
     pendingLabel = first.querySelector('.nm').textContent.trim();
+  }
+  if (rec) {
+    status.innerHTML = `Recommended for this device: <b>${esc(rec.model.name)}</b> `
+      + `<span class="note">(${esc(rec.why)} — up to ~${rec.budget.toFixed(1)}GB). `
+      + `Loaded into the box above; press Load, or pick another on the left.</span>`;
   }
 }
 
@@ -631,9 +705,12 @@ function palCommands() {
     const name = el.querySelector('.nm').textContent.trim();
     const size = el.querySelector('.badge')?.textContent.trim() || '';
     const alias = el.querySelector('.alias')?.textContent.trim() || '';
-    // Alias goes in the subtitle so searching "featherweight" still finds it.
-    const bits = [alias, size ? `downloads ${size}` : ''].filter(Boolean).join(' · ');
-    cmds.push({ title: name, cat: 'Model', icon: 'download',
+    const isRec = el.classList.contains('rec');
+    // Alias goes in the subtitle so searching "featherweight" still finds it,
+    // and "recommended" is searchable the same way.
+    const bits = [isRec ? 'Recommended for this device' : '', alias,
+                  size ? `downloads ${size}` : ''].filter(Boolean).join(' · ');
+    cmds.push({ title: name, cat: isRec ? '★ Model' : 'Model', icon: 'download',
                 sub: bits ? `Load model — ${bits}` : 'Load model',
                 run: () => { el.click(); $('loadBtn').click(); } });
   });
@@ -1054,7 +1131,11 @@ stopBtn.onclick = () => { abort = true; };
     models.forEach((m) => {
       const card = document.createElement('div'); card.className = 'libcard';
       const badge = m.verified ? `<span class="verified" title="Verified — this GGUF has been checked and is safe">${ICONS.verified}</span>` : '';
+      const isRec = m.url === recommendedUrl;
+      if (isRec) card.classList.add('rec');
+      const recTag = isRec ? `<span class="rectag">${ICONS.check} Recommended for this device</span>` : '';
       card.innerHTML = `<div class="h">${ICONS.laptop}<span class="nm">${esc(m.name)}</span>${badge}<span class="sz">${esc(m.size || '')}</span></div>`
+        + recTag
         + `<div class="d">${esc(m.desc || '')}</div><button type="button" class="act">${ICONS.download}Load</button>`;
       card.querySelector('button').onclick = () => {
         urlIn.value = new URL(m.url, location.href).href;
