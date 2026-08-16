@@ -103,6 +103,16 @@
   .famkids { display:none; margin-left:13px; padding-left:5px; border-left:1px solid var(--hair); }
   .famkids.open { display:block; }
   .modelnote { padding:4px 9px 7px; font-size:11px; color:var(--dimmer); line-height:1.55; }
+
+  /* A variant is rules, not weights — it must not read as a model. */
+  .varitem { display:flex; align-items:center; gap:7px; padding:4px 8px; border-radius:6px;
+    cursor:pointer; color:var(--dim); }
+  .varitem:hover { background:rgba(255,255,255,.045); color:var(--ink); }
+  .varitem.active { background:var(--panel2); color:var(--ink); }
+  .varitem .nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .varitem .rulecount { font:10px var(--mono); color:var(--dimmer); }
+  .varitem .edit { opacity:0; color:var(--dimmer); font-size:11px; }
+  .varitem:hover .edit { opacity:1; }
   .pinned { padding-bottom:5px; margin-bottom:4px; border-bottom:1px solid var(--hair); }
 
   .modelitem { display:flex; align-items:center; gap:7px; padding:4px 8px; border-radius:6px;
@@ -424,6 +434,10 @@
     <div class="seclabel">Models</div>
     <div id="modelTree"><div class="modelnote">Loading…</div></div>
 
+    <div class="seclabel">Your variants</div>
+    <div id="variantTree"></div>
+    <div class="navlink" id="newVariantNav"><span data-ic="plus"></span>New variant</div>
+
     <div class="seclabel">Custom GGUFs</div>
     <div id="customTree"></div>
     <div class="navlink" id="loadLocalNav"><span data-ic="plus"></span>Load local .gguf</div>
@@ -575,6 +589,8 @@
 
 <script type="module">
 import { Wllama } from 'https://cdn.jsdelivr.net/npm/@wllama/wllama@2/esm/index.js';
+import { listVariants, getVariant, saveVariant, deleteVariant,
+         exportVariantsJson, importVariantsJson, STARTER_RULES } from './variants.js';
 
 // ---- inline line-icon set (Feather-style) ----
 const P = 'fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"';
@@ -905,6 +921,20 @@ function groupByFamily(models) {
   return map;
 }
 
+// Rendered separately from the model tree: variants are rules, not GGUFs, and
+// mixing them into Custom GGUFs would teach exactly the wrong thing.
+function renderVariants() {
+  const list = listVariants();
+  $('variantTree').innerHTML = list.length
+    ? list.map(v => `<div class="varitem" data-variant-id="${esc(v.id)}" `
+        + `title="${esc(v.rules.join(' · '))}">`
+        + `<span class="nm">${esc(v.name)}</span>`
+        + `<span class="rulecount">${v.rules.length} rule${v.rules.length === 1 ? '' : 's'}</span>`
+        + `<span class="edit">edit</span></div>`).join('')
+    : '<div class="modelnote">None yet — a variant is a saved set of house rules, '
+      + 'sent with every request.</div>';
+}
+
 function renderModelTree(models) {
   lastModels = models;
   const tier = (t) => models.filter(m => (m.tier || 'model') === t);
@@ -952,6 +982,8 @@ function renderModelTree(models) {
       + `<span class="note">(${esc(rec.why)} — up to ~${rec.budget.toFixed(1)}GB). `
       + `Loaded into the box above; press Load, or pick another on the left.</span>`;
   }
+
+  renderVariants();
 }
 
 // Delegated, so it keeps working when the tree is re-rendered.
