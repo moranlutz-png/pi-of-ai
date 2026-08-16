@@ -267,7 +267,11 @@
     border-radius:4px; padding:1px 5px; }
   .rt-body ol { margin:7px 0 0; padding-left:19px; }
   .rt-body li { margin:5px 0; }
-  .kbdhint { margin-left:7px; font:10.5px var(--mono); opacity:.55; }
+  /* Keycap badge rather than dim inline text — reads as keys you press. */
+  .kbdhint { display:inline-flex; align-items:center; gap:7px; margin-left:10px;
+    padding:3px 8px; border-radius:7px; background:rgba(0,0,0,.30);
+    border:1px solid rgba(255,255,255,.15); font:13px/1 var(--mono); }
+  .kbdhint span { opacity:.9; }
   .rt-why { margin-top:12px; padding:11px 13px; background:var(--panel);
     border:1px solid var(--edge); border-radius:9px; font-size:12px; line-height:1.6; }
   .rt-why b { color:var(--ink); }
@@ -1685,7 +1689,8 @@ stopBtn.onclick = () => { abort = true; };
 
 // ---- Cmd/Ctrl + Enter to generate ----
 const IS_MAC = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '');
-$('runKbd').textContent = IS_MAC ? '⌘↵' : 'Ctrl+↵';
+// Two elements, not one string, so the glyphs get real spacing between them.
+$('runKbd').innerHTML = IS_MAC ? '<span>⌘</span><span>↵</span>' : '<span>Ctrl</span><span>↵</span>';
 
 window.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey)) return;
