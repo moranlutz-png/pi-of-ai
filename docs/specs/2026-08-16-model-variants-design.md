@@ -19,6 +19,32 @@ notebook — is deliberately out of scope and specified separately. Rung 1 is
 designed so its output feeds Rung 2 unchanged: the rules a student writes here
 become the teacher instruction there.
 
+### Constraint carried forward to Rung 2: the lesson is one hour
+
+Students get a single one-hour lesson. The Rung 2 sketch — teacher-generated
+dataset, LoRA train, merge, build `llama.cpp`, quantise, download ~0.4–1.7GB,
+re-upload to the browser — does not fit inside that, and a dropped Colab
+session means starting over with no time left. Idle waiting is the expensive
+resource, not compute.
+
+This is not a Rung 1 problem, but recording it here because it probably
+invalidates the obvious Rung 2 design. Directions worth testing when Rung 2 is
+specified:
+
+- **Ship the adapter, not a merged model.** A rank-32 LoRA on a 0.5B base is
+  tens of megabytes rather than hundreds. Removes most of the download and the
+  merge step. Needs checking against what wllama can load — Ollama supports
+  adapters directly, wllama may not.
+- **Skip the quantise step.** Converting to F16 GGUF is pure Python; only
+  quantising to Q4 needs a compiled `llama.cpp` binary. Dropping the compile
+  removes the slowest and most fragile install, at the cost of a larger file.
+- **Bake the smallest model, not the best one.** SmolLM2 135M trains in a
+  fraction of the time and produces a file small enough to move over school
+  wifi. A worse model that finishes inside the lesson teaches more than a better
+  one that doesn't.
+- **Start the job first, teach during the wait.** If the bake is kicked off in
+  the first ten minutes, the waiting is lesson time rather than dead time.
+
 ### Explicitly not building
 
 - Sharing variants by URL or short code
