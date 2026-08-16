@@ -343,9 +343,6 @@
     <div class="seclabel">Models</div>
     <div id="modelTree"><div class="modelnote">Loading…</div></div>
 
-    <div class="seclabel">Community GGUFs</div>
-    <div id="communityTree"></div>
-
     <div class="seclabel">Custom GGUFs</div>
     <div id="customTree"></div>
     <div class="navlink" id="loadLocalNav"><span data-ic="plus"></span>Load local .gguf</div>
@@ -752,8 +749,10 @@ function renderModelTree(models) {
   deviceBudget = rec ? rec.budget : null;
 
   // Pinned models are lifted out of their family into a group of their own.
+  // "community" entries sit in the family tree alongside the rest — there is no
+  // separate section for them, so this keeps them from being silently dropped.
   const pins = pinnedUrls();
-  const all = tier('model');
+  const all = models.filter(m => ['model', 'community'].includes(m.tier || 'model'));
   const pinnedList = all.filter(m => pins.includes(m.url));
   const byFamily = groupByFamily(all.filter(m => !pins.includes(m.url)));
 
@@ -763,11 +762,6 @@ function renderModelTree(models) {
   $('modelTree').innerHTML = pinnedHtml + ([...byFamily].map(([fam, list]) =>
     familyGroupHtml(fam, list, fam === openFamily && !pinnedList.some(p => p.url === recommendedUrl))).join('')
     || (pinnedHtml ? '' : '<div class="modelnote">No models in models.json.</div>'));
-
-  const community = tier('community');
-  $('communityTree').innerHTML = community.length
-    ? [...groupByFamily(community)].map(([fam, list]) => familyGroupHtml(fam, list, false)).join('')
-    : '<div class="modelnote">None yet — paste any GGUF URL into the Model box to run one.</div>';
 
   const custom = tier('custom');
   $('customTree').innerHTML = custom.length
@@ -797,7 +791,7 @@ document.querySelector('.sidebar').addEventListener('click', (e) => {
     // Accordion: opening one family closes the others in the same section, so
     // the sidebar never grows into a long scroll. Clicking an open one closes it.
     const opening = !fam.classList.contains('open');
-    const scope = fam.closest('#modelTree, #communityTree, #customTree') || document;
+    const scope = fam.closest('#modelTree, #customTree') || document;
     scope.querySelectorAll('.famrow.open').forEach(r => {
       r.classList.remove('open');
       r.nextElementSibling?.classList.remove('open');
