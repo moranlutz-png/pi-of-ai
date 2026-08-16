@@ -269,19 +269,21 @@
   textarea { resize:vertical; min-height:58px; }
 
   .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-  button { background:#ececec; color:#1a1a1a; border:0; border-radius:7px; padding:6px 12px;
+  /* Tighter padding only — text size, icon size and gaps are unchanged, so the
+     box shrinks around the same contents. */
+  button { background:#ececec; color:#1a1a1a; border:0; border-radius:6px; padding:3px 9px;
     font:inherit; font-size:13px; font-weight:600; cursor:pointer; }
   button:hover { background:#fff; }
   button:disabled { opacity:.35; cursor:not-allowed; }
   button.ghost { background:transparent; border:1px solid var(--edge2); color:var(--ink); }
   .act { display:inline-flex; align-items:center; gap:7px; background:var(--panel2); color:var(--ink);
-    border:1px solid var(--edge2); border-radius:7px; padding:6px 12px; font-weight:600; }
+    border:1px solid var(--edge2); border-radius:6px; padding:3px 9px; font-weight:600; }
   .act:hover:not(:disabled) { background:#43434b; }
   .act svg { width:15px; height:15px; opacity:.9; }
   .split { position:relative; display:inline-flex; }
   .split .act { border-radius:0; }
-  .split-main { border-radius:7px 0 0 7px; border-right:0; }
-  .split-dd { border-radius:0 7px 7px 0; padding:6px 8px; }
+  .split-main { border-radius:6px 0 0 6px; border-right:0; }
+  .split-dd { border-radius:0 6px 6px 0; padding:3px 6px; }
   .split-dd svg { width:13px; height:13px; }
   .split .dd-menu { min-width:206px; }
   button.ghost:hover { background:var(--panel2); }
