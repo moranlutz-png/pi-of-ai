@@ -115,6 +115,13 @@
   .varitem:hover .edit { opacity:1; }
   .pinned { padding-bottom:5px; margin-bottom:4px; border-bottom:1px solid var(--hair); }
 
+  .varlabel { display:block; margin:11px 0 4px; font-size:11px; letter-spacing:.05em;
+    text-transform:uppercase; color:var(--dimmer); }
+  .varselect { background:var(--panel); color:var(--ink); border:1px solid var(--edge2);
+    border-radius:7px; padding:5px 9px; font:inherit; font-size:12.5px; }
+  .varrow { display:flex; gap:16px; }
+  #varModal textarea { width:100%; }
+
   .modelitem { display:flex; align-items:center; gap:7px; padding:4px 8px; border-radius:6px;
     color:var(--dim); cursor:pointer; font-size:12.5px; font-weight:500; }
   .modelitem:hover { background:rgba(255,255,255,.045); color:var(--ink); }
@@ -521,6 +528,53 @@
         <div class="lib" id="libGrid"><div class="note">Loading…</div></div>
       </div>
       <div id="libDetail" hidden></div>
+    </div>
+  </div>
+
+  <!-- ============ VARIANT EDITOR (small popup) ============ -->
+  <div id="varModal" class="modal" hidden>
+    <div class="modal-panel small">
+      <button class="modal-close" id="varClose" title="Close">&times;</button>
+      <h2 class="modal-title" id="varTitle">New variant</h2>
+      <div class="rt-body">
+        <label class="varlabel" for="varName">Name</label>
+        <input type="text" id="varName" class="url" placeholder="e.g. Strict typing" />
+
+        <label class="varlabel" for="varRules">House rules — one per line</label>
+        <textarea id="varRules" rows="6"></textarea>
+        <div class="dnote" id="varRuleNote"></div>
+
+        <label class="varlabel" for="varBase">Base model</label>
+        <select id="varBase" class="varselect"></select>
+
+        <div class="varrow">
+          <span><label class="varlabel" for="varTemp">Temperature</label>
+            <select id="varTemp" class="varselect">
+              <option value="0.1">0.1</option><option value="0.2" selected>0.2</option>
+              <option value="0.5">0.5</option><option value="0.8">0.8</option>
+            </select></span>
+          <span><label class="varlabel" for="varTokens">Max tokens</label>
+            <select id="varTokens" class="varselect">
+              <option value="128">128</option><option value="256" selected>256</option>
+              <option value="512">512</option>
+            </select></span>
+        </div>
+
+        <div class="dnote" style="margin-top:10px">These rules are sent with every request, so
+          they take up room in the context window. Baking them into the weights instead is what
+          <b>Bake</b> will do.</div>
+      </div>
+      <div class="dactions">
+        <button type="button" class="act" id="varSave">Save variant</button>
+        <button type="button" class="ghost" id="varBake" disabled
+          title="Rung 2 — not built yet">Bake into weights</button>
+        <button type="button" class="ghost" id="varDelete" hidden>Delete</button>
+      </div>
+      <div class="dactions" style="margin-top:8px">
+        <button type="button" class="backbtn" id="varExport">Export all</button>
+        <button type="button" class="backbtn" id="varImport">Import…</button>
+        <input type="file" id="varImportFile" accept=".json,application/json" hidden />
+      </div>
     </div>
   </div>
 
@@ -973,6 +1027,87 @@ document.querySelector('.sidebar').addEventListener('click', (e) => {
   if (e.target.closest('.edit')) openVariantEditor(row.dataset.variantId);
   else applyVariant(row.dataset.variantId);
 });
+
+const varModal = $('varModal');
+let editingId = null;
+
+function populateBasePicker(selected) {
+  const opts = [...document.querySelectorAll('.modelitem')].map(el =>
+    `<option value="${esc(el.dataset.url)}"${el.dataset.url === selected ? ' selected' : ''}>`
+    + `${esc(el.querySelector('.nm').textContent.trim())}</option>`).join('');
+  $('varBase').innerHTML = opts || '<option value="">No models available</option>';
+}
+
+function updateRuleNote() {
+  const rules = $('varRules').value.split('\n').map(r => r.trim()).filter(Boolean);
+  // Rough: ~4 characters per token. Enough to warn, not precise enough to quote.
+  const approxTokens = Math.round($('varRules').value.length / 4);
+  $('varRuleNote').textContent = `${rules.length} rule${rules.length === 1 ? '' : 's'} · `
+    + `roughly ${approxTokens} tokens of the 4096-token window, on every request.`;
+}
+
+function openVariantEditor(id) {
+  editingId = id || null;
+  const v = id ? getVariant(id) : null;
+  $('varTitle').textContent = v ? 'Edit variant' : 'New variant';
+  $('varName').value = v ? v.name : '';
+  $('varRules').value = (v ? v.rules : STARTER_RULES).join('\n');
+  populateBasePicker(v ? v.baseModelUrl : (document.querySelector('.modelitem.active') || {}).dataset?.url);
+  $('varTemp').value = String(v ? v.temp : 0.2);
+  $('varTokens').value = String(v ? v.maxTokens : 256);
+  $('varDelete').hidden = !v;
+  updateRuleNote();
+  varModal.hidden = false;
+  $('varName').focus();
+}
+
+$('varRules').addEventListener('input', updateRuleNote);
+$('newVariantNav').onclick = () => openVariantEditor(null);
+$('varClose').onclick = () => { varModal.hidden = true; };
+varModal.addEventListener('click', (e) => { if (e.target === varModal) varModal.hidden = true; });
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !varModal.hidden) varModal.hidden = true;
+});
+
+$('varSave').onclick = () => {
+  saveVariant({
+    id: editingId,
+    name: $('varName').value,
+    rules: $('varRules').value.split('\n'),
+    baseModelUrl: $('varBase').value,
+    temp: parseFloat($('varTemp').value),
+    maxTokens: parseInt($('varTokens').value, 10),
+  });
+  varModal.hidden = true;
+  renderVariants();
+};
+
+$('varDelete').onclick = () => {
+  if (editingId) deleteVariant(editingId);
+  varModal.hidden = true;
+  renderVariants();
+};
+
+$('varExport').onclick = () => {
+  const blob = new Blob([exportVariantsJson()], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'pi-of-ai-variants.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+};
+
+$('varImport').onclick = () => $('varImportFile').click();
+$('varImportFile').onchange = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const res = importVariantsJson(await file.text());
+  renderVariants();
+  $('varRuleNote').textContent = res.error
+    ? `Import failed: ${res.error}`
+    : `Imported ${res.added} variant${res.added === 1 ? '' : 's'}.`;
+  e.target.value = '';
+};
 
 function renderModelTree(models) {
   lastModels = models;
