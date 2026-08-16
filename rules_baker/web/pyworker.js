@@ -72,16 +72,40 @@ def _check(src):
 json.dumps(_check(SRC))
 `;
 
+// Pyodide ships a minimal stdlib; sqlite3, ssl, decimal and friends are
+// separate packages that must be fetched before the import works. Without this
+// a perfectly correct `import sqlite3` fails with ModuleNotFoundError, and the
+// auto-fix loop then burns every attempt on a problem the model cannot fix.
+//
+// Downloads happen once, then come from the browser cache. A 'progress' message
+// tells the page a fetch is underway so its timeout does not count network time
+// against the code's execution budget.
+async function loadImports(op, code) {
+  const before = Object.keys(py.loadedPackages || {});
+  try {
+    self.postMessage({ type: 'progress', op, phase: 'packages' });
+    await py.loadPackagesFromImports(code, { messageCallback: () => {}, errorCallback: () => {} });
+  } catch (err) {
+    // An unknown import is not fatal — let the code run and report the real
+    // error, which is more useful than a loader failure.
+    console.warn('[sandbox] package load:', err && err.message || err);
+  }
+  const after = Object.keys(py.loadedPackages || {});
+  return after.filter((p) => !before.includes(p));
+}
+
 self.onmessage = async (e) => {
   const { op, code } = e.data;
   if (!py) { self.postMessage({ type: 'result', op, err: 'sandbox not ready' }); return; }
 
   if (op === 'check') {
     try {
+      const loaded = await loadImports(op, code);
       py.globals.set('SRC', code);
       const res = await py.runPythonAsync(CHECK_PY);
       let rep;
       try { rep = JSON.parse(res); } catch (_) { rep = { err: 'analyzer parse failed' }; }
+      if (loaded.length) rep.packages = loaded;
       self.postMessage({ type: 'result', op: 'check', rep });
     } catch (err) {
       self.postMessage({ type: 'result', op: 'check', rep: { err: String(err && err.message || err) } });
@@ -93,6 +117,7 @@ self.onmessage = async (e) => {
   let out = '';
   const cap = { batched: (s) => { out += s + '\n'; } };
   try {
+    await loadImports(op, code);
     py.setStdout(cap); py.setStderr(cap);
     await py.runPythonAsync(code);
     self.postMessage({ type: 'result', op: 'run', ok: true, out, err: '' });

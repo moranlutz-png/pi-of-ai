@@ -770,10 +770,18 @@ function ensurePy() {
 async function sandboxCall(op, code, timeoutMs = 8000) {
   try { await ensurePy(); } catch (e) { return { err: 'sandbox load failed: ' + (e.message || e) }; }
   return new Promise((resolve) => {
-    let done = false;
-    const to = setTimeout(() => { if (done) return; done = true; try { pyWorker.terminate(); } catch(_) {} pyWorker = null; pyReady = null;
-      resolve({ err: `timed out (>${timeoutMs/1000}s) — possible infinite loop`, timeout: true }); }, timeoutMs);
-    function onMsg(e) { if (e.data?.type !== 'result' || done) return; done = true; clearTimeout(to); pyWorker.removeEventListener('message', onMsg); resolve(e.data); }
+    let done = false, to = null, limit = timeoutMs;
+    const fire = () => { if (done) return; done = true; try { pyWorker.terminate(); } catch(_) {} pyWorker = null; pyReady = null;
+      resolve({ err: `timed out (>${limit/1000}s) — possible infinite loop`, timeout: true }); };
+    const arm = (ms) => { limit = ms; clearTimeout(to); to = setTimeout(fire, ms); };
+    arm(timeoutMs);
+    function onMsg(e) {
+      if (done) return;
+      // The worker is fetching a Pyodide package (first `import sqlite3` etc).
+      // Network time must not count against the code's execution budget.
+      if (e.data?.type === 'progress') { arm(Math.max(timeoutMs, 30000)); return; }
+      if (e.data?.type !== 'result') return;
+      done = true; clearTimeout(to); pyWorker.removeEventListener('message', onMsg); resolve(e.data); }
     pyWorker.addEventListener('message', onMsg);
     pyWorker.postMessage({ op, code });
   });
@@ -783,7 +791,17 @@ async function checkPython(code, t = 8000) { const r = await sandboxCall('check'
 window.__runPython = runPython;   // exposed for testing
 window.__checkPython = checkPython;
 
-function extractCode(text) { const m = /```(?:python)?\n([\s\S]*?)```/.exec(text); return (m ? m[1] : text).trim(); }
+function extractCode(text) {
+  const closed = /```(?:[\w+.-]*)\n([\s\S]*?)```/.exec(text);
+  if (closed) return closed[1].trim();
+  // Output cut off at the token limit: the fence opened but never closed. Take
+  // everything after it rather than falling back to the whole reply — prose and
+  // fence markers included, which is never valid Python and sends the auto-fix
+  // loop chasing a syntax error that isn't in the code.
+  const open = /```(?:[\w+.-]*)\n/.exec(text);
+  if (open) return text.slice(open.index + open[0].length).trim();
+  return text.trim();
+}
 
 // stream one completion; call onText(currentText) each token if you want it shown live
 async function complete(messages, nPredict, onText) {
@@ -835,6 +853,10 @@ async function handleGenerate() {
     const problem = blockProblem(await checkPython(extractCode(finalText), 8000));
     if (!problem) { logExec('✓ first block checks out.'); break; }
     logExec('✗ ' + problem);
+    if (isEnvProblem(problem)) {
+      logExec('  ↳ the sandbox lacks that module — not a code error, so not retrying.');
+      break;
+    }
     if (attempt < MAX) {
       messages.push({ role: 'assistant', content: finalText });
       messages.push({ role: 'user', content: `Your code has this problem: ${problem}. Fix it so it is valid Python that runs in an offline sandbox (no OS, network, or database). Return only the corrected code in one \`\`\`python block.` });
@@ -845,6 +867,11 @@ async function handleGenerate() {
   // 3) reveal the FINAL code — every block checked and annotated
   await renderFinal(intro, finalText);
 }
+
+// A missing module is a limitation of the browser sandbox, not a mistake by the
+// model — `import sqlite3` is correct Python. Regenerating cannot fix it, so
+// these must not consume auto-fix attempts.
+const isEnvProblem = (p) => /ModuleNotFoundError|ImportError/.test(p || '');
 
 function blockProblem(rep) {
   if (!rep || rep.timeout) return rep && rep.err ? rep.err : 'no sandbox result';
@@ -863,6 +890,10 @@ function noteHtml(rep) {
     return `<div class="sandnote bad">⚠ uses names not defined here: <b>${esc(rep.undefined.join(', '))}</b> — this snippet needs them to exist (e.g. a real database connection or class)</div>`;
   }
   if (rep.syntax_error) return `<div class="sandnote bad">⚠ syntax error: ${esc(rep.syntax_error)}</div>`;
+  if (isEnvProblem(rep.err)) {
+    return `<div class="sandnote bad">⚠ ${esc(rep.err)} — the in-browser sandbox doesn't have that module, `
+      + `so this block couldn't be test-run here. The code itself may be correct.</div>`;
+  }
   if (rep.timeout) return `<div class="sandnote bad">⚠ ${esc(rep.err)}</div>`;
   return `<div class="sandnote bad">⚠ ${esc(rep.err || 'did not run')}</div>`;
 }
