@@ -31,10 +31,13 @@ This is not a Rung 1 problem, but recording it here because it probably
 invalidates the obvious Rung 2 design. Directions worth testing when Rung 2 is
 specified:
 
-- **Ship the adapter, not a merged model.** A rank-32 LoRA on a 0.5B base is
-  tens of megabytes rather than hundreds. Removes most of the download and the
-  merge step. Needs checking against what wllama can load — Ollama supports
-  adapters directly, wllama may not.
+- ~~**Ship the adapter, not a merged model.**~~ **RULED OUT for the browser
+  (checked 2026-08-16).** wllama's type definitions contain no `lora` or
+  `adapter` surface at all — `LoadModelConfig` exposes little beyond `n_ctx` —
+  so the browser runtime can only load a full merged GGUF. Adapters remain
+  viable for the optional Ollama runtime, which supports them natively, so this
+  is a fast path for capable machines but not for the Chromebook target. The
+  hour has to be won on the remaining three levers.
 - **Skip the quantise step.** Converting to F16 GGUF is pure Python; only
   quantising to Q4 needs a compiled `llama.cpp` binary. Dropping the compile
   removes the slowest and most fragile install, at the cost of a larger file.
