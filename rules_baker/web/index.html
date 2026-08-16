@@ -1574,7 +1574,12 @@ function segments(text) {
 
 async function renderFinal(intro, text) {
   setBusy('Checking each block…');
-  let html = `<div class="intro">${esc(intro)}</div>`;
+  // The intro is written before the answer exists, so it can't know whether one
+  // is warranted. It earns its place while a long code generation streams; on a
+  // plain reply it just prepends "I will respond to your greeting." to "Hi!".
+  // Keep it live during generation, then drop it if no code arrived.
+  const hasCode = /```/.test(text);
+  let html = hasCode ? `<div class="intro">${esc(intro)}</div>` : '';
   for (const s of segments(text)) {
     if (s.type === 'prose') { html += `<div class="prose">${esc(s.text)}</div>`; continue; }
     const rep = abort ? { err: 'stopped' } : await checkPython(s.code, 8000);
