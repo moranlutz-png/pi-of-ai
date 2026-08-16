@@ -215,6 +215,25 @@
   .dv code.wrap { word-break:break-all; }
   .dnote { margin-top:3px; font-size:11.5px; color:var(--dimmer); line-height:1.5; }
   .dnote-inline { font:11px var(--mono); color:var(--dimmer); }
+
+  /* runtime switch: in-browser WASM vs a local Ollama */
+  .runtime { margin-top:14px; padding-top:13px; border-top:1px solid var(--hair); }
+  .rt-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .rt-label { font-size:10.5px; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--dimmer); margin-right:3px; }
+  .rt-pill { background:var(--panel); border:1px solid var(--edge2); color:var(--dim);
+    border-radius:20px; padding:4px 13px; font:inherit; font-size:12px; cursor:pointer; }
+  .rt-pill:hover { color:var(--ink); }
+  .rt-pill.active { background:var(--panel2); color:var(--ink); border-color:var(--dim); }
+  .rt-status { font-size:11.5px; color:var(--dimmer); }
+  .rt-body { margin-top:11px; font-size:12.5px; color:var(--dim); line-height:1.65; }
+  .rt-body code { font:11.5px var(--mono); background:rgba(255,255,255,.06);
+    border-radius:4px; padding:1px 5px; }
+  .rt-body ol { margin:7px 0 0; padding-left:19px; }
+  .rt-body li { margin:5px 0; }
+  .rt-models { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:9px; }
+  .rt-models select { background:var(--panel); color:var(--ink); border:1px solid var(--edge2);
+    border-radius:7px; padding:5px 9px; font:inherit; font-size:12.5px; }
   .dactions { display:flex; flex-wrap:wrap; gap:9px; margin-top:16px; }
 
   .libcard button { align-self:flex-start; }
@@ -393,6 +412,17 @@
         <div class="bar" style="flex:1; margin-top:0"><i id="prog"></i></div>
       </div>
       <div id="status">Idle · pick a model and press Load.</div>
+
+      <!-- Runtime choice: WASM in this tab, or a local Ollama for real speed -->
+      <div class="runtime">
+        <div class="rt-row">
+          <span class="rt-label">Runtime</span>
+          <button type="button" class="rt-pill active" data-rt="wasm">In-browser</button>
+          <button type="button" class="rt-pill" data-rt="ollama">Ollama (local)</button>
+          <span class="rt-status" id="rtStatus"></span>
+        </div>
+        <div class="rt-body" id="rtBody" hidden></div>
+      </div>
     </div>
 
     <div class="sec" id="playground">
@@ -406,7 +436,9 @@
       <div id="sysWrap" hidden><textarea id="sys" style="margin-top:6px">You are a helpful senior Python engineer. Write clean, production-ready code.</textarea></div>
       <label>Your request</label>
       <textarea id="prompt" placeholder="Describe what you want the model to write…"></textarea>
-      <div class="row" style="margin-top:12px"><button id="runBtn" class="act" disabled><span data-ic="zap"></span>Generate</button><button id="stopBtn" class="ghost" disabled>Stop</button></div>
+      <!-- Generate stays enabled with no model loaded, so the click can explain
+           what to do instead of appearing to do nothing. -->
+      <div class="row" style="margin-top:12px"><button id="runBtn" class="act"><span data-ic="zap"></span>Generate</button><button id="stopBtn" class="ghost" disabled>Stop</button></div>
       <label class="chk"><input type="checkbox" id="selffix" checked /> Auto-fix on errors (up to 3×) <span class="note">(code is always sandbox-tested before it's shown)</span></label>
       <div id="output">(model output appears here, streaming token by token)</div>
       <div class="statline" id="runStats"></div>
@@ -1281,8 +1313,89 @@ function extractCode(text) {
   return text.trim();
 }
 
+// ---- Runtime: in-browser WASM, or a local Ollama ----
+// Ollama does NOT move the work off this machine — it runs the same model on the
+// same hardware, but natively and on the GPU, so it is far faster than WASM and
+// isn't capped by the 32-bit 4GB address space. It's opt-in: a locked-down
+// Chromebook can't install it, which is exactly why the WASM path is the default.
+const OLLAMA_URL = 'http://localhost:11434';
+let activeRuntime = 'wasm';
+let ollamaModel = null;
+
+function runtimeReady() {
+  return activeRuntime === 'ollama' ? !!ollamaModel : !!wllama;
+}
+
+async function ollamaDetect(timeoutMs = 2500) {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const res = await fetch(`${OLLAMA_URL}/api/tags`, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!res.ok) return { ok: false, reason: `Ollama answered HTTP ${res.status}` };
+    const data = await res.json();
+    return { ok: true, models: (data.models || []).map(m => m.name).filter(Boolean) };
+  } catch (e) {
+    // A CORS rejection and a stopped server both land here — the browser
+    // deliberately doesn't distinguish them, so the setup notes cover both.
+    return { ok: false, reason: e.name === 'AbortError' ? 'no response' : 'not reachable' };
+  }
+}
+
+// Ollama speaks the OpenAI streaming format on /v1, the same endpoint the
+// data_gen and eval scripts already use.
+async function ollamaComplete(messages, maxTokens, onText) {
+  const t0 = performance.now();
+  let nTok = 0, full = '';
+  const res = await fetch(`${OLLAMA_URL}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: ollamaModel,
+      messages,
+      stream: true,
+      temperature: parseFloat($('temp').value),
+      max_tokens: maxTokens,
+    }),
+  });
+  if (!res.ok) throw new Error(`Ollama returned HTTP ${res.status} — is the model still installed?`);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();                       // keep any partial line
+    for (const line of lines) {
+      const s = line.trim();
+      if (!s.startsWith('data:')) continue;
+      const payload = s.slice(5).trim();
+      if (payload === '[DONE]') continue;
+      let json;
+      try { json = JSON.parse(payload); } catch (_) { continue; }
+      const piece = json.choices?.[0]?.delta?.content || '';
+      if (!piece) continue;
+      full += piece; nTok++;
+      if (onText) onText(full);
+      const secs = (performance.now() - t0) / 1000;
+      $('runStats').textContent = `${nTok} tokens · ${secs.toFixed(1)}s · `
+        + `${(nTok / secs).toFixed(1)} tok/s · ${modelLabel || '—'} · working…`;
+      if (abort) { try { await reader.cancel(); } catch (_) {} return full; }
+    }
+  }
+  return full;
+}
+
 // stream one completion; call onText(currentText) each token if you want it shown live
 async function complete(messages, nPredict, onText) {
+  if (activeRuntime === 'ollama') return ollamaComplete(messages, nPredict, onText);
+  return wasmComplete(messages, nPredict, onText);
+}
+
+async function wasmComplete(messages, nPredict, onText) {
   const t0 = performance.now(); let nTok = 0, full = '';
   await wllama.createChatCompletion(messages, {
     nPredict,
@@ -1406,7 +1519,19 @@ async function renderFinal(intro, text) {
 }
 
 runBtn.onclick = async () => {
-  if (!wllama) return;
+  // Used to `return` silently, so pressing Generate with nothing loaded looked
+  // like the app had ignored the click.
+  if (!runtimeReady()) {
+    output.innerHTML = `<div class="sandnote bad">No model loaded yet. `
+      + (activeRuntime === 'ollama'
+          ? `Pick one from the Ollama list above.`
+          : `Choose one on the left and press <b>Load model</b> — the recommended one for this `
+            + `device is already filled in, so Load is one click. First load downloads the weights; `
+            + `after that it's cached and offline.`)
+      + `</div>`;
+    $('model').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
   if (!$('prompt').value.trim()) {
     output.textContent = '⤷ Type a request above first. With an empty prompt the model has nothing to answer, so it just free-associates (that\'s the coffee rambling you saw).';
     return;
@@ -1432,6 +1557,78 @@ runBtn.onclick = async () => {
   runBtn.disabled = false; stopBtn.disabled = true;
 };
 stopBtn.onclick = () => { abort = true; };
+
+// ---- Runtime switch UI ----
+const rtStatus = $('rtStatus'), rtBody = $('rtBody');
+
+function rtSetupHtml(reason) {
+  return `Not detected (${esc(reason)}). Ollama runs the model natively on this machine — `
+    + `far faster than WebAssembly, and not limited to ~2GB models.`
+    + `<ol>`
+    + `<li>Install it from <a href="https://ollama.com/download" target="_blank" rel="noopener">ollama.com/download</a>.</li>`
+    + `<li>Pull a model, e.g. <code>ollama pull qwen2.5-coder:1.5b</code></li>`
+    + `<li>Allow this page to talk to it, then start the server:<br>`
+    + `<code>OLLAMA_ORIGINS="${esc(location.origin)}" ollama serve</code></li>`
+    + `<li>Press <b>Ollama (local)</b> again to re-check.</li>`
+    + `</ol>`
+    + `<div class="dnote" style="margin-top:9px">Step 3 is required: Ollama refuses browser requests `
+    + `from unknown origins by default. This also needs the page served over http from this machine — `
+    + `a browser won't let an https site reach localhost.</div>`;
+}
+
+function rtSelectModel(name) {
+  ollamaModel = name;
+  modelLabel = name;
+  if (window.__setModelBtn) window.__setModelBtn(name);
+  runBtn.disabled = false;
+  status.innerHTML = `<span style="color:var(--ok)">✓ Using <b>${esc(name)}</b> via Ollama — `
+    + `native speed, nothing downloaded by the browser.</span>`;
+}
+
+async function rtUseOllama() {
+  rtStatus.textContent = 'checking…';
+  rtBody.hidden = false;
+  rtBody.textContent = '';
+  const found = await ollamaDetect();
+  if (!found.ok) {
+    rtStatus.textContent = '';
+    rtBody.innerHTML = rtSetupHtml(found.reason);
+    rtSetRuntime('wasm');           // stay on the working runtime
+    return;
+  }
+  if (!found.models.length) {
+    rtStatus.textContent = 'running, no models';
+    rtBody.innerHTML = `Ollama is running but has no models installed. Pull one, e.g. `
+      + `<code>ollama pull qwen2.5-coder:1.5b</code>, then re-check.`;
+    rtSetRuntime('wasm');
+    return;
+  }
+  rtStatus.textContent = `connected · ${found.models.length} model${found.models.length > 1 ? 's' : ''}`;
+  rtBody.innerHTML = `<div class="rt-models"><label for="rtModel">Model</label>`
+    + `<select id="rtModel">${found.models.map(n => `<option>${esc(n)}</option>`).join('')}</select></div>`
+    + `<div class="dnote" style="margin-top:8px">Runs on your machine via Ollama — native code and GPU, `
+    + `so no download here and no 4GB WASM ceiling.</div>`;
+  $('rtModel').onchange = (e) => rtSelectModel(e.target.value);
+  rtSelectModel(found.models[0]);
+}
+
+function rtSetRuntime(which) {
+  activeRuntime = which;
+  document.querySelectorAll('.rt-pill').forEach(p =>
+    p.classList.toggle('active', p.dataset.rt === which));
+  if (which === 'wasm') {
+    ollamaModel = null;
+    runBtn.disabled = !wllama;
+    if (wllama && window.__setModelBtn) window.__setModelBtn(modelLabel || 'model');
+  }
+}
+
+document.querySelectorAll('.rt-pill').forEach(pill => {
+  pill.onclick = () => {
+    if (pill.dataset.rt === 'ollama') { rtSetRuntime('ollama'); rtUseOllama(); }
+    else { rtSetRuntime('wasm'); rtStatus.textContent = ''; rtBody.hidden = true; }
+  };
+});
 // Model library — data-driven from models.json (the community-catalog seed)
 (async function library() {
   const grid = document.getElementById('libGrid');
