@@ -107,7 +107,11 @@
   .modelitem.active { background:var(--panel2); color:var(--ink); }
   .modelitem .cr { width:11px; height:11px; opacity:.5; flex-shrink:0; }
   .modelitem .bk { width:14px; height:14px; opacity:.7; flex-shrink:0; }
-  .modelitem .nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .modelitem { align-items:flex-start; }
+  .modelitem .bk { margin-top:2px; }
+  .mi-tx { flex:1; min-width:0; display:flex; flex-direction:column; align-items:flex-start; gap:3px; }
+  .modelitem .nm { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .modelitem .badge { margin-top:1px; }
   .badge { font:10.5px var(--mono); color:var(--dim); background:rgba(255,255,255,.06);
     border-radius:20px; padding:0 7px; }
   .alias { font-size:10px; color:var(--dimmer); border:1px solid var(--edge2);
@@ -587,9 +591,12 @@ function modelItemHtml(m) {
     ? `<span class="recdot" title="Recommended for this device">${ICONS.check}</span>`
     : strain ? `<span class="straindot ${strain.level}" title="${esc(strain.text)} — ${esc(strain.note)}">!</span>` : '';
   const cls = (m.url === recommendedUrl ? ' rec' : '') + (strain ? ` ${strain.level}` : '');
+  // Name on its own line, alias beneath it — with both on one row the name was
+  // squeezed to "Q..." by the chips next to it.
   return `<div class="modelitem${cls}"${preset} data-url="${esc(m.url)}" title="${esc(m.desc || m.name)}">`
-    + `<span class="bk">${ICONS.laptop}</span><span class="nm">${esc(m.name)}</span>`
-    + rec + alias + `<span class="badge">${esc(m.size || '')}</span></div>`;
+    + `<span class="bk">${ICONS.laptop}</span>`
+    + `<span class="mi-tx"><span class="nm">${esc(m.name)}</span>${alias}</span>`
+    + rec + `<span class="badge">${esc(m.size || '')}</span></div>`;
 }
 
 // One collapsible group per family. Groups start closed except the one holding
