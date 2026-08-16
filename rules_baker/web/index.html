@@ -1261,6 +1261,9 @@ function makeDropdown(sel, iconKey) {
   };
   document.addEventListener('click', () => { menu.hidden = true; });
   render();
+  // Keep the pill in step when the value is set in code — applying a variant
+  // does exactly that, and a stale label would misreport what is being sent.
+  sel.addEventListener('change', render);
 }
 makeDropdown(document.getElementById('temp'), 'thermometer');
 makeDropdown(document.getElementById('maxtok'), 'hash');
