@@ -88,6 +88,19 @@
 
   .seclabel { font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--dimmer);
     padding:36px 8px 3px; font-weight:660; }
+  /* collapsible family groups in the sidebar model tree */
+  .famrow { display:flex; align-items:center; gap:7px; padding:4px 8px; border-radius:6px;
+    cursor:pointer; color:var(--dim); user-select:none; }
+  .famrow:hover { background:rgba(255,255,255,.045); color:var(--ink); }
+  .famrow .cr { width:11px; height:11px; opacity:.55; flex-shrink:0;
+    display:inline-flex; transition:transform .14s ease; }
+  .famrow.open .cr { transform:rotate(90deg); }
+  .famrow .nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .famrow .count { font-size:10.5px; color:var(--dimmer); }
+  .famkids { display:none; margin-left:13px; padding-left:5px; border-left:1px solid var(--hair); }
+  .famkids.open { display:block; }
+  .modelnote { padding:4px 9px 7px; font-size:11px; color:var(--dimmer); line-height:1.55; }
+
   .modelitem { display:flex; align-items:center; gap:7px; padding:4px 8px; border-radius:6px;
     color:var(--dim); cursor:pointer; font-size:12.5px; font-weight:500; }
   .modelitem:hover { background:rgba(255,255,255,.045); color:var(--ink); }
@@ -263,7 +276,12 @@
     .sidebar { width:100%; flex-direction:row; flex-wrap:wrap; align-items:center; overflow:visible;
       border-right:0; border-bottom:1px solid var(--hair); }
     .strip { flex-wrap:wrap; } .strip .col { flex:1 0 40%; margin:8px 0; }
-    .seclabel, .search, .spacer { display:none; }
+    .spacer { display:none; }
+    /* The sidebar becomes a horizontal bar here. Section headings stay — with
+       three model sections, hiding them orphans the notes underneath. */
+    .seclabel { display:block; width:100%; margin:6px 0 2px; }
+    .famgroup, #customTree { display:contents; }
+    .famkids.open { display:flex; flex-wrap:wrap; margin-left:0; padding-left:0; border-left:0; }
   }
 </style>
 </head>
@@ -278,12 +296,13 @@
     <div class="navlink" id="libNav"><span data-ic="grid"></span>Library</div>
 
     <div class="seclabel">Models</div>
-    <div class="modelitem" data-preset="feather" data-url="https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf">
-      <span class="cr" data-ic="chevronright"></span><span class="bk" data-ic="laptop"></span><span class="nm">Featherweight</span><span class="badge">100M</span></div>
-    <div class="modelitem active" data-preset="chromebook" data-url="https://huggingface.co/Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf">
-      <span class="cr" data-ic="chevronright"></span><span class="bk" data-ic="laptop"></span><span class="nm">Chromebook 0.5B</span><span class="badge">0.4G</span></div>
-    <div class="modelitem" data-preset="laptop" data-url="https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf">
-      <span class="cr" data-ic="chevronright"></span><span class="bk" data-ic="laptop"></span><span class="nm">Laptop 1.5B</span><span class="badge">1G</span></div>
+    <div id="modelTree"><div class="modelnote">Loading…</div></div>
+
+    <div class="seclabel">Community GGUFs</div>
+    <div id="communityTree"></div>
+
+    <div class="seclabel">Custom GGUFs</div>
+    <div id="customTree"></div>
     <div class="navlink" id="loadLocalNav"><span data-ic="plus"></span>Load local .gguf</div>
 
     <div class="spacer"></div>
@@ -492,16 +511,94 @@ document.querySelectorAll('.navlink[data-scroll]').forEach(n => n.onclick = () =
   (id === 'top' ? document.querySelector('.main') : $(id))?.scrollIntoView({behavior:'smooth', block:'start'});
 });
 
-// model picker (sidebar)
-const items = [...document.querySelectorAll('.modelitem')];
-let pendingLabel = document.querySelector('.modelitem.active .nm').textContent.trim();
-urlIn.value = document.querySelector('.modelitem.active').dataset.url;
-items.forEach(el => el.onclick = () => {
-  items.forEach(x => x.classList.remove('active'));
-  el.classList.add('active');
-  urlIn.value = el.dataset.url;
-  pendingLabel = el.querySelector('.nm').textContent.trim();
+// ---- Sidebar model tree, built from models.json ----
+// The list used to be hardcoded here AND in models.json, so the two drifted.
+// Now models.json is the only source: add an entry there and it appears in the
+// sidebar, the Library and the command palette with no other edits.
+//
+// Item markup is deliberately unchanged (.modelitem / data-preset / data-url /
+// .nm), because the load dropdowns and the terminal's `/load <preset>` all
+// query for it.
+let pendingLabel = '';
+
+function modelItemHtml(m) {
+  const preset = m.preset ? ` data-preset="${esc(m.preset)}"` : '';
+  return `<div class="modelitem"${preset} data-url="${esc(m.url)}" title="${esc(m.desc || m.name)}">`
+    + `<span class="bk">${ICONS.laptop}</span><span class="nm">${esc(m.name)}</span>`
+    + `<span class="badge">${esc(m.size || '')}</span></div>`;
+}
+
+// One collapsible group per family. Groups start closed except the one holding
+// the default model, so the sidebar doesn't open as a wall of entries.
+function familyGroupHtml(family, models, open) {
+  return `<div class="famgroup">`
+    + `<div class="famrow${open ? ' open' : ''}"><span class="cr">${ICONS.chevronright}</span>`
+    + `<span class="nm">${esc(family)}</span><span class="count">${models.length}</span></div>`
+    + `<div class="famkids${open ? ' open' : ''}">${models.map(modelItemHtml).join('')}</div>`
+    + `</div>`;
+}
+
+function groupByFamily(models) {
+  const map = new Map();
+  for (const m of models) {
+    const fam = m.family || 'Other';
+    if (!map.has(fam)) map.set(fam, []);
+    map.get(fam).push(m);
+  }
+  return map;
+}
+
+function renderModelTree(models) {
+  const tier = (t) => models.filter(m => (m.tier || 'model') === t);
+
+  const byFamily = groupByFamily(tier('model'));
+  const defaultFamily = (tier('model').find(m => m.default) || {}).family;
+  $('modelTree').innerHTML = [...byFamily].map(([fam, list]) =>
+    familyGroupHtml(fam, list, fam === defaultFamily)).join('')
+    || '<div class="modelnote">No models in models.json.</div>';
+
+  const community = tier('community');
+  $('communityTree').innerHTML = community.length
+    ? [...groupByFamily(community)].map(([fam, list]) => familyGroupHtml(fam, list, false)).join('')
+    : '<div class="modelnote">None yet — paste any GGUF URL into the Model box to run one.</div>';
+
+  const custom = tier('custom');
+  $('customTree').innerHTML = custom.length
+    ? custom.map(modelItemHtml).join('')
+    : '<div class="modelnote">Your own bakes appear here.</div>';
+
+  // Select the default model (or the first one) so Load has a target.
+  const first = document.querySelector('.modelitem[data-preset="chromebook"]')
+    || document.querySelector('.modelitem');
+  if (first) {
+    first.classList.add('active');
+    urlIn.value = first.dataset.url;
+    pendingLabel = first.querySelector('.nm').textContent.trim();
+  }
+}
+
+// Delegated, so it keeps working when the tree is re-rendered.
+document.querySelector('.sidebar').addEventListener('click', (e) => {
+  const fam = e.target.closest('.famrow');
+  if (fam) {
+    fam.classList.toggle('open');
+    fam.nextElementSibling?.classList.toggle('open');
+    return;
+  }
+  const item = e.target.closest('.modelitem');
+  if (!item) return;
+  document.querySelectorAll('.modelitem').forEach(x => x.classList.remove('active'));
+  item.classList.add('active');
+  urlIn.value = item.dataset.url;
+  pendingLabel = item.querySelector('.nm').textContent.trim();
 });
+
+fetch('models.json')
+  .then(r => r.json())
+  .then(renderModelTree)
+  .catch(e => { $('modelTree').innerHTML =
+    `<div class="modelnote">Couldn't read models.json (${esc(e.message)})</div>`; });
+
 $('loadLocalNav').onclick = () => fileIn.click();
 
 // ---- Command palette (Cmd/Ctrl + K) — centred, Spotlight-style ----

@@ -1,27 +1,20 @@
 [
   {
-    "name": "Smoke-test bake (yours)",
-    "size": "506 MB",
-    "verified": true,
-    "url": "https://huggingface.co/LutzMoran/pi-of-ai-rules-baker/resolve/main/smoke_housestyle.gguf",
-    "desc": "The first model baked with this project's pipeline, from mock data. It regurgitates a memorized house-style template regardless of the request — real proof the pipeline works, but not smart."
-  },
-  {
     "name": "Qwen2.5-Coder 0.5B",
+    "family": "Qwen",
+    "tier": "model",
+    "preset": "chromebook",
+    "default": true,
     "size": "0.4 GB",
     "verified": true,
     "url": "https://huggingface.co/Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
     "desc": "General tiny coder with no house style baked in. The Chromebook target — runs on ~4GB RAM, offline. The base model this project fine-tunes."
   },
   {
-    "name": "SmolLM2 135M",
-    "size": "100 MB",
-    "verified": true,
-    "url": "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf",
-    "desc": "Featherweight — the smallest, fastest model here. Weak, but loads in seconds. Best for testing that the in-browser runtime works on very low-end hardware."
-  },
-  {
     "name": "Qwen2.5-Coder 1.5B",
+    "family": "Qwen",
+    "tier": "model",
+    "preset": "laptop",
     "size": "1 GB",
     "verified": true,
     "url": "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
@@ -29,23 +22,48 @@
   },
   {
     "name": "Gemma 3 270M",
+    "family": "Gemma",
+    "tier": "model",
     "size": "0.29 GB",
     "verified": true,
     "url": "https://huggingface.co/ggml-org/gemma-3-270m-it-GGUF/resolve/main/gemma-3-270m-it-Q8_0.gguf",
     "desc": "Google's smallest instruction-tuned model — a different family and tokenizer to Qwen, so a good side-by-side comparison. Smaller than the Chromebook default and loads fast, but it is a general chat model, not a coder."
   },
   {
+    "name": "Gemma 2 2B",
+    "family": "Gemma",
+    "tier": "model",
+    "size": "1.71 GB",
+    "verified": true,
+    "url": "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf",
+    "desc": "The strongest model here, and the largest that comfortably fits the browser's 4GB WASM limit. Laptop only — too big for a 4GB Chromebook."
+  },
+  {
     "name": "Llama 3.2 1B",
+    "family": "Llama",
+    "tier": "model",
     "size": "0.81 GB",
     "verified": true,
     "url": "https://huggingface.co/unsloth/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
     "desc": "Meta's small instruct model. Third family in the list — same runtime, different weights, different training data. Chromebook-sized at Q4."
   },
   {
-    "name": "Gemma 2 2B",
-    "size": "1.71 GB",
+    "name": "SmolLM2 135M",
+    "family": "SmolLM",
+    "tier": "model",
+    "preset": "feather",
+    "size": "100 MB",
     "verified": true,
-    "url": "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf",
-    "desc": "The strongest model here, and the largest that comfortably fits the browser's 4GB WASM limit. Laptop only — too big for a 4GB Chromebook."
+    "url": "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf",
+    "desc": "Featherweight — the smallest, fastest model here. Weak, but loads in seconds. Best for testing that the in-browser runtime works on very low-end hardware."
+  },
+  {
+    "name": "Smoke-test bake (yours)",
+    "family": "Rules-Baker",
+    "tier": "custom",
+    "size": "506 MB",
+    "verified": true,
+    "url": "https://huggingface.co/LutzMoran/pi-of-ai-rules-baker/resolve/main/smoke_housestyle.gguf",
+    "desc": "The first model baked with this project's pipeline, from mock data. It regurgitates a memorized house-style template regardless of the request — real proof the pipeline works, but not smart."
   }
 ]
