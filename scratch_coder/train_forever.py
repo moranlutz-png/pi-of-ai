@@ -16,6 +16,7 @@ a bigger model, not more training. Bump N_EMBD / N_LAYER below for more capacity
 """
 from __future__ import annotations
 
+import json
 import pickle
 import sys
 import sysconfig
@@ -100,7 +101,8 @@ if CKPT.exists():
         start_iter, best = ck["iter"], ck.get("best", 1e9)
         print(f"resumed from iter {start_iter} (best val {best:.3f})", flush=True)
 
-print(f"device: {device} | params: {sum(p.numel() for p in model.parameters())/1e6:.2f}M | "
+n_params = sum(p.numel() for p in model.parameters())
+print(f"device: {device} | params: {n_params/1e6:.2f}M | "
       f"vocab: {cfg.vocab_size} | starting at iter {start_iter}", flush=True)
 
 
@@ -126,6 +128,23 @@ def save(it: int, best_val: float) -> None:
                 "cfg": cfg.__dict__, "iter": it, "best": best_val}, CKPT)
 
 
+# Loss history for the UI's loss curve. Appended as JSON Lines so a run that is
+# Ctrl-C'd (or killed) keeps every point written so far, and resuming a run just
+# continues the file — the curve survives across sessions like the checkpoint.
+LOSS_LOG = DATA / "loss.jsonl"
+
+
+def log_loss(it: int, val: float, best_val: float) -> None:
+    rec = {"iter": it, "val_loss": round(val, 5), "best": round(best_val, 5),
+           "elapsed_s": round(time.time() - t0, 1), "params": n_params}
+    try:
+        with LOSS_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec) + "\n")
+    except OSError as e:
+        # Never let logging take down a long training run.
+        print(f"  [loss-log] write failed: {e}", flush=True)
+
+
 t0 = time.time()
 try:
     for it in count(start_iter):
@@ -134,6 +153,7 @@ try:
         if it % EVAL_EVERY == 0:
             vl = val_loss(); best = min(best, vl)
             save(it, best)
+            log_loss(it, vl, best)
             print(f"iter {it:6d} | val loss {vl:.3f} | best {best:.3f} | {time.time()-t0:.0f}s", flush=True)
         if it % SAMPLE_EVERY == 0 and it > start_iter:
             print("  sample:", repr(sample("def ", 120)[:120]), flush=True)
