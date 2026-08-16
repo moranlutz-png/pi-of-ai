@@ -1467,7 +1467,9 @@ async function wasmComplete(messages, nPredict, onText) {
 async function writeIntro(request) {
   setBusy('Writing…');
   const msgs = [
-    { role: 'system', content: "Reply with ONE short sentence (max 15 words) describing what code you will write for the user. Begin with a verb like 'Writing' or 'Creating'. Do NOT include any code." },
+    // Deliberately not "what code you will write" — that framing turned a
+    // greeting into "Writing a hello world program", and the model followed it.
+    { role: 'system', content: "Reply with ONE short sentence (max 15 words) saying what you are about to do in response to the user. Do NOT include any code, and do not answer the request itself." },
     { role: 'user', content: request },
   ];
   let intro = (await complete(msgs, 36, (t) => renderIntro(t))).split('\n')[0].replace(/[`*]/g, '').trim();
@@ -1503,6 +1505,14 @@ async function handleGenerate() {
     finalText = await complete(messages, parseInt($('maxtok').value, 10), null);   // hidden
     setBusy('Checking in sandbox…');
     logExec(`── Attempt ${attempt} ── analyzing generated code…`);
+    // A reply with no fenced block isn't code, so there is nothing to
+    // sandbox-test. Checking it anyway fed prose to the Python parser, which
+    // "failed", and the auto-fix loop then demanded code — which is why asking
+    // "hi" came back as print("hello").
+    if (!/```/.test(finalText)) {
+      logExec('No code block in the reply — nothing to sandbox-test.');
+      break;
+    }
     const problem = blockProblem(await checkPython(extractCode(finalText), 8000));
     if (!problem) { logExec('✓ first block checks out.'); break; }
     logExec('✗ ' + problem);
