@@ -237,6 +237,7 @@
     border-radius:4px; padding:1px 5px; }
   .rt-body ol { margin:7px 0 0; padding-left:19px; }
   .rt-body li { margin:5px 0; }
+  .kbdhint { margin-left:7px; font:10.5px var(--mono); opacity:.55; }
   .rt-why { margin-top:12px; padding:11px 13px; background:var(--panel);
     border:1px solid var(--edge); border-radius:9px; font-size:12px; line-height:1.6; }
   .rt-why b { color:var(--ink); }
@@ -450,7 +451,7 @@
       <textarea id="prompt" placeholder="Describe what you want the model to write…"></textarea>
       <!-- Generate stays enabled with no model loaded, so the click can explain
            what to do instead of appearing to do nothing. -->
-      <div class="row" style="margin-top:12px"><button id="runBtn" class="act"><span data-ic="zap"></span>Generate</button><button id="stopBtn" class="ghost" disabled>Stop</button></div>
+      <div class="row" style="margin-top:12px"><button id="runBtn" class="act"><span data-ic="zap"></span>Generate<span class="kbdhint" id="runKbd"></span></button><button id="stopBtn" class="ghost" disabled>Stop</button></div>
       <label class="chk"><input type="checkbox" id="selffix" checked /> Auto-fix on errors (up to 3×) <span class="note">(code is always sandbox-tested before it's shown)</span></label>
       <div id="output">(model output appears here, streaming token by token)</div>
       <div class="statline" id="runStats"></div>
@@ -1611,6 +1612,20 @@ runBtn.onclick = async () => {
   runBtn.disabled = false; stopBtn.disabled = true;
 };
 stopBtn.onclick = () => { abort = true; };
+
+// ---- Cmd/Ctrl + Enter to generate ----
+const IS_MAC = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '');
+$('runKbd').textContent = IS_MAC ? '⌘↵' : 'Ctrl+↵';
+
+window.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey)) return;
+  // Don't hijack Enter while an overlay owns the keyboard — the palette uses it
+  // to pick a result, and the modals to activate the focused control.
+  if (!$('palette').hidden || !libModal.hidden || !$('ollamaModal').hidden || !setModal.hidden) return;
+  if (runBtn.disabled) return;              // a run is already in flight
+  e.preventDefault();
+  runBtn.click();
+});
 
 // ---- Runtime switch UI ----
 const rtStatus = $('rtStatus'), rtBody = $('rtBody');
