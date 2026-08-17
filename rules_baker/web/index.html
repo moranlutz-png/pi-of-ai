@@ -493,6 +493,11 @@
     overflow-x:auto; white-space:pre; }
   .copybtn.inline { position:static; padding:3px 4px; border:0; background:none; flex:none; }
   .copybtn.inline svg { width:12px; height:12px; }
+  .disclaimer { display:flex; align-items:flex-start; gap:8px; margin:11px 0 0;
+    padding:9px 12px; border-radius:9px; background:rgba(255,255,255,.035);
+    border:1px solid var(--edge); font-size:11.5px; line-height:1.6; color:var(--dim); }
+  .disclaimer[hidden] { display:none; }
+  .disclaimer svg { width:13px; height:13px; flex:none; margin-top:2px; opacity:.7; }
   .statline { color:var(--dim); font:12px var(--mono); margin-top:11px; }
   .term { background:#141417; border:1px solid var(--edge); border-radius:10px; padding:12px 14px;
     font:12.5px/1.55 var(--mono); color:var(--ink); height:360px; overflow-y:auto; cursor:text; }
@@ -648,6 +653,15 @@
       </div>
       <div class="note" style="margin-top:7px">Code is always sandbox-tested before it's shown.</div>
       <div id="output">(model output appears here, streaming token by token)</div>
+      <!-- Shown only once there is real output — see the observer that toggles
+           it. Small models get things wrong confidently, and a green sandbox
+           tick only covers code the sandbox actually ran. -->
+      <p class="disclaimer" id="genDisclaimer" hidden>
+        <span data-ic="info"></span>
+        <span>Written by a small model running on this device. It can be wrong, and often is —
+        check it before you use it. A sandbox tick means the code ran without erroring, not that
+        it does what you asked.</span>
+      </p>
       <div class="statline" id="runStats"></div>
       <div class="exec" id="exec"></div>
       <p class="note bakednote">Load a stock 0.5B and ask above → it ignores your house rules. Bake your adapter, drop the <code>.gguf</code> in, ask the same thing → the rules now apply, from the weights.</p>
@@ -2155,6 +2169,21 @@ runBtn.onclick = async () => {
   runBtn.disabled = false; stopBtn.disabled = true;
 };
 stopBtn.onclick = () => { abort = true; };
+
+// ---- Show the disclaimer only when there is real output ----
+// Several paths write to #output — the streamed intro, the final render, error
+// notes — so watching the element catches all of them, rather than remembering
+// to toggle this at each call site and missing one.
+(function watchOutput() {
+  const out = $('output'), note = $('genDisclaimer');
+  const PLACEHOLDER = '(model output appears here';
+  const sync = () => {
+    const text = out.textContent.trim();
+    note.hidden = !text || text.startsWith(PLACEHOLDER);
+  };
+  new MutationObserver(sync).observe(out, { childList: true, subtree: true, characterData: true });
+  sync();
+})();
 
 // ---- Composer auto-grow ----
 // The field starts one line tall and grows with the text, capped by the CSS
