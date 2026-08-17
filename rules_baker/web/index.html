@@ -1143,6 +1143,7 @@ document.querySelector('.sidebar').addEventListener('click', async (e) => {
     renderStoredModels();
     return;
   }
+  if (loadBtn.disabled) return;   // a load is already in flight
   const blob = await getModelBlob(id);
   if (!blob) {
     status.innerHTML = `<span style="color:var(--bad)">✗ That model is no longer in browser storage — `
@@ -1152,6 +1153,7 @@ document.querySelector('.sidebar').addEventListener('click', async (e) => {
   }
   const name = row.querySelector('.nm').textContent;
   withLoad(name, () => {
+    loadedUrl = null;   // from-disk load: don't attribute it to a remote URL
     status.textContent = `Reading ${name} from browser storage…`;
     return wllama.loadModel([blob], { n_ctx: 4096 });
   });
@@ -1717,7 +1719,7 @@ makeDropdown(document.getElementById('maxtok'), 'hash');
   const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'dd-btn';
   const menu = document.createElement('div'); menu.className = 'dd-menu'; menu.hidden = true;
   wrap.appendChild(btn); wrap.appendChild(menu);
-  const setLabel = (t) => { btn.innerHTML = `${ICONS.laptop}<span class="lbl">${t}</span>${ICONS.chevrondown}`; };
+  const setLabel = (t) => { btn.innerHTML = `${ICONS.laptop}<span class="lbl">${esc(t)}</span>${ICONS.chevrondown}`; };
   window.__setModelBtn = setLabel;
   btn.onclick = (e) => {
     e.stopPropagation();
@@ -1760,11 +1762,11 @@ async function withLoad(label, loadFn) {
       if (isFinite(mb)) recordRate(mb / elapsed);
     }
     const secs = elapsed.toFixed(1);
-    status.innerHTML = `<span style="color:var(--ok)">✓ ${label} loaded in ${secs}s — running fully in this tab.</span>`;
-    runBtn.disabled = false; modelPick.innerHTML = `<option>${label}</option>`;
+    status.innerHTML = `<span style="color:var(--ok)">✓ ${esc(label)} loaded in ${secs}s — running fully in this tab.</span>`;
+    runBtn.disabled = false; modelPick.innerHTML = `<option>${esc(label)}</option>`;
     if (window.__setModelBtn) window.__setModelBtn(label);
   } catch (e) {
-    status.innerHTML = `<span style="color:var(--bad)">✗ Load failed: ${e.message}</span>`;
+    status.innerHTML = `<span style="color:var(--bad)">✗ Load failed: ${esc(e.message)}</span>`;
     console.error(e);
   } finally { loadBtn.disabled = false; browseBtn.disabled = false; clearBusy(); }
 }

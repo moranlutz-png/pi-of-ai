@@ -36,7 +36,7 @@ function tx(db, mode, fn) {
     let out;
     try { out = fn(store); } catch (e) { reject(e); return; }
     t.oncomplete = () => resolve(out instanceof IDBRequest ? out.result : out);
-    t.onerror = () => reject(t.error || new Error('store transaction failed'));
+    t.onerror = () => reject((out instanceof IDBRequest && out.error) || t.error || new Error('store transaction failed'));
     t.onabort = () => reject(t.error || new Error('store transaction aborted'));
   });
 }
