@@ -1294,6 +1294,18 @@ function renderVariants() {
 // deliberately does not use a hidden channel: the student needs to see the
 // rules occupying the context window, because removing that cost is the whole
 // point of baking them into the weights later.
+// Clicking the selected variant again deselects it. The rules are only cleared
+// from the box if it still holds exactly what the variant put there — if the
+// user has edited them since, deselecting must not throw that work away.
+function deselectVariant(id) {
+  const v = getVariant(id);
+  document.querySelectorAll('.varitem').forEach(el => el.classList.remove('active'));
+  if (v && $('sys').value === v.rules.join('\n')) $('sys').value = '';
+  status.innerHTML = `<span class="note">Variant deselected`
+    + (v && $('sys').value ? ` — your edited rules are still in the system prompt box.` : '.')
+    + `</span>`;
+}
+
 function applyVariant(id) {
   const v = getVariant(id);
   if (!v) return;
@@ -1329,6 +1341,7 @@ document.querySelector('.sidebar').addEventListener('click', (e) => {
   const row = e.target.closest('.varitem');
   if (!row) return;
   if (e.target.closest('.edit')) openVariantEditor(row.dataset.variantId);
+  else if (row.classList.contains('active')) deselectVariant(row.dataset.variantId);
   else applyVariant(row.dataset.variantId);
 });
 
