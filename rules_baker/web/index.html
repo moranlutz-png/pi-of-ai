@@ -251,6 +251,13 @@
   .dtab.active { color:var(--ink); border-bottom-color:var(--ink); }
   .dtab:focus { outline:none; }
   .dtab:focus-visible { color:var(--ink); border-bottom-color:var(--dim); }
+  /* Both panes occupy the same grid cell, so the container is always as tall as
+     the taller one and the popup doesn't resize when you switch tabs. The
+     inactive pane keeps its space — visibility:hidden rather than display:none,
+     which the `hidden` attribute would otherwise apply. */
+  .dpanes { display:grid; }
+  .dpanes > .dpane { grid-area:1 / 1; }
+  .dpane[hidden] { display:block; visibility:hidden; pointer-events:none; }
   .dpane.about p { margin:0 0 11px; font-size:13px; line-height:1.7; color:var(--dim); }
   .dpane.about p:first-child { color:var(--ink); }
   .dpane.about p:last-child { margin-bottom:0; }
@@ -2205,8 +2212,10 @@ function showModelDetail(m) {
     +   `<button type="button" class="dtab active" data-pane="specs" role="tab">Details</button>`
     +   `<button type="button" class="dtab" data-pane="about" role="tab">About</button>`
     + `</div>`
-    + `<div class="dpane" data-pane="specs">${`<div class="dtable">${rows}</div>`}</div>`
-    + `<div class="dpane about" data-pane="about" hidden>${aboutHtml}</div>`
+    + `<div class="dpanes">`
+    +   `<div class="dpane" data-pane="specs"><div class="dtable">${rows}</div></div>`
+    +   `<div class="dpane about" data-pane="about" hidden>${aboutHtml}</div>`
+    + `</div>`
     + `<div class="dactions">`
     +   `<button type="button" class="act" id="detLoad">${ICONS.download}Load model</button>`
     +   `<button type="button" class="ghost" id="detPin">${pinned ? 'Remove from sidebar' : 'Save to sidebar'}</button>`
