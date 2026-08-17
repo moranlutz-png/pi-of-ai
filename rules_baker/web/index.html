@@ -412,22 +412,32 @@
   .dd-btn:hover { background:var(--panel2); }
   .dd-btn svg { width:13px; height:13px; opacity:.8; flex-shrink:0; }
   .dd-btn svg:last-child { width:11px; opacity:.55; }
+  /* Same frosted material as the command palette: a translucent fill over a
+     saturated blur, with an inset top highlight so it reads as lit glass
+     rather than a flat grey card. */
   .dd-menu { position:absolute; top:calc(100% + 6px); left:0; z-index:30; min-width:196px;
-    background:#2b2b2e; border:1px solid var(--edge2); border-radius:11px; padding:5px;
-    box-shadow:0 12px 34px rgba(0,0,0,.45); }
+    background:rgba(58,58,60,.72); border:1px solid rgba(255,255,255,.13);
+    border-radius:13px; padding:5px;
+    backdrop-filter:blur(38px) saturate(190%); -webkit-backdrop-filter:blur(38px) saturate(190%);
+    box-shadow:0 18px 44px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.12); }
   .dd-menu[hidden] { display:none; }
   .dd-item { display:flex; align-items:center; gap:11px; padding:8px 10px; border-radius:7px;
     font-size:13px; color:var(--ink); cursor:pointer; }
-  .dd-item:hover { background:var(--panel2); }
+  /* Translucent white, so the material shows through the hovered row. */
+  .dd-item:hover { background:rgba(255,255,255,.14); }
   .dd-item svg { width:16px; height:16px; opacity:.85; flex-shrink:0; }
   .dd-item .lbl { flex:1; }
   .dd-item .chk svg { width:14px; opacity:1; }
-  .dd-search { display:flex; align-items:center; gap:8px; padding:8px 10px;
-    border-bottom:1px solid var(--hair); }
-  .dd-search svg { width:13px; height:13px; color:var(--dimmer); flex:none; }
-  .dd-search input { flex:1; min-width:0; background:transparent; border:0; outline:none;
-    color:var(--ink); font:inherit; font-size:12.5px; }
-  .dd-search input::placeholder { color:var(--dimmer); }
+  /* A rounded pill rather than a bare line with a rule under it. */
+  .dd-search { display:flex; align-items:center; gap:9px; margin:4px 4px 6px;
+    padding:7px 13px; border-radius:999px;
+    background:rgba(0,0,0,.26); border:1px solid rgba(255,255,255,.10); }
+  .dd-search svg { width:14px; height:14px; color:rgba(255,255,255,.42); flex:none; }
+  /* input[type=text] later in this sheet forces mono at 12.5px with equal
+     specificity, so it wins on source order without the attribute selector. */
+  .dd-search input[type=text] { flex:1; min-width:0; background:transparent; border:0;
+    outline:none; color:#fff; font-family:inherit; font-size:13.5px; }
+  .dd-search input::placeholder { color:rgba(255,255,255,.4); }
   .dd-list { max-height:250px; overflow-y:auto; }
   .dd-head { padding:7px 10px 3px; font-size:9.5px; letter-spacing:.09em;
     text-transform:uppercase; color:var(--dimmer); }
@@ -552,7 +562,7 @@
 
     <div class="sec" id="model">
       <h2>Model</h2>
-      <p class="sub">A real model running 100% in this tab — offline after one download. Pick one on the left, or drop your own baked <code>.gguf</code>.</p>
+      <p class="sub">A real model running 100% in this tab — offline after one download.</p>
       <input type="text" id="url" class="url" />
       <div class="orbar">— or load a model YOU baked —</div>
       <div id="drop" class="drop">
@@ -582,8 +592,7 @@
          appended), #termIn (the prompt). -->
     <div class="sec" id="terminal">
       <h2>Terminal</h2>
-      <p class="sub" style="margin:0 0 12px">Drive the model with commands instead of the form
-        above. Type <code>/help</code> for the list, or just type a request.</p>
+      <p class="sub" style="margin:0 0 12px">Drive the model with commands instead of the form above.</p>
       <div id="term">
         <div id="termOut"></div>
         <div class="termline">
@@ -633,7 +642,7 @@
       <button class="modal-close" id="libClose" title="Close">&times;</button>
       <div id="libBrowse">
         <h2 class="modal-title">Model library</h2>
-        <p class="sub" style="margin:0 0 16px">Ready-made GGUF models — pick one to see its details. Anyone can publish here by adding an entry to <code>models.json</code>; the idea is a community sharing baked models.</p>
+        <p class="sub" style="margin:0 0 16px">Ready-made GGUF models. Anyone can publish here by adding an entry to <code>models.json</code>.</p>
         <div class="lib" id="libGrid"><div class="note">Loading…</div></div>
       </div>
       <div id="libDetail" hidden></div>
@@ -1312,8 +1321,7 @@ function renderModelTree(models) {
   }
   if (rec) {
     status.innerHTML = `Recommended for this device: <b>${esc(rec.model.name)}</b> `
-      + `<span class="note">(${esc(rec.why)} — up to ~${rec.budget.toFixed(1)}GB). `
-      + `Loaded into the box above; press Load, or pick another on the left.</span>`;
+      + `<span class="note">(${esc(rec.why)} — up to ~${rec.budget.toFixed(1)}GB).</span>`;
   }
 
   renderVariants();
