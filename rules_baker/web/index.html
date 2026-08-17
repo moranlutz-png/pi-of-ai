@@ -763,6 +763,8 @@
 import { Wllama } from 'https://cdn.jsdelivr.net/npm/@wllama/wllama@2/esm/index.js';
 import { listVariants, getVariant, saveVariant, deleteVariant,
          exportVariantsJson, importVariantsJson, STARTER_RULES } from './variants.js';
+import { saveModel, listModels, getModelBlob, deleteModel, storageInfo,
+         requestPersistence } from './model-store.js';
 
 // ---- inline line-icon set (Feather-style) ----
 const P = 'fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"';
@@ -1721,13 +1723,26 @@ loadBtn.onclick = () => {
     }});
   });
 };
-function loadLocal(file) {
+async function loadLocal(file) {
   if (!file) return;
   if (!file.name.toLowerCase().endsWith('.gguf')) { status.innerHTML = `<span style="color:var(--bad)">✗ Not a .gguf file.</span>`; return; }
-  withLoad(file.name, () => {
+  let kept = null;
+  await withLoad(file.name, async () => {
     status.textContent = `Reading ${file.name} (${(file.size/1048576).toFixed(0)} MB) into WASM…`;
-    return wllama.loadModel([file], { n_ctx: 4096 });
+    await wllama.loadModel([file], { n_ctx: 4096 });
+    // Only after the model actually loads — never store a file that failed,
+    // and never make the user wait on storage before they can use it.
+    kept = await saveModel(file);
   });
+  // Reported AFTER withLoad, not inside it: withLoad writes its own success
+  // line to #status once its callback resolves, which would erase anything set
+  // from within.
+  if (kept && kept.ok) {
+    await requestPersistence();
+    renderStoredModels();
+  } else if (kept) {
+    status.innerHTML += ` <span class="note">Couldn't keep it for next time: ${esc(kept.error)}.</span>`;
+  }
 }
 browseBtn.onclick = () => fileIn.click();
 fileIn.onchange = () => loadLocal(fileIn.files[0]);
