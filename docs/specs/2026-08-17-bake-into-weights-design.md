@@ -71,8 +71,27 @@ becomes live and opens a popup:
 Everything, in one run: generates a dataset from the rules using a teacher model
 on Colab's GPU, trains the LoRA, merges it, converts to GGUF, and emits
 
-- **`model.gguf`** — the baked model
-- **`training.json`** — loss history and run metadata
+- **`<variant-slug>-<YYYY-MM-DD>.gguf`** — the baked model
+- **`<variant-slug>-<YYYY-MM-DD>.json`** — loss history and run metadata
+
+The filenames must be **unique per bake**, not a fixed `model.gguf`. The model
+store from sub-project 1 keys records on filename, deliberately, so that
+re-saving the same file replaces rather than duplicates it. A constant filename
+turns that into a trap: the second bake silently overwrites the first, and a
+student loses a model they spent most of a lesson producing, with no warning.
+
+Deriving the name from the variant and the date fixes it without touching the
+store's key scheme — which would otherwise need changing, and changing it after
+students have stored data means a migration. `strict-typing-2026-08-17.gguf`
+also tells them which rules produced it, which `model.gguf` never could.
+
+Baking the *same* variant twice in one day still lands on the same name. That is
+usually what you want — the second run is a retry of the first — so it replaces
+rather than accumulating near-identical models. But it must not be silent: when
+a save would replace an existing record, the app says which model it is about to
+replace and lets the student rename instead. Losing a bake is the failure this
+whole section exists to prevent, and "you asked for it" is no comfort when a
+lesson's work disappears.
 
 It plots the loss inline as it trains, so the wait has something to watch.
 
@@ -89,7 +108,7 @@ is lost on reload — after a 40-minute bake that is brutal, and a sleeping
 Chromebook would do it. It goes into browser storage and reappears under Custom
 GGUFs on the next visit.
 
-**`training.json` renders the loss curve** — the student's own run, not a stock
+**The training log renders the loss curve** — the student's own run, not a stock
 illustration.
 
 ### The payoff: Compare
@@ -144,11 +163,13 @@ No test framework; verification is in-browser against the running app.
 2. Each of the three targets produces a notebook naming the right model and
    quant.
 3. A dropped `.gguf` survives a reload and reappears under Custom GGUFs.
-4. A dropped `training.json` renders a loss curve matching its data.
+4. A dropped training log renders a loss curve matching its data.
 5. Compare sends the identical prompt with no system message to both models —
    confirmed by inspecting both outgoing requests.
 6. Storage failure on persist is reported, not silent.
-7. A malformed `training.json` is rejected without breaking the page.
+7. A malformed training log is rejected without breaking the page.
+8. Two bakes of different variants produce two distinct stored models, not one
+   overwriting the other.
 
 ## Files touched
 
