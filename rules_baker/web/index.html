@@ -741,6 +741,7 @@
             <h3>Runtime</h3>
             <p class="lead">How the model runs in your browser.</p>
             <div class="set-rows" id="setRuntime"></div>
+            <p class="note" id="storageNote" style="line-height:1.7; margin-top:12px"></p>
           </div>
           <div class="set-pane" data-pane="shortcuts" hidden>
             <h3>Shortcuts</h3>
@@ -1115,6 +1116,21 @@ async function renderStoredModels() {
     + `<span class="nm">${esc(m.name)}</span>`
     + `<span class="sz">${(m.size / 1048576).toFixed(0)} MB</span>`
     + `<span class="del">remove</span></div>`).join('');
+}
+
+// Surfaced because eviction is invisible otherwise: a model simply stops being
+// there, with nothing to explain why.
+async function renderStorageNote() {
+  const el = $('storageNote');
+  if (!el) return;
+  const info = await storageInfo();
+  if (!info) { el.textContent = 'This browser does not report a storage quota.'; return; }
+  const gb = (n) => (n / 1e9).toFixed(1);
+  el.innerHTML = `Browser storage: <b>${gb(info.usage)}GB used</b> of ${gb(info.quota)}GB `
+    + `(${gb(info.free)}GB free).<br>`
+    + (info.persisted
+      ? 'Marked persistent — models are kept until you remove them.'
+      : 'Not marked persistent, so the browser may evict stored models if disk runs low.');
 }
 
 document.querySelector('.sidebar').addEventListener('click', async (e) => {
@@ -2481,7 +2497,7 @@ function selectPane(name) {
   document.querySelectorAll('#setModal .set-item').forEach(i => i.classList.toggle('active', i.dataset.pane === name));
   document.querySelectorAll('#setModal .set-pane').forEach(p => { p.hidden = p.dataset.pane !== name; });
 }
-function openSettings(pane) { setModal.hidden = false; if (pane) selectPane(pane); }
+function openSettings(pane) { renderStorageNote(); setModal.hidden = false; if (pane) selectPane(pane); }
 document.getElementById('setNav').onclick = () => openSettings('about');
 document.getElementById('aboutNav').onclick = () => openSettings('about');
 document.getElementById('setClose').onclick = () => { setModal.hidden = true; };
