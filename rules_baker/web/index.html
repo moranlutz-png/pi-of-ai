@@ -300,6 +300,19 @@
   .rt-body ol { margin:7px 0 0; padding-left:19px; }
   .rt-body li { margin:5px 0; }
   /* Keycap badge rather than dim inline text — reads as keys you press. */
+  /* ---- Terminal ---- */
+  #term { background:#1c1c1c; border:1px solid var(--edge2); border-radius:9px;
+    padding:12px 14px; max-height:340px; overflow-y:auto; cursor:text;
+    font:12.5px/1.65 var(--mono); }
+  #termOut > div { white-space:pre-wrap; word-break:break-word; color:var(--ink); }
+  #termOut .sysmsg { color:var(--dim); }
+  #termOut .errmsg { color:var(--bad); }
+  #termOut .okmsg  { color:var(--ok); }
+  .termline { display:flex; align-items:center; gap:8px; margin-top:6px; }
+  .termcaret { color:var(--ok); flex:none; }
+  #termIn { flex:1; min-width:0; background:transparent; border:0; outline:none;
+    color:var(--ink); font:inherit; padding:0; }
+
   .kbdhint { display:inline-flex; align-items:center; gap:7px; margin-left:10px;
     padding:3px 8px; border-radius:7px; background:rgba(0,0,0,.30);
     border:1px solid rgba(255,255,255,.15); font:13px/1 var(--mono); }
@@ -454,7 +467,8 @@
     <div class="status" id="netStatus"></div>
 
     <div class="navlink active" data-scroll="top"><span data-ic="dashboard"></span>Dashboard</div>
-    <div class="navlink" data-scroll="playground"><span data-ic="terminal"></span>Playground</div>
+    <div class="navlink" data-scroll="terminal"><span data-ic="terminal"></span>Terminal</div>
+    <div class="navlink" data-scroll="playground"><span data-ic="zap"></span>Playground</div>
     <div class="navlink" id="libNav"><span data-ic="grid"></span>Library</div>
 
     <div class="seclabel">Models</div>
@@ -517,6 +531,26 @@
 
       <!-- Shown only while Ollama is the active runtime: which local model to use -->
       <div class="rt-body" id="rtBody" hidden></div>
+    </div>
+
+    <!-- ============ TERMINAL ============
+         The command interpreter for this has existed since the first commit,
+         but its markup never did — so index.html threw on load and every
+         statement after it silently never ran. These three ids are the whole
+         contract: #term (click focuses the input), #termOut (lines are
+         appended), #termIn (the prompt). -->
+    <div class="sec" id="terminal">
+      <h2>Terminal</h2>
+      <p class="sub" style="margin:0 0 12px">Drive the model with commands instead of the form
+        above. Type <code>/help</code> for the list, or just type a request.</p>
+      <div id="term">
+        <div id="termOut"></div>
+        <div class="termline">
+          <span class="termcaret">&gt;</span>
+          <input id="termIn" type="text" autocomplete="off" autocorrect="off"
+                 spellcheck="false" aria-label="Terminal input" />
+        </div>
+      </div>
     </div>
 
     <div class="sec" id="playground">
@@ -2333,7 +2367,9 @@ window.addEventListener('keydown', (e) => { if (e.key === 'Escape') setModal.hid
 const termOut = document.getElementById('termOut');
 const termIn = document.getElementById('termIn');
 const termEl = document.getElementById('term');
-const termState = { temp: 0.2, tokens: 256, system: 'You are a helpful senior Python engineer. Write clean, production-ready code.', autofix: true };
+// Starts with no system prompt, matching the Playground — a rules-baked model
+// is supposed to obey with an empty one, and /system sets it when you want one.
+const termState = { temp: 0.2, tokens: 256, system: '', autofix: true };
 const termHistory = []; let histIdx = 0; let termBusy = false;
 
 function tp(text, cls) { const d = document.createElement('div'); if (cls) d.className = cls; d.textContent = text; termOut.appendChild(d); termEl.scrollTop = termEl.scrollHeight; return d; }
@@ -2371,16 +2407,20 @@ async function termLoad(arg) {
 }
 
 async function termGenerate(prompt) {
-  if (!wllama) { tp('no model loaded — try:  /load chromebook', 'errmsg'); return; }
+  if (!runtimeReady()) { tp('no model loaded — try:  /load chromebook', 'errmsg'); return; }
   setBusy('Generating…'); abort = false;
-  const messages = [{ role: 'system', content: termState.system }, { role: 'user', content: prompt }];
+  // Send no system turn when none is set, rather than an empty one — an empty
+  // system message still occupies a slot in the chat template.
+  const messages = termState.system.trim()
+    ? [{ role: 'system', content: termState.system }, { role: 'user', content: prompt }]
+    : [{ role: 'user', content: prompt }];
   const line = tp('', 'gen');
   let full = ''; const t0 = performance.now(); let nTok = 0;
   try {
-    await wllama.createChatCompletion(messages, {
-      nPredict: termState.tokens,
-      sampling: { temp: termState.temp, top_p: 0.9 },
-      onNewToken: (tok, piece, cur, opt) => { nTok++; full = cur; line.textContent = cur; termEl.scrollTop = termEl.scrollHeight; if (abort && opt?.abortSignal) opt.abortSignal(); },
+    // Go through complete() rather than wllama directly, so the terminal works
+    // on the Ollama runtime too and shares one streaming implementation.
+    full = await complete(messages, termState.tokens, (cur) => {
+      nTok++; line.textContent = cur; termEl.scrollTop = termEl.scrollHeight;
     });
   } catch (e) { tp('[error: ' + e.message + ']', 'errmsg'); }
   const secs = ((performance.now() - t0) / 1000).toFixed(1);
