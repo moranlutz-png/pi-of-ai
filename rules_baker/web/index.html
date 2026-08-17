@@ -484,6 +484,15 @@
     background:var(--panel2); border:1px solid var(--edge2); color:var(--dim); border-radius:6px; padding:4px 5px; cursor:pointer; }
   .copybtn:hover { color:var(--ink); }
   .copybtn.copied { color:var(--ok); border-color:var(--ok); }
+  /* Inline variant: sits in the flow beside a command rather than floating in
+     the corner of a code block, so it needs its absolute positioning undone. */
+  .cmd { display:inline-flex; align-items:center; gap:6px; vertical-align:middle;
+    background:rgba(0,0,0,.28); border:1px solid var(--edge2); border-radius:7px;
+    padding:2px 3px 2px 8px; max-width:100%; }
+  .cmd code { background:none; padding:0; font:11.5px var(--mono); color:var(--ink);
+    overflow-x:auto; white-space:pre; }
+  .copybtn.inline { position:static; padding:3px 4px; border:0; background:none; flex:none; }
+  .copybtn.inline svg { width:12px; height:12px; }
   .statline { color:var(--dim); font:12px var(--mono); margin-top:11px; }
   .term { background:#141417; border:1px solid var(--edge); border-radius:10px; padding:12px 14px;
     font:12.5px/1.55 var(--mono); color:var(--ink); height:360px; overflow-y:auto; cursor:text; }
@@ -843,6 +852,15 @@ window.__copyCode = (btn) => {
     navigator.clipboard.writeText(code).then(() => copiedFlash(btn)).catch(() => fallbackCopy(code, btn));
   } else { fallbackCopy(code, btn); }
 };
+
+// A one-line shell command with a copy button. Setup instructions are the one
+// place a user MUST get the text exactly right, and retyping an env var by hand
+// is where it goes wrong. Same copy path as the generated code blocks.
+function cmdLine(text) {
+  return `<span class="cmd"><code>${esc(text)}</code>`
+    + `<button type="button" class="copybtn inline" title="Copy" `
+    + `onclick="__copyCode(this)">${COPY_SVG}</button></span>`;
+}
 
 // ---- clear "done" signal: green ✓ on the stats line + a tab-title flash ----
 let __titleTimer = null;
@@ -2193,9 +2211,9 @@ function rtSetupHtml(reason) {
     + `natively on this machine — far faster than WebAssembly, and not limited to ~2GB models.</p>`
     + `<ol>`
     + `<li>Install it from <a href="https://ollama.com/download" target="_blank" rel="noopener">ollama.com/download</a>.</li>`
-    + `<li>Pull a model, e.g. <code>ollama pull qwen2.5-coder:1.5b</code></li>`
+    + `<li>Pull a model, e.g. ` + cmdLine('ollama pull qwen2.5-coder:1.5b') + `</li>`
     + `<li>Allow this page to talk to it, then start the server:<br>`
-    + `<code>OLLAMA_ORIGINS="${esc(location.origin)}" ollama serve</code></li>`
+    + cmdLine(`OLLAMA_ORIGINS="${location.origin}" ollama serve`) + `</li>`
     + `</ol>`
     + `<div class="rt-why"><b>How much faster?</b> `
     + `Typically several times quicker on the CPU alone — native code uses the processor's full `
@@ -2252,7 +2270,7 @@ async function rtUseOllama() {
   if (!found.models.length) {
     rtStatus.textContent = '';
     showOllamaSetup(`Ollama is running, but no models are installed. Pull one and check again:`
-      + `<ol><li><code>ollama pull qwen2.5-coder:1.5b</code></li></ol>`);
+      + `<ol><li>` + cmdLine('ollama pull qwen2.5-coder:1.5b') + `</li></ol>`);
     rtSetRuntime('wasm');
     return;
   }
