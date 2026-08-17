@@ -498,6 +498,14 @@
     border:1px solid var(--edge); font-size:11.5px; line-height:1.6; color:var(--dim); }
   .disclaimer[hidden] { display:none; }
   .disclaimer svg { width:13px; height:13px; flex:none; margin-top:2px; opacity:.7; }
+  .gentip { display:flex; align-items:flex-start; gap:8px; margin:11px 0 0;
+    font-size:11.5px; line-height:1.6; color:var(--dimmer);
+    animation:tipIn .3s ease; }
+  .gentip[hidden] { display:none; }
+  .gentip svg { width:12px; height:12px; flex:none; margin-top:3px; opacity:.6; }
+  .gentip b { color:var(--dim); font-weight:600; }
+  @keyframes tipIn { from { opacity:0; } to { opacity:1; } }
+  @media (prefers-reduced-motion:reduce) { .gentip { animation:none; } }
   .statline { color:var(--dim); font:12px var(--mono); margin-top:11px; }
   .term { background:#141417; border:1px solid var(--edge); border-radius:10px; padding:12px 14px;
     font:12.5px/1.55 var(--mono); color:var(--ink); height:360px; overflow-y:auto; cursor:text; }
@@ -662,6 +670,7 @@
         check it before you use it. A sandbox tick means the code ran without erroring, not that
         it does what you asked.</span>
       </p>
+      <p class="gentip" id="genTip" hidden><span data-ic="zap"></span><span id="genTipText"></span></p>
       <div class="statline" id="runStats"></div>
       <div class="exec" id="exec"></div>
       <p class="note bakednote">Load a stock 0.5B and ask above → it ignores your house rules. Bake your adapter, drop the <code>.gguf</code> in, ask the same thing → the rules now apply, from the weights.</p>
@@ -891,8 +900,83 @@ window.__signalDone = signalDone; // for testing
 
 // ---- global "working…" indicator (spinner + label in the top bar) ----
 const busyEl = $('busy'), busyText = $('busyText');
-function setBusy(t) { busyText.textContent = t; busyEl.hidden = false; }
-function clearBusy() { busyEl.hidden = true; }
+// ---- Tips shown during a wait ----
+// Each carries a `when` so it only appears if it is actually useful — telling
+// someone already running Ollama to install Ollama is worse than saying nothing.
+// Deliberately no invented speed multipliers: the honest claim is "faster",
+// with the reason, not a number nobody measured on this machine.
+const TIPS = [
+  { when: () => activeRuntime === 'wasm' && !ollamaModel,
+    html: () => `<b>Slow?</b> Ollama runs the same model natively and on the GPU, which the browser `
+        + `never touches. Switch with the Runtime toggle at the top.` },
+  { when: () => activeRuntime === 'wasm' && !!recommendedUrl && loadedUrl !== recommendedUrl,
+    html: () => `A smaller model finishes far sooner. The one marked <b>recommended</b> in the sidebar `
+        + `is sized for this device.` },
+  { when: () => typeof listVariants === 'function' && listVariants().length === 0,
+    html: () => `Repeating the same instructions each time? Save them once as a <b>variant</b> — `
+        + `sidebar, under Custom GGUFs.` },
+  { when: () => typeof listVariants === 'function' && listVariants().length > 0,
+    html: () => `A variant sends its rules with every request. <b>Baking</b> them into the weights `
+        + `removes that cost — the next thing being built.` },
+  { when: () => true,
+    html: () => `<b>${IS_MAC ? '⌘K' : 'Ctrl+K'}</b> searches every model without leaving the keyboard.` },
+  { when: () => true,
+    html: () => `<b>${IS_MAC ? '⌘↵' : 'Ctrl+↵'}</b> generates without reaching for the button.` },
+  { when: () => true,
+    html: () => `Prefer typing? The <b>Terminal</b> takes <b>/temp</b>, <b>/tokens</b> and <b>/load</b>.` },
+  { when: () => true,
+    html: () => `Models you load from a file are <b>kept between visits</b> now — no re-downloading.` },
+  { when: () => true,
+    html: () => `Lower <b>temperature</b> makes the model more predictable; higher lets it wander.` },
+  { when: () => $('selffix') && $('selffix').checked,
+    html: () => `<b>Auto-fix</b> feeds sandbox errors back to the model, up to three times. Turn it off `
+        + `to see the first attempt untouched.` },
+];
+
+let tipTimer = null, tipDelay = null, tipSeen = [];
+
+function nextTip() {
+  let pool = TIPS.filter(t => { try { return t.when(); } catch (_) { return false; } });
+  const fresh = pool.filter(t => !tipSeen.includes(t.html()));
+  if (fresh.length) pool = fresh; else tipSeen = [];      // seen them all, start over
+  if (!pool.length) return null;
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  const html = pick.html();
+  tipSeen.push(html);
+  return html;
+}
+
+function startTips() {
+  stopTips();
+  // Nothing for the first few seconds: a tip that flashes up and vanishes on a
+  // quick operation is noise, not help.
+  tipDelay = setTimeout(() => {
+    const show = () => {
+      const html = nextTip();
+      if (!html) return;
+      $('genTipText').innerHTML = html;
+      $('genTip').hidden = false;
+      $('genTip').style.animation = 'none';   // restart the fade for each new tip
+      void $('genTip').offsetWidth;
+      $('genTip').style.animation = '';
+    };
+    show();
+    tipTimer = setInterval(show, 8000);
+  }, 3000);
+}
+
+function stopTips() {
+  clearTimeout(tipDelay); clearInterval(tipTimer);
+  tipDelay = tipTimer = null;
+  const el = $('genTip');
+  if (el) el.hidden = true;
+}
+
+// Hooked here rather than at each call site: setBusy/clearBusy already bracket
+// every long operation, including model downloads, which are the longest wait
+// in the app and the one most worth filling.
+function setBusy(t) { busyText.textContent = t; busyEl.hidden = false; startTips(); }
+function clearBusy() { busyEl.hidden = true; stopTips(); }
 
 // nav scroll
 document.querySelectorAll('.navlink[data-scroll]').forEach(n => n.onclick = () => {
