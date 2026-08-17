@@ -146,6 +146,13 @@
   .varitem .rulecount { font:10px var(--mono); color:var(--dimmer); }
   .varitem .edit { opacity:0; color:var(--dimmer); font-size:11px; }
   .varitem:hover .edit { opacity:1; }
+  .storeditem { display:flex; align-items:center; gap:7px; padding:4px 8px; border-radius:6px;
+    cursor:pointer; color:var(--dim); }
+  .storeditem:hover { background:rgba(255,255,255,.045); color:var(--ink); }
+  .storeditem .nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .storeditem .sz { font:10px var(--mono); color:var(--dimmer); }
+  .storeditem .del { opacity:0; color:var(--dimmer); font-size:11px; }
+  .storeditem:hover .del { opacity:1; }
   .pinned { padding-bottom:5px; margin-bottom:4px; border-bottom:1px solid var(--hair); }
 
   .varlabel { display:block; margin:11px 0 4px; font-size:11px; letter-spacing:.05em;
@@ -527,6 +534,7 @@
 
     <div class="seclabel">Custom GGUFs</div>
     <div id="customTree"></div>
+    <div id="storedTree"></div>
     <div class="navlink" id="loadLocalNav"><span data-ic="plus"></span>Load local .gguf</div>
 
     <!-- Variants sit under Custom GGUFs as a sub-section: they are the simplest
@@ -1096,6 +1104,42 @@ function groupByFamily(models) {
   return map;
 }
 
+// Models kept from a previous session. Rendered from metadata only — the Blobs
+// stay in IndexedDB until one is actually clicked.
+async function renderStoredModels() {
+  const models = await listModels();
+  $('storedTree').innerHTML = models.map(m =>
+    `<div class="storeditem" data-model-id="${esc(m.id)}" title="${esc(m.name)}">`
+    + `<span class="bk">${ICONS.laptop}</span>`
+    + `<span class="nm">${esc(m.name)}</span>`
+    + `<span class="sz">${(m.size / 1048576).toFixed(0)} MB</span>`
+    + `<span class="del">remove</span></div>`).join('');
+}
+
+document.querySelector('.sidebar').addEventListener('click', async (e) => {
+  const row = e.target.closest('.storeditem');
+  if (!row) return;
+  const id = row.dataset.modelId;
+  if (e.target.closest('.del')) {
+    const res = await deleteModel(id);
+    if (!res.ok) status.innerHTML = `<span style="color:var(--bad)">✗ Couldn't remove: ${esc(res.error)}</span>`;
+    renderStoredModels();
+    return;
+  }
+  const blob = await getModelBlob(id);
+  if (!blob) {
+    status.innerHTML = `<span style="color:var(--bad)">✗ That model is no longer in browser storage — `
+      + `it may have been evicted. Load the file again.</span>`;
+    renderStoredModels();
+    return;
+  }
+  const name = row.querySelector('.nm').textContent;
+  withLoad(name, () => {
+    status.textContent = `Reading ${name} from browser storage…`;
+    return wllama.loadModel([blob], { n_ctx: 4096 });
+  });
+});
+
 // Rendered separately from the model tree: variants are rules, not GGUFs, and
 // mixing them into Custom GGUFs would teach exactly the wrong thing.
 function renderVariants() {
@@ -1358,6 +1402,7 @@ document.querySelector('.sidebar').addEventListener('click', (e) => {
 // Independent of the models.json fetch below: variants live in localStorage,
 // so a failed/slow fetch must not leave #variantTree empty.
 renderVariants();
+renderStoredModels();
 
 fetch('models.json')
   .then(r => r.json())
