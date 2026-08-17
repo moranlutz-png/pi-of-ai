@@ -1144,8 +1144,10 @@ document.querySelector('.sidebar').addEventListener('click', async (e) => {
     return;
   }
   if (loadBtn.disabled) return;   // a load is already in flight
+  loadBtn.disabled = true;        // claim it now — the await below is long enough to double-click through
   const blob = await getModelBlob(id);
   if (!blob) {
+    loadBtn.disabled = false;     // nothing to load, so release it
     status.innerHTML = `<span style="color:var(--bad)">✗ That model is no longer in browser storage — `
       + `it may have been evicted. Load the file again.</span>`;
     renderStoredModels();
