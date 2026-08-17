@@ -338,6 +338,22 @@
   #termIn { flex:1; min-width:0; background:transparent; border:0; outline:none;
     color:var(--ink); font:inherit; padding:0; }
 
+  /* ---- Composer: one bounded surface holding the field and its controls ---- */
+  .composer { margin-top:10px; background:var(--panel); border:1px solid var(--edge2);
+    border-radius:16px; padding:12px 14px 10px;
+    transition:border-color .14s, box-shadow .14s; }
+  /* Focus-within, not :focus — the ring belongs to the whole composer, so it
+     stays lit while you tab to the controls inside it. */
+  .composer:focus-within { border-color:var(--dim);
+    box-shadow:0 0 0 3px rgba(255,255,255,.06); }
+  .composer textarea { width:100%; background:transparent; border:0; outline:none;
+    resize:none; padding:0; margin:0; color:var(--ink); font:inherit; font-size:14px;
+    line-height:1.6; min-height:24px; max-height:260px; overflow-y:auto; display:block; }
+  .composer textarea::placeholder { color:var(--dimmer); }
+  .composer-bar { display:flex; align-items:center; gap:12px; margin-top:10px; }
+  .composer-bar .chk { margin:0; flex:1; min-width:0; font-size:12px; color:var(--dim); }
+  .composer-actions { display:flex; align-items:center; gap:8px; flex:none; }
+
   .kbdhint { display:inline-flex; align-items:center; gap:7px; margin-left:10px;
     padding:3px 8px; border-radius:7px; background:rgba(0,0,0,.30);
     border:1px solid rgba(255,255,255,.15); font:13px/1 var(--mono); }
@@ -587,12 +603,23 @@
       </div>
       <button type="button" class="collapse-btn" id="sysToggle"><span class="sign">+</span> System prompt</button>
       <div id="sysWrap" hidden><textarea id="sys" style="margin-top:6px" placeholder="Optional — leave empty to send no system prompt at all, which is the point of a rules-baked model."></textarea></div>
-      <label>Your request</label>
-      <textarea id="prompt" placeholder="Describe what you want the model to write…"></textarea>
-      <!-- Generate stays enabled with no model loaded, so the click can explain
+      <!-- One bounded composer, the way Claude and ChatGPT do it: the field and
+           its controls share a surface, so the whole thing reads as one input
+           rather than a textarea with buttons loose underneath. The label is
+           gone because the placeholder already says what to type.
+           Generate stays enabled with no model loaded, so the click can explain
            what to do instead of appearing to do nothing. -->
-      <div class="row" style="margin-top:12px"><button id="runBtn" class="act"><span data-ic="zap"></span>Generate<span class="kbdhint" id="runKbd"></span></button><button id="stopBtn" class="ghost" disabled>Stop</button></div>
-      <label class="chk"><input type="checkbox" id="selffix" checked /> Auto-fix on errors (up to 3×) <span class="note">(code is always sandbox-tested before it's shown)</span></label>
+      <div class="composer" id="composer">
+        <textarea id="prompt" rows="1" placeholder="Describe what you want the model to write…"></textarea>
+        <div class="composer-bar">
+          <label class="chk"><input type="checkbox" id="selffix" checked /> Auto-fix on errors (up to 3×)</label>
+          <span class="composer-actions">
+            <button id="stopBtn" class="ghost" disabled>Stop</button>
+            <button id="runBtn" class="act"><span data-ic="zap"></span>Generate<span class="kbdhint" id="runKbd"></span></button>
+          </span>
+        </div>
+      </div>
+      <div class="note" style="margin-top:7px">Code is always sandbox-tested before it's shown.</div>
       <div id="output">(model output appears here, streaming token by token)</div>
       <div class="statline" id="runStats"></div>
       <div class="exec" id="exec"></div>
@@ -2021,6 +2048,23 @@ runBtn.onclick = async () => {
   runBtn.disabled = false; stopBtn.disabled = true;
 };
 stopBtn.onclick = () => { abort = true; };
+
+// ---- Composer auto-grow ----
+// The field starts one line tall and grows with the text, capped by the CSS
+// max-height after which it scrolls. Height must be reset to 'auto' first, or
+// scrollHeight only ever reports the current height and the box can't shrink.
+(function autoGrow() {
+  const ta = $('prompt');
+  const fit = () => {
+    ta.style.height = 'auto';
+    ta.style.height = ta.scrollHeight + 'px';
+  };
+  ta.addEventListener('input', fit);
+  // Setting .value in code fires no input event — the variant flow and the
+  // examples both do that, so re-fit whenever the section is scrolled to.
+  window.__fitPrompt = fit;
+  fit();
+})();
 
 // ---- Cmd/Ctrl + Enter to generate ----
 const IS_MAC = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '');
