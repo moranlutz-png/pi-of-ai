@@ -481,14 +481,15 @@
   .dd-item .lbl { flex:1; }
   .dd-item .chk svg { width:14px; opacity:1; }
   /* A rounded pill rather than a bare line with a rule under it. */
-  .dd-search { display:flex; align-items:center; gap:9px; margin:4px 4px 6px;
-    padding:7px 13px; border-radius:999px;
+  .dd-search { display:flex; align-items:center; gap:6px; margin:3px 4px 4px;
+    padding:3px 9px; border-radius:999px;
     background:rgba(0,0,0,.26); border:1px solid rgba(255,255,255,.10); }
-  .dd-search svg { width:14px; height:14px; color:rgba(255,255,255,.42); flex:none; }
+  .dd-search svg { width:12px; height:12px; color:rgba(255,255,255,.42); flex:none; }
   /* input[type=text] later in this sheet forces mono at 12.5px with equal
      specificity, so it wins on source order without the attribute selector. */
   .dd-search input[type=text] { flex:1; min-width:0; background:transparent; border:0;
-    outline:none; color:#fff; font-family:inherit; font-size:13.5px; }
+    outline:none; color:#fff; font-family:inherit; font-size:12px; line-height:1.5;
+    padding:0; }
   .dd-search input::placeholder { color:rgba(255,255,255,.4); }
   .dd-list { max-height:250px; overflow-y:auto; }
   .dd-head { padding:7px 10px 3px; font-size:9.5px; letter-spacing:.09em;
