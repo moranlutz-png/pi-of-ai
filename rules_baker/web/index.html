@@ -260,6 +260,12 @@
   .act-legend .act-cell { width:10px; height:10px; }
   .act-legend span:first-child { margin-right:3px; }
   .act-legend span:last-child { margin-left:3px; }
+  .audit { display:flex; align-items:center; gap:10px; margin-top:14px;
+    padding-top:12px; border-top:1px solid var(--hair); flex-wrap:wrap; }
+  .audit[hidden] { display:none; }
+  .audit-sum { font-size:12px; color:var(--dim); flex:1; min-width:200px; }
+  .audit-sum b { color:var(--ink); font-weight:620; }
+  .audit-sum .warn { color:#f0be5a; }
   .strip .v.ok { color:var(--ok); } .strip .v.warn { color:#d4a24b; }
   .strip .v small { font-size:12px; color:var(--dim); font-weight:500; }
 
@@ -706,6 +712,12 @@
         <span class="act-cell l4"></span>
         <span>More</span>
       </div>
+      <!-- The heatmap says how often. The audit log says what happened. -->
+      <div class="audit" id="auditRow" hidden>
+        <span class="audit-sum" id="auditSummary"></span>
+        <button type="button" class="ghost" id="auditExport">Export audit log</button>
+        <button type="button" class="linklike" id="auditClear">Clear</button>
+      </div>
     </div>
 
     <div class="sec" id="model">
@@ -730,6 +742,20 @@
 
       <!-- What is this model, actually? Filled in once something is loaded. -->
       <div id="passport" class="passport" hidden></div>
+
+      <!-- How fast is it HERE — and does it stay that fast? -->
+      <div id="benchBox" class="passport" hidden>
+        <div class="pp-head">
+          <span class="pp-title">Speed on this device</span>
+          <span class="pp-lic" id="benchThrottle" hidden></span>
+          <button type="button" class="ghost pp-dl" id="benchRun"
+                  style="padding:4px 10px; font-size:11.5px">Run benchmark</button>
+        </div>
+        <div id="benchBody" class="pp-note" style="border-top:0; padding-top:0; margin-top:0">
+          Three short runs, measuring the wait before the first token, sustained speed,
+          and whether speed drops as the machine heats up.
+        </div>
+      </div>
 
       <!-- Shown only while Ollama is the active runtime: which local model to use -->
       <div class="rt-body" id="rtBody" hidden></div>
@@ -939,6 +965,8 @@ import { getHistory, addTurn, clearHistory, historyFor, usage,
          handoffText, CTX_TOKENS, REFUSE_AT } from './chat.js';
 import { recordActivity, activityYears, heatmapModel } from './activity.js';
 import { buildPassport, toCycloneDX } from './provenance.js';
+import { recordGeneration, auditSummary, auditExport, clearAudit } from './audit.js';
+import { runBenchmark, saveRun, savedRuns, deviceKey, memorySnapshot, BENCH_PROMPT } from './bench.js';
 
 // ---- inline line-icon set (Feather-style) ----
 const P = 'fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"';
@@ -1362,6 +1390,117 @@ async function renderStoredModels() {
 
 // Surfaced because eviction is invisible otherwise: a model simply stops being
 // there, with nothing to explain why.
+// ---- Benchmark ----
+// One generation, timed. bench.js knows nothing about the runtimes, so this
+// closure is the only place that has to care which one is active — and both
+// get measured by identical code, which is the point.
+async function benchOneRun() {
+  const t0 = performance.now();
+  let ttft = null, tokens = 0;
+  // 32 tokens, not 64: the thermal signal comes from repeating the run, not
+  // from making each one longer, and on a Chromebook at 2-3 tok/s a 64-token
+  // benchmark is a 75-second wait nobody sits through.
+  const text = await complete(
+    [{ role: 'user', content: BENCH_PROMPT }],
+    32,
+    () => { if (ttft === null) ttft = performance.now() - t0; tokens++; }
+  );
+  return {
+    ttftMs: ttft === null ? performance.now() - t0 : ttft,
+    tokens: tokens || Math.max(1, Math.round(String(text || '').length / 4)),
+    totalMs: performance.now() - t0,
+  };
+}
+
+function renderBench(result) {
+  const body = $('benchBody'), pill = $('benchThrottle');
+  const mem = result.memoryAfter;
+  const rows = result.rounds.map(r =>
+    `<div class="pp-f"><div class="k">Run ${r.round}</div>`
+    + `<div class="v">${r.tokensPerSecond} tok/s · ${r.ttftMs}ms first</div></div>`).join('');
+
+  body.innerHTML =
+      `<div class="pp-grid" style="margin-bottom:10px">`
+    +   `<div class="pp-f"><div class="k">Best</div><div class="v">${result.bestTokensPerSecond} tok/s</div></div>`
+    +   `<div class="pp-f"><div class="k">First token</div><div class="v">${result.medianTtftMs}ms median</div></div>`
+    +   `<div class="pp-f"><div class="k">Speed drop</div><div class="v">${result.decayPct}%</div></div>`
+    +   (mem ? `<div class="pp-f"><div class="k">Heap headroom</div><div class="v">${mem.headroomPct}% of ${mem.limitMb}MB</div></div>` : '')
+    +   rows
+    + `</div>`
+    + (result.throttling === 'none detected'
+        ? `Speed held steady across all three runs — this machine is not thermally limited at this model size.`
+        : result.throttling === 'possible'
+          ? `Speed fell ${result.decayPct}% from the first run to the last. That is around the level of ordinary noise, but worth re-running if it matters.`
+          : `<b>Speed fell ${result.decayPct}% across three runs.</b> That is thermal or power throttling: the machine cannot hold this pace. Published tok/s figures are measured cold and will not match what you get after a few minutes.`)
+    + `<div class="pp-unk" style="margin-top:8px">Measured on <b>${esc(result.device)}</b>. `
+    + `Heap headroom is a hint only — it measures JavaScript memory, not the WASM arena the weights live in.</div>`;
+
+  pill.hidden = false;
+  pill.textContent = result.throttling === 'none detected' ? 'steady'
+    : result.throttling === 'possible' ? 'slight drop' : 'throttling';
+  pill.className = 'pp-lic ' + (result.throttling === 'none detected' ? 'clear'
+    : result.throttling === 'possible' ? 'conditions' : 'unreviewed');
+}
+
+function wireBench() {
+  $('benchRun').onclick = async () => {
+    if (!runtimeReady()) {
+      $('benchBody').textContent = 'Load a model first — there is nothing to measure yet.';
+      return;
+    }
+    const btn = $('benchRun');
+    btn.disabled = true;
+    const wasRun = runBtn.disabled;
+    runBtn.disabled = true;                 // a generation mid-benchmark would poison it
+    try {
+      const result = await runBenchmark({
+        runOnce: benchOneRun,
+        rounds: 3,
+        onProgress: ({ round, rounds }) => {
+          $('benchBody').textContent = `Run ${round} of ${rounds}…`;
+        },
+      });
+      saveRun(modelLabel || loadedUrl || 'unknown', result);
+      renderBench(result);
+      noteActivity();
+    } catch (e) {
+      $('benchBody').innerHTML = `<span style="color:var(--bad)">Benchmark failed: ${esc(e.message || String(e))}</span>`;
+    } finally {
+      btn.disabled = false;
+      runBtn.disabled = wasRun;
+    }
+  };
+}
+
+// ---- Audit log ----
+function downloadJson(obj, filename) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function renderAuditSummary() {
+  const s = auditSummary();
+  const row = $('auditRow');
+  if (!s.count) { row.hidden = true; return; }
+  const bits = [`<b>${s.count}</b> generation${s.count === 1 ? '' : 's'} logged`];
+  if (s.sandboxProblems) bits.push(`<b>${s.sandboxProblems}</b> failed the sandbox`);
+  if (s.stopped) bits.push(`<b>${s.stopped}</b> stopped`);
+  if (s.failed) bits.push(`<b>${s.failed}</b> errored`);
+  // Truncation is surfaced, never silent — a log that quietly loses records
+  // looks complete and is worse than no log at all.
+  if (s.dropped) bits.push(`<span class="warn"><b>${s.dropped}</b> dropped past the retention limit</span>`);
+  row.innerHTML = `<span class="audit-sum">${bits.join(' · ')}. Prompts are hashed, never stored.</span>`
+    + `<button type="button" class="ghost" id="auditExport">Export audit log</button>`
+    + `<button type="button" class="linklike" id="auditClear">Clear</button>`;
+  $('auditExport').onclick = () => downloadJson(auditExport(), 'pi-of-ai-audit-log.json');
+  $('auditClear').onclick = () => { clearAudit(); renderAuditSummary(); };
+  row.hidden = false;
+}
+
 // ---- Model passport ----
 // Shown after a load, because "what did I just run?" is the question this whole
 // project exists to make answerable. The unverifiable list is deliberately as
@@ -1770,6 +1909,8 @@ document.querySelector('.sidebar').addEventListener('click', (e) => {
 renderVariants();
 renderStoredModels();
 renderActivity();
+renderAuditSummary();
+wireBench();
 
 fetch('models.json')
   .then(r => r.json())
@@ -2110,6 +2251,7 @@ async function withLoad(label, loadFn) {
     // and renderPassport says which of the two you are looking at.
     renderPassport({ entry: (lastModels || []).find(x => x.url === loadedUrl) || null,
                      local: pendingLocalFile });
+    $('benchBox').hidden = false;   // something is loaded, so it can be measured
     const elapsed = (performance.now() - t0) / 1000;
     // Learn this connection's real throughput, so the next estimate is measured
     // rather than guessed. Skipped for cached loads, which would read as absurd.
@@ -2147,7 +2289,14 @@ const CONFIG = {
 loadBtn.onclick = () => {
   const url = urlIn.value.trim();
   pendingLocalFile = null;          // this one comes from the catalogue
-  withLoad(pendingLabel || 'model', () => {
+  // Resolve the label from the URL actually being loaded, not from whatever was
+  // last clicked in the sidebar. Paste a different URL over a previous
+  // selection and pendingLabel is stale — which mislabelled the status line and,
+  // worse, filed benchmark results under the wrong model.
+  const match = (lastModels || []).find(m => m.url === url);
+  const label = match ? match.name
+    : (url ? decodeURIComponent(url.split('/').pop() || 'model') : (pendingLabel || 'model'));
+  withLoad(label, () => {
     status.textContent = 'Downloading model weights… (cached after first load)';
     loadedUrl = url;
     return wllama.loadModelFromUrl(url, { n_ctx: 4096, progressCallback: ({loaded,total}) => {
@@ -2359,6 +2508,8 @@ async function writeIntro(request) {
 // generate code HIDDEN, test it in the sandbox first, only reveal the final version
 async function handleGenerate() {
   const request = $('prompt').value, sys = $('sys').value;
+  const auditT0 = performance.now();
+  let auditAttempts = 0, auditSandbox = 'not-run';
 
   // This is a chat composer now, not a one-shot prompt box — a chat composer
   // clears on send. Leaving the text sitting in the box also meant refreshUsage()
@@ -2390,6 +2541,7 @@ async function handleGenerate() {
   // No eager sandbox load here — ensurePy() runs on first use, which only
   // happens once a reply actually contains code to check.
   for (let attempt = 1; attempt <= MAX && !abort; attempt++) {
+    auditAttempts = attempt;
     setBusy(MAX > 1 ? `Attempt ${attempt}: generating code…` : 'Generating code…');
     finalText = await complete(messages, parseInt($('maxtok').value, 10), null);   // hidden
     setBusy('Checking in sandbox…');
@@ -2403,6 +2555,7 @@ async function handleGenerate() {
       break;
     }
     const problem = blockProblem(await checkPython(extractCode(finalText), 8000));
+    auditSandbox = problem ? 'problem' : 'ok';
     if (!problem) { logExec('✓ first block checks out.'); break; }
     logExec('✗ ' + problem);
     if (isEnvProblem(problem)) {
@@ -2434,6 +2587,22 @@ async function handleGenerate() {
     addTurn('assistant', finalText);
     noteActivity();                  // a completed generation counts as practice
   }
+
+  // Logged whether or not the answer was kept — a stopped or failed run is
+  // exactly the kind of event an audit trail exists to show. Prompts are
+  // hashed, never stored; see audit.js.
+  recordGeneration({
+    model: modelLabel || null,
+    runtime: activeRuntime === 'ollama' ? `ollama:${ollamaModel || '?'}` : 'wasm:wllama',
+    prompt: request,
+    systemPrompt: sys,
+    outputTokens: null,
+    seconds: (performance.now() - auditT0) / 1000,
+    attempts: auditAttempts,
+    sandbox: auditSandbox,
+    outcome: abort ? 'stopped' : (finalText.trim() ? 'completed' : 'failed'),
+  }).then(renderAuditSummary);
+
   refreshUsage();
 }
 
