@@ -382,15 +382,34 @@
   .rt-body li { margin:5px 0; }
   /* Keycap badge rather than dim inline text — reads as keys you press. */
   /* ---- Terminal ---- */
-  #term { background:#1c1c1c; border:1px solid var(--edge2); border-radius:9px;
-    padding:12px 14px; max-height:340px; overflow-y:auto; cursor:text;
-    font:12.5px/1.65 var(--mono); }
+  #term { position:relative; background:#1c1c1c; border:1px solid var(--edge2);
+    border-radius:9px; padding:12px 14px; max-height:340px; overflow-y:auto;
+    cursor:text; font:12.5px/1.65 var(--mono); }
   #termOut > div { white-space:pre-wrap; word-break:break-word; color:var(--ink); }
   #termOut .sysmsg { color:var(--dim); }
   #termOut .errmsg { color:var(--bad); }
   #termOut .okmsg  { color:var(--ok); }
   .termline { display:flex; align-items:center; gap:8px; margin-top:6px; }
   .termcaret { color:var(--ok); flex:none; }
+  /* Slash-command picker. Overlays the transcript rather than sitting in flow:
+     #term is a fixed-height scroll region, so an in-flow menu got clipped by it
+     and pushed the caret line out of view. Anchored to the bottom so it grows
+     upward from the input, like a shell completion menu. */
+  .slashmenu { position:absolute; left:12px; right:12px; bottom:42px; z-index:5;
+    border:1px solid var(--edge2); border-radius:8px; background:#232323;
+    box-shadow:0 -6px 22px rgba(0,0,0,.45);
+    overflow:hidden; max-height:250px; overflow-y:auto; }
+  .slashmenu[hidden] { display:none; }
+  .slashcmd { display:flex; align-items:baseline; gap:10px; padding:5px 10px;
+    cursor:pointer; font:12.5px var(--mono); }
+  .slashcmd[aria-selected="true"] { background:rgba(255,255,255,.075); }
+  .slashcmd .nm { color:var(--ink); font-weight:600; flex:none; }
+  .slashcmd .ar { color:var(--dimmer); flex:none; }
+  .slashcmd .ds { color:var(--dim); margin-left:auto; font:11.5px var(--sans, inherit);
+    text-align:right; }
+  .slashhint { padding:5px 10px; font:10.5px var(--mono); color:var(--dimmer);
+    border-top:1px solid var(--hair); }
+
   #termIn { flex:1; min-width:0; background:transparent; border:0; outline:none;
     color:var(--ink); font:inherit; padding:0; }
 
@@ -772,6 +791,9 @@
       <p class="sub" style="margin:0 0 12px">Drive the model with commands instead of the form above.</p>
       <div id="term">
         <div id="termOut"></div>
+        <!-- Command picker. Sits above the input, like a shell completion menu,
+             so it never covers what you are typing. -->
+        <div id="slashMenu" class="slashmenu" hidden role="listbox" aria-label="Commands"></div>
         <div class="termline">
           <span class="termcaret">&gt;</span>
           <input id="termIn" type="text" autocomplete="off" autocorrect="off"
@@ -3388,17 +3410,28 @@ const termHistory = []; let histIdx = 0; let termBusy = false;
 function tp(text, cls) { const d = document.createElement('div'); if (cls) d.className = cls; d.textContent = text; termOut.appendChild(d); termEl.scrollTop = termEl.scrollHeight; return d; }
 termEl.addEventListener('click', (e) => { if (e.target.tagName !== 'INPUT') termIn.focus(); });
 
+// One registry, so the / menu and /help can never drift apart — they used to be
+// two hand-maintained lists, which is how a command ends up documented but
+// missing from the picker, or the reverse.
+const TERM_COMMANDS = [
+  { name: 'load',    args: '<featherweight|chromebook|laptop|url>', desc: 'load a model' },
+  { name: 'models',  args: '',            desc: 'list preset models' },
+  { name: 'temp',    args: '<0-1>',       desc: 'sampling temperature' },
+  { name: 'tokens',  args: '<n>',         desc: 'max tokens to generate' },
+  { name: 'system',  args: '<text>',      desc: 'set system prompt (blank = show)' },
+  { name: 'autofix', args: '<on|off>',    desc: 'sandbox-check generated code' },
+  { name: 'status',  args: '',            desc: 'show current settings' },
+  { name: 'chain',   args: '<goal>',      desc: 'run a short agent loop, guards visible' },
+  { name: 'help',    args: '',            desc: 'show this list' },
+  { name: 'clear',   args: '',            desc: 'clear the terminal' },
+];
+
 const TERM_HELP = [
   'Commands:',
-  '  /load <featherweight|chromebook|laptop|url>   load a model',
-  '  /models                                       list preset models',
-  '  /temp <0-1>                                   sampling temperature',
-  '  /tokens <n>                                   max tokens to generate',
-  '  /system <text>                                set system prompt (blank = show)',
-  '  /autofix <on|off>                             sandbox-check generated code',
-  '  /status                                       show current settings',
-  '  /chain <goal>                                 run a short agent loop, guards visible',
-  '  /clear                                        clear the terminal',
+  ...TERM_COMMANDS.map(c => {
+    const left = `  /${c.name}${c.args ? ' ' + c.args : ''}`;
+    return left.padEnd(48) + c.desc;
+  }),
   'Anything else is sent to the model as a request. Ctrl+C stops a generation.',
 ].join('\n');
 
@@ -3534,8 +3567,80 @@ async function termRun(raw) {
   }
 }
 
+// ---- slash-command picker ----
+// Opens on a leading "/" and filters as you type, like a shell completion menu.
+// Only while the WHOLE input is still the command word: once you have typed an
+// argument the menu is out of the way, because you are no longer choosing.
+const slashMenu = $('slashMenu');
+let slashItems = [], slashIdx = 0;
+
+function slashMatches(value) {
+  if (!value.startsWith('/')) return null;
+  const rest = value.slice(1);
+  if (/\s/.test(rest)) return null;             // an argument is being typed
+  const q = rest.toLowerCase();
+  return TERM_COMMANDS.filter(c => c.name.startsWith(q));
+}
+
+function renderSlashMenu() {
+  if (!slashItems.length) { slashMenu.hidden = true; return; }
+  slashMenu.innerHTML = slashItems.map((c, i) =>
+      `<div class="slashcmd" role="option" data-i="${i}" aria-selected="${i === slashIdx}">`
+    + `<span class="nm">/${esc(c.name)}</span>`
+    + `<span class="ar">${esc(c.args)}</span>`
+    + `<span class="ds">${esc(c.desc)}</span></div>`).join('')
+    + `<div class="slashhint">↑↓ choose · tab or enter to pick · esc to dismiss</div>`;
+  slashMenu.hidden = false;
+  slashMenu.querySelectorAll('.slashcmd').forEach(el => {
+    el.onmousedown = (ev) => { ev.preventDefault(); pickSlash(+el.dataset.i); };
+  });
+  const sel = slashMenu.querySelector('[aria-selected="true"]');
+  if (sel) sel.scrollIntoView({ block: 'nearest' });
+}
+
+function closeSlashMenu() { slashItems = []; slashIdx = 0; slashMenu.hidden = true; }
+
+function pickSlash(i) {
+  const c = slashItems[i];
+  if (!c) return;
+  // Commands that take an argument leave a trailing space and stay open for
+  // typing; ones that don't are ready to run.
+  termIn.value = '/' + c.name + (c.args ? ' ' : '');
+  closeSlashMenu();
+  termIn.focus();
+}
+
+function updateSlashMenu() {
+  const m = slashMatches(termIn.value);
+  if (!m) { closeSlashMenu(); return; }
+  slashItems = m;
+  slashIdx = Math.min(slashIdx, Math.max(0, m.length - 1));
+  renderSlashMenu();
+}
+
+termIn.addEventListener('input', updateSlashMenu);
+termIn.addEventListener('blur', () => setTimeout(closeSlashMenu, 120));
+
 termIn.addEventListener('keydown', async (e) => {
   if (e.ctrlKey && e.key.toLowerCase() === 'c') { if (termBusy) { abort = true; tp('^C', 'sysmsg'); } return; }
+
+  // The menu owns the arrows, Tab, Enter and Escape while it is open — command
+  // history keeps them the rest of the time.
+  if (!slashMenu.hidden && slashItems.length) {
+    if (e.key === 'ArrowDown') { slashIdx = (slashIdx + 1) % slashItems.length; renderSlashMenu(); e.preventDefault(); return; }
+    if (e.key === 'ArrowUp')   { slashIdx = (slashIdx - 1 + slashItems.length) % slashItems.length; renderSlashMenu(); e.preventDefault(); return; }
+    if (e.key === 'Tab')       { pickSlash(slashIdx); e.preventDefault(); return; }
+    if (e.key === 'Escape')    { closeSlashMenu(); e.preventDefault(); return; }
+    if (e.key === 'Enter') {
+      // Enter completes the command rather than running a half-typed one —
+      // except where what you typed is already the exact command, in which case
+      // making you press Enter twice would be obstructive.
+      const exact = slashItems.length === 1 && termIn.value === '/' + slashItems[0].name;
+      if (!exact) { pickSlash(slashIdx); e.preventDefault(); return; }
+      closeSlashMenu();
+    }
+  }
+
   if (e.key === 'ArrowUp') { if (histIdx > 0) { histIdx--; termIn.value = termHistory[histIdx]; } e.preventDefault(); return; }
   if (e.key === 'ArrowDown') { if (histIdx < termHistory.length - 1) { histIdx++; termIn.value = termHistory[histIdx]; } else { histIdx = termHistory.length; termIn.value = ''; } e.preventDefault(); return; }
   if (e.key !== 'Enter') return;
