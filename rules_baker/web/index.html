@@ -2095,13 +2095,34 @@ function pushRecent(url) {
 }
 
 // Reads the sidebar, so it stays in step with models.json automatically.
+// Sourced from the catalogue, NOT from the sidebar DOM. It used to read
+// `.modelitem` elements, which was fine while the sidebar listed every model —
+// then the sidebar became pinned-only and the search could suddenly reach just
+// the two models that happened to be on screen. The dropdown is the way to
+// browse everything, so it has to read the data rather than the view.
 function modelMenuItems() {
-  return [...document.querySelectorAll('.modelitem')].map(mi => ({
-    el: mi,
-    url: mi.dataset.url,
-    name: mi.querySelector('.nm').textContent.trim(),
-    size: mi.querySelector('.badge')?.textContent.trim() || '',
+  const fromCatalogue = (lastModels || [])
+    .filter(m => ['model', 'community', 'custom'].includes(m.tier || 'model'))
+    .map(m => ({ url: m.url, name: m.name, size: m.size || '' }));
+
+  // Stored .gguf files exist only in IndexedDB and have no catalogue row, so
+  // they are picked up from the sidebar — the one case where the DOM is the
+  // only source of truth.
+  const fromStored = [...document.querySelectorAll('#storedTree .storeditem')].map(el => ({
+    el,
+    url: null,
+    storedId: el.dataset.modelId,
+    name: el.querySelector('.nm')?.textContent.trim() || 'stored model',
+    size: el.querySelector('.sz')?.textContent.trim() || '',
   }));
+
+  const seen = new Set();
+  return [...fromCatalogue, ...fromStored].filter(i => {
+    const k = i.url || i.storedId;
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 }
 
 function fillModelMenu(menu, onPick) {
@@ -2215,7 +2236,17 @@ makeDropdown(document.getElementById('maxtok'), 'hash');
     e.stopPropagation();
     document.querySelectorAll('.dd-menu').forEach(m => { if (m !== menu) m.hidden = true; });
     if (!menu.hidden) { menu.hidden = true; return; }
-    fillModelMenu(menu, (i) => { i.el.click(); document.getElementById('loadBtn').click(); });
+    // Catalogue entries carry a URL and no element; stored files carry an
+    // element and no URL. Handle both rather than assuming a sidebar row exists.
+    fillModelMenu(menu, (i) => {
+      if (i.url) {
+        urlIn.value = i.url;
+        pendingLabel = i.name;
+        document.getElementById('loadBtn').click();
+      } else if (i.el) {
+        i.el.click();                 // stored .gguf — its own handler loads it
+      }
+    });
     menu.hidden = false;
   };
   document.addEventListener('click', () => { menu.hidden = true; });
