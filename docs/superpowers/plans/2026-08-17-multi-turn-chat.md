@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - No build step. `index.html` loads one `<script type="module">`; new modules are imported from it.
-- No test framework. Verification is in-browser against `http://localhost:8126` (serving the main checkout). Port 8123 belongs to another session — do not use or kill it.
+- No test framework. Verification is in-browser against `http://localhost:8123` (serving the main checkout, with COOP/COEP so WASM threads work).
 - `n_ctx` is **4096** tokens, shared between system prompt, history, request and reply.
 - Warn past **50%** of the window; **refuse** new turns past **70%**.
 - Refusing is deliberate: never silently drop the oldest turn.
@@ -140,10 +140,10 @@ export function handoffText(summary) {
 Server should be running; if not:
 
 ```bash
-cd ~/Projects/Dev/pi-of-ai/rules_baker/web && python3 serve.py 8126
+cd ~/Projects/Dev/pi-of-ai/rules_baker/web && python3 serve.py 8123
 ```
 
-Open `http://localhost:8126` and run in the console:
+Open `http://localhost:8123` and run in the console:
 
 ```js
 const C = await import('./chat.js');
@@ -276,7 +276,7 @@ a removed element.
 
 - [ ] **Step 5: Verify**
 
-Reload `http://localhost:8126`, then in the console:
+Reload `http://localhost:8123`, then in the console:
 
 ```js
 const out = document.getElementById('output');
