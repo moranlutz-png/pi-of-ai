@@ -365,6 +365,15 @@
   .ctxmeter[hidden] { display:none; }
   .ctxmeter.full { color:var(--bad); }
 
+  .handoff { margin-top:11px; border:1px solid var(--edge2); border-radius:11px;
+    background:var(--panel); padding:11px 13px; }
+  .handoff[hidden] { display:none; }
+  .handoff-head { display:flex; align-items:center; gap:8px; font-size:11.5px;
+    color:var(--dim); margin-bottom:8px; }
+  .handoff-head .copybtn { margin-left:auto; }
+  .handoff pre { margin:0; max-height:220px; overflow:auto; }
+  .handoff code { font:11.5px var(--mono); color:var(--ink); white-space:pre-wrap; }
+
   .kbdhint { display:inline-flex; align-items:center; gap:7px; margin-left:10px;
     padding:3px 8px; border-radius:7px; background:rgba(0,0,0,.30);
     border:1px solid rgba(255,255,255,.15); font:13px/1 var(--mono); }
@@ -678,10 +687,17 @@
           <label class="chk"><input type="checkbox" id="selffix" checked /> Auto-fix on errors (up to 3×)</label>
           <span class="ctxmeter" id="ctxMeter" hidden></span>
           <span class="composer-actions">
+            <button id="newChatBtn" class="ghost" title="Start a fresh chat">New chat</button>
             <button id="stopBtn" class="ghost" disabled>Stop</button>
             <button id="runBtn" class="act"><span data-ic="zap"></span>Generate<span class="kbdhint" id="runKbd"></span></button>
           </span>
         </div>
+      </div>
+      <div class="handoff" id="handoff" hidden>
+        <div class="handoff-head">Paste this into your new chat to carry it over
+          <button type="button" class="copybtn inline" title="Copy"
+                  onclick="__copyCode(this)">COPY_ICON</button></div>
+        <pre><code id="handoffText"></code></pre>
       </div>
       <div class="note" style="margin-top:7px">Code is always sandbox-tested before it's shown.</div>
       <div id="output">(model output appears here, streaming token by token)</div>
@@ -904,7 +920,12 @@ function fallbackCopy(text, btn) {
   document.body.removeChild(ta);
 }
 window.__copyCode = (btn) => {
-  const code = btn.parentElement.querySelector('code').innerText;
+  // Usually the code lives right alongside the button (.codeblock, .cmd), but
+  // the handoff box nests the button inside .handoff-head, one level deeper
+  // than the <pre><code> it copies — walk up until an ancestor has one.
+  let container = btn.parentElement;
+  while (container && !container.querySelector('code')) container = container.parentElement;
+  const code = container.querySelector('code').innerText;
   if (navigator.clipboard?.writeText) {
     navigator.clipboard.writeText(code).then(() => copiedFlash(btn)).catch(() => fallbackCopy(code, btn));
   } else { fallbackCopy(code, btn); }
@@ -2406,6 +2427,7 @@ stopBtn.onclick = () => { abort = true; };
   window.__fitPrompt = fit;
   fit();
 })();
+document.querySelector('#handoff .copybtn').innerHTML = COPY_SVG;
 
 // The window is small enough that a few code-carrying turns fill it, so the
 // user needs to see it coming rather than hit a wall.
@@ -2419,6 +2441,45 @@ function refreshUsage() {
 }
 $('prompt').addEventListener('input', refreshUsage);
 $('sys').addEventListener('input', refreshUsage);
+
+$('newChatBtn').onclick = async () => {
+  // A single long pasted prompt can push the meter past 70% with an EMPTY
+  // history — the refusal message's "press New chat" advice only works if
+  // this also empties the prompt box, or the oversized text just sits there
+  // and the user is stuck in a refusal loop. Clear it (and its auto-grown
+  // height, the same way the autoGrow IIFE fits it) on every path below.
+  const had = getHistory().length > 0;
+  if (!had) {
+    clearTranscript();
+    $('handoff').hidden = true;
+    $('prompt').value = '';
+    window.__fitPrompt();
+    return;
+  }
+
+  let summary = '';
+  if (runtimeReady()) {
+    // The model writes the prose; handoffText() appends the code verbatim,
+    // because a small model asked to retype a code block will mangle it.
+    setBusy('Summarising the chat…');
+    try {
+      summary = await complete([
+        { role: 'system', content: 'Summarise this conversation in two or three sentences: what '
+          + 'the user was building and what was decided. Do not include code.' },
+        ...getHistory(),
+      ], 120, null);
+    } catch (_) { summary = ''; }
+    clearBusy();
+  }
+
+  $('handoffText').textContent = handoffText(summary);
+  $('handoff').hidden = false;
+  clearHistory();
+  clearTranscript();
+  refreshUsage();
+  $('prompt').value = '';
+  window.__fitPrompt();
+};
 
 // ---- Cmd/Ctrl + Enter to generate ----
 const IS_MAC = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '');
