@@ -361,6 +361,9 @@
   .composer-bar { display:flex; align-items:center; gap:12px; margin-top:10px; }
   .composer-bar .chk { margin:0; flex:1; min-width:0; font-size:12px; color:var(--dim); }
   .composer-actions { display:flex; align-items:center; gap:8px; flex:none; }
+  .ctxmeter { font:10.5px var(--mono); color:var(--dimmer); flex:none; }
+  .ctxmeter[hidden] { display:none; }
+  .ctxmeter.full { color:var(--bad); }
 
   .kbdhint { display:inline-flex; align-items:center; gap:7px; margin-left:10px;
     padding:3px 8px; border-radius:7px; background:rgba(0,0,0,.30);
@@ -673,6 +676,7 @@
         <textarea id="prompt" rows="1" placeholder="Describe what you want the model to write…"></textarea>
         <div class="composer-bar">
           <label class="chk"><input type="checkbox" id="selffix" checked /> Auto-fix on errors (up to 3×)</label>
+          <span class="ctxmeter" id="ctxMeter" hidden></span>
           <span class="composer-actions">
             <button id="stopBtn" class="ghost" disabled>Stop</button>
             <button id="runBtn" class="act"><span data-ic="zap"></span>Generate<span class="kbdhint" id="runKbd"></span></button>
@@ -2220,6 +2224,7 @@ async function handleGenerate() {
     addTurn('user', request);
     addTurn('assistant', finalText);
   }
+  refreshUsage();
 }
 
 // A missing module is a limitation of the browser sandbox, not a mistake by the
@@ -2316,6 +2321,14 @@ runBtn.onclick = async () => {
     $('model').scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
   }
+  // Refuse rather than silently dropping the oldest turn: the model forgetting
+  // something still visible on screen is not something a beginner can diagnose.
+  if (refreshUsage().full) {
+    output.innerHTML += `<div class="sandnote bad">This chat is full — the model's context `
+      + `window can't hold any more. Press <b>New chat</b> to carry the important parts over `
+      + `and keep going.</div>`;
+    return;
+  }
   if (!$('prompt').value.trim()) {
     // Append (not replace) so an existing transcript survives this message.
     output.innerHTML += `<div class="sandnote bad">${esc('⤷ Type a request above first. With an empty prompt the model has nothing to answer, so it just free-associates (that\'s the coffee rambling you saw).')}</div>`;
@@ -2375,6 +2388,19 @@ stopBtn.onclick = () => { abort = true; };
   window.__fitPrompt = fit;
   fit();
 })();
+
+// The window is small enough that a few code-carrying turns fill it, so the
+// user needs to see it coming rather than hit a wall.
+function refreshUsage() {
+  const u = usage($('sys').value, $('prompt').value);
+  const el = $('ctxMeter');
+  el.hidden = !u.warn;
+  el.textContent = `chat ${u.percent}% full`;
+  el.classList.toggle('full', u.full);
+  return u;
+}
+$('prompt').addEventListener('input', refreshUsage);
+$('sys').addEventListener('input', refreshUsage);
 
 // ---- Cmd/Ctrl + Enter to generate ----
 const IS_MAC = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '');
