@@ -57,9 +57,30 @@ apart and excellent together, all within the documented API.
   splits — that `strawberry` becomes several tokens is the cheapest good
   explanation of why models miscount its letters.
 
-Verify log-prob availability in wllama first. If it is not exposed there, scope
-the feature to the **Ollama runtime**, whose OpenAI-compatible endpoint supports
-`logprobs`, and say so in the UI rather than faking it where it is unavailable.
+**Correction (2026-08-18):** an earlier draft of this spec said to verify
+log-prob support and fall back to Ollama if absent. That contingency is
+unnecessary — it was based on wllama's README prose rather than its type
+definitions. Checked against `@wllama/wllama@2`'s published `wllama.d.ts`, all
+of the following exist:
+
+| Method | Signature | Use |
+|---|---|---|
+| `getLogits` | `(topK?: number) => Promise<{token, p}[]>` | the candidate list |
+| `samplingInit` | `(config: SamplingConfig, pastTokens?) => Promise<void>` | the knobs |
+| `tokenize` / `detokenize` | `(text, special?)` / `(tokens, returnString?)` | the token view |
+| `decode` | `(tokens, options)` | stepping manually |
+| `kvClear` / `kvRemove` | `()` / `(nKeep, nDiscard)` | item 5 |
+| `embeddings` | `(tokens) => Promise<number[]>` | normalised vectors |
+
+**The trap to design around.** `getLogits` returns, per its own doc comment, the
+*softmax-ed probability of logits* — the distribution **before** sampling.
+Temperature, top-k and top-p are applied downstream. So a panel that simply
+renders `getLogits()` output next to a temperature control ships a knob that
+visibly does nothing, which teaches the opposite of the intended lesson.
+
+Show **two columns**: the raw model distribution, and the same distribution after
+the current sampler settings are re-applied in JS. Then the knob moves the second
+column and not the first, which is exactly the thing worth understanding.
 
 This also feeds the accuracy work: when a model states something confidently and
 wrongly, the interesting question is what the runner-up tokens were and how thin
