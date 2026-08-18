@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import datetime as _dt
 import hashlib
 import json
 import logging
@@ -355,6 +356,66 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     dropped = sum(drops.values())
+
+    # ---- datasheet -------------------------------------------------------
+    # A trained model's weights are auditable only as far as its data is, and
+    # synthetic data is the case where nobody can reconstruct provenance after
+    # the fact: the teacher gets upgraded, the rules get edited, the seeds get
+    # extended, and the dataset on disk no longer explains itself. Written here
+    # because this is the only moment all of it is known at once.
+    #
+    # Every drop is reported. A keep-rate is the difference between "the teacher
+    # produced clean data" and "we discarded most of what it produced", and a
+    # dataset that omits it reads as the former regardless of which it was.
+    datasheet_path = out_path.with_name(out_path.stem + ".datasheet.json")
+    datasheet = {
+        "schema": "pi-of-ai/datasheet/1",
+        "generatedAt": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+        "dataset": {
+            "path": out_path.name,
+            "examplesKept": kept,
+            "examplesDropped": dropped,
+            "keepRatePct": round(100 * kept / (kept + dropped), 1) if kept + dropped else None,
+            "dropReasons": dict(drops) or {},
+        },
+        "generation": {
+            "method": "synthetic, teacher-student with rule stripping",
+            "note": (
+                "The teacher saw the house rules and wrote compliant code. The stored "
+                "student prompt has the rules removed, so the student learns to obey "
+                "without being told. Training prompts therefore do NOT contain the rules."
+            ),
+            "teacherModel": t.get("model"),
+            "teacherEndpoint": t.get("base_url"),
+            "temperature": cfg.get("generation", {}).get("temperature"),
+            "maxTokens": cfg.get("generation", {}).get("max_tokens"),
+            "config": args.config.name,
+        },
+        "rules": {
+            "source": cfg.get("rules_file"),
+            "count": len(parse_rules(root / cfg["rules_file"])) if cfg.get("rules_file") else None,
+        },
+        "splits": {
+            "evalSeedsHeldOut": len(eval_seeds),
+            "leakProof": True,
+            "note": "Generation used train seeds only; eval seeds were never generated from.",
+        },
+        "provenance": {
+            "humanAuthored": False,
+            "licence": (
+                "Inherits the teacher model's licence and acceptable-use terms. "
+                "Synthetic output does not clear the terms of the model that produced it — "
+                "check before redistributing this dataset or anything trained on it."
+            ),
+            "containsPersonalData": False,
+            "unverifiable": [
+                "what the teacher model was itself trained on",
+                "whether teacher outputs reproduce memorised training data",
+            ],
+        },
+    }
+    datasheet_path.write_text(json.dumps(datasheet, indent=2) + "\n", encoding="utf-8")
+
     logger.info("=" * 60)
     logger.info("KEPT %d examples total on disk", kept)
     logger.info("DROPPED %d  -> %s", dropped, dict(drops) or "none")
