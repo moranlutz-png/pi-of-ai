@@ -967,6 +967,7 @@ import { recordActivity, activityYears, heatmapModel } from './activity.js';
 import { buildPassport, toCycloneDX } from './provenance.js';
 import { recordGeneration, auditSummary, auditExport, clearAudit } from './audit.js';
 import { runBenchmark, saveRun, savedRuns, deviceKey, memorySnapshot, BENCH_PROMPT } from './bench.js';
+import { runChain } from './chain.js';
 
 // ---- inline line-icon set (Feather-style) ----
 const P = 'fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"';
@@ -3365,6 +3366,7 @@ const TERM_HELP = [
   '  /system <text>                                set system prompt (blank = show)',
   '  /autofix <on|off>                             sandbox-check generated code',
   '  /status                                       show current settings',
+  '  /chain <goal>                                 run a short agent loop, guards visible',
   '  /clear                                        clear the terminal',
   'Anything else is sent to the model as a request. Ctrl+C stops a generation.',
 ].join('\n');
@@ -3418,6 +3420,64 @@ async function termGenerate(prompt) {
   clearBusy();
 }
 
+// ---- /chain — the agent loop, with its guards visible ----
+// One step asks the model for the next action given the goal and everything
+// done so far. Deliberately plain: no tool schema, no JSON mode. A small model
+// cannot reliably produce structured output, and pretending otherwise would
+// hide the very failure this is meant to show.
+async function termChain(goal) {
+  if (!runtimeReady()) { tp('no model loaded — try:  /load chromebook', 'errmsg'); return; }
+  if (!goal) { tp('usage: /chain <goal>   e.g. /chain write and test a function that reverses a string', 'errmsg'); return; }
+
+  abort = false;
+  setBusy('Running chain…');
+  tp(`chain: ${goal}`, 'sysmsg');
+  tp('guards: 6 steps max · repeat detection · state shown each step', 'sysmsg');
+
+  const result = await runChain({
+    goal,
+    maxSteps: 6,
+    shouldAbort: () => abort,
+    onEvent: (e) => {
+      if (e.type === 'step-start') tp(`── step ${e.n}/${e.of} ──`, 'sysmsg');
+      else if (e.type === 'step-done') tp('  → ' + (e.action || '(no action)'), 'gen');
+      else if (e.type === 'loop') tp(`  ⚠ loop guard: this repeats step ${e.firstAt}. Stopping.`, 'errmsg');
+      else if (e.type === 'budget') tp(`  ⚠ step budget of ${e.maxSteps} reached. Stopping.`, 'errmsg');
+      else if (e.type === 'error') tp('  ⚠ ' + e.message, 'errmsg');
+    },
+    step: async ({ goal, state, n }) => {
+      const history = state.steps.length
+        ? state.steps.map(s => `${s.n}. ${s.action}`).join('\n')
+        : '(nothing yet)';
+      const prompt =
+          `Goal: ${goal}\n\nSteps already taken:\n${history}\n\n`
+        + `Give ONLY the single next step, in one short line. `
+        + `If the goal is already met, reply exactly: DONE`;
+      const out = (await complete([{ role: 'user', content: prompt }], 60, null) || '').trim();
+      // Asked for one line, a small model often opens with a code fence or a
+      // list bullet instead. Skipping those is parsing, not flattery — the
+      // interesting failures are repetition and never stopping, and they should
+      // not be masked by us mistaking punctuation for an action.
+      const firstLine = out.split('\n')
+        .map(s => s.trim().replace(/^([-*]|\d+[.)])\s+/, ''))
+        .filter(s => s && !/^```/.test(s))[0] || '(no usable step — the model returned only formatting)';
+      return { action: firstLine, output: out, done: /^done\b/i.test(firstLine) };
+    },
+  });
+
+  clearBusy();
+  tp('', 'sysmsg');
+  tp(`stopped: ${result.reason} after ${result.stepsRun}/${result.maxSteps} steps`,
+     result.completed ? 'okmsg' : 'errmsg');
+  if (!result.completed) {
+    // Said plainly rather than dressed up. A harness that hands you the last
+    // output as if it were an answer is the actual bug being taught here.
+    tp('the goal was NOT completed — the run hit a guard. That is the guard working,', 'sysmsg');
+    tp('not a bug: small models loop and rarely emit a clean stop.', 'sysmsg');
+  }
+  noteActivity();
+}
+
 async function termRun(raw) {
   const t = raw.trim();
   if (!t) return;
@@ -3435,6 +3495,7 @@ async function termRun(raw) {
       case 'system': if (!arg) tp('system: ' + termState.system, 'sysmsg'); else { termState.system = arg; tp('system prompt updated', 'sysmsg'); } break;
       case 'autofix': termState.autofix = (arg.toLowerCase() !== 'off'); tp('autofix ' + (termState.autofix ? 'on' : 'off'), 'sysmsg'); break;
       case 'load': await termLoad(arg); break;
+      case 'chain': await termChain(arg); break;
       default: tp('unknown command: /' + cmd + '   (try /help)', 'errmsg');
     }
   } else {
