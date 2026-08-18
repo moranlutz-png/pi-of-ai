@@ -470,7 +470,11 @@
   .note { font-size:12px; color:var(--dim); }
   .bar { height:6px; background:var(--panel); border:1px solid var(--edge); border-radius:6px; overflow:hidden; margin-top:14px; }
   .bar > i { display:block; height:100%; width:0; background:#8a8a8a; transition:width .2s; }
-  #status { font:12.5px var(--mono); color:var(--dim); margin-top:10px; min-height:18px; }
+  /* Flex so a warning can sit opposite the message on the same line. Wraps on
+     narrow screens rather than overlapping. */
+  #status { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 14px;
+    font:12.5px var(--mono); color:var(--dim); margin-top:10px; min-height:18px; }
+  .statuswarn { margin-left:auto; color:var(--bad); cursor:help; }
   #output { min-height:104px; margin-top:12px; color:var(--ink); font-size:13px; line-height:1.55; }
   #output .prose { white-space:pre-wrap; }
   #output .intro { color:var(--dim); font-style:italic; margin-bottom:8px; }
@@ -1893,7 +1897,15 @@ async function withLoad(label, loadFn) {
       if (isFinite(mb)) recordRate(mb / elapsed);
     }
     const secs = elapsed.toFixed(1);
-    status.innerHTML = `<span style="color:var(--ok)">✓ ${esc(label)} loaded in ${secs}s — running fully in this tab.</span>`;
+    // If the Ollama runtime is active, this model just loaded into WASM but
+    // generation will still go to Ollama's model — so the user would be testing
+    // something other than the file they just loaded. Say so on the same line.
+    const mismatch = activeRuntime === 'ollama'
+      ? `<span class="statuswarn" title="The Runtime toggle is set to Ollama, so generation uses `
+        + `${esc(ollamaModel || 'the Ollama model')} — not this file. Switch to In-browser to use it.">`
+        + `not running via Ollama</span>`
+      : '';
+    status.innerHTML = `<span style="color:var(--ok)">✓ ${esc(label)} loaded in ${secs}s — running fully in this tab.</span>${mismatch}`;
     runBtn.disabled = false; modelPick.innerHTML = `<option>${esc(label)}</option>`;
     if (window.__setModelBtn) window.__setModelBtn(label);
   } catch (e) {
@@ -2418,6 +2430,11 @@ function rtSetRuntime(which) {
     ollamaModel = null;
     runBtn.disabled = !wllama;
     if (wllama && window.__setModelBtn) window.__setModelBtn(modelLabel || 'model');
+    // The status line may still read "Using X via Ollama", which is now false.
+    // Restate what will actually run, rather than leaving a stale claim up.
+    status.innerHTML = wllama
+      ? `<span style="color:var(--ok)">✓ ${esc(modelLabel || 'model')} — running in this tab.</span>`
+      : 'Idle · pick a model and press Load.';
   }
 }
 
