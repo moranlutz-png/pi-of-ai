@@ -116,17 +116,6 @@
 
   .seclabel { font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--dimmer);
     padding:36px 8px 3px; font-weight:660; }
-  /* collapsible family groups in the sidebar model tree */
-  .famrow { display:flex; align-items:center; gap:7px; padding:4px 8px; border-radius:6px;
-    cursor:pointer; color:var(--dim); user-select:none; }
-  .famrow:hover { background:rgba(255,255,255,.045); color:var(--ink); }
-  .famrow .cr { width:11px; height:11px; opacity:.55; flex-shrink:0;
-    display:inline-flex; transition:transform .14s ease; }
-  .famrow.open .cr { transform:rotate(90deg); }
-  .famrow .nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .famrow .count { font-size:10.5px; color:var(--dimmer); }
-  .famkids { display:none; margin-left:13px; padding-left:5px; border-left:1px solid var(--hair); }
-  .famkids.open { display:block; }
   .modelnote { padding:4px 9px 7px; font-size:11px; color:var(--dimmer); line-height:1.55; }
 
   /* A variant is rules, not weights — it must not read as a model. */
@@ -218,6 +207,41 @@
   .strip .col { flex:1; text-align:center; padding:0 12px; }
   .strip .k { font-size:13px; color:var(--dim); font-weight:560; }
   .strip .v { font-size:21px; font-weight:700; margin-top:6px; letter-spacing:-.015em; }
+
+  /* ---- Activity heatmap ---- */
+  .act-head { display:flex; align-items:center; gap:12px; margin:2px 0 0; }
+  .act-year { flex:none; width:auto; background:var(--panel); color:var(--ink);
+    border:1px solid var(--edge2); border-radius:7px; padding:3px 26px 3px 9px;
+    font:12px inherit; cursor:pointer; appearance:none;
+    background-image:linear-gradient(45deg,transparent 50%,var(--dim) 50%),
+                     linear-gradient(135deg,var(--dim) 50%,transparent 50%);
+    background-position:calc(100% - 14px) 52%, calc(100% - 9px) 52%;
+    background-size:5px 5px, 5px 5px; background-repeat:no-repeat; }
+  .act-sum { flex:none; font-size:12.5px; color:var(--dim); white-space:nowrap; }
+  .act-sum b { color:var(--ink); font-weight:640; }
+  /* The year is ~53 columns wide and cannot reflow, so it scrolls inside its
+     own box rather than stretching the page on a narrow screen. */
+  .act-scroll { overflow-x:auto; padding:12px 0 4px; }
+  .act-body { display:flex; gap:6px; width:max-content; }
+  /* Day labels share the grid's row pitch so they line up with the squares. */
+  .act-days { display:grid; grid-template-rows:repeat(7, 11px); gap:3px;
+    font-size:9.5px; color:var(--dimmer); align-items:center; text-align:right;
+    width:22px; padding-top:15px; }
+  .act-grid { display:grid; grid-auto-flow:column; grid-template-rows:repeat(7, 11px);
+    gap:3px; width:max-content; }
+  .act-months { display:grid; grid-auto-flow:column; grid-auto-columns:11px; gap:3px;
+    width:max-content; font-size:9.5px; color:var(--dimmer); height:15px; }
+  .act-cell { width:11px; height:11px; border-radius:2px; background:var(--hair); }
+  .act-cell.pad { background:none; }
+  .act-cell.l0 { background:rgba(255,255,255,.055); }
+  .act-cell.l1 { background:rgba(110,231,183,.28); }
+  .act-cell.l2 { background:rgba(110,231,183,.48); }
+  .act-cell.l3 { background:rgba(110,231,183,.70); }
+  .act-cell.l4 { background:rgba(110,231,183,.95); }
+  .act-legend { display:flex; align-items:center; gap:4px; font-size:10.5px; color:var(--dimmer); }
+  .act-legend .act-cell { width:10px; height:10px; }
+  .act-legend span:first-child { margin-right:3px; }
+  .act-legend span:last-child { margin-left:3px; }
   .strip .v.ok { color:var(--ok); } .strip .v.warn { color:#d4a24b; }
   .strip .v small { font-size:12px; color:var(--dim); font-weight:500; }
 
@@ -364,6 +388,14 @@
   .ctxmeter { font:10.5px var(--mono); color:var(--dimmer); flex:none; }
   .ctxmeter[hidden] { display:none; }
   .ctxmeter.full { color:var(--bad); }
+
+  /* Reads as link text, but stays a <button>: the New-chat handler drives
+     .disabled to guard against a double-click clearing the history mid-handoff,
+     and an <a> has no .disabled for those assignments to land on. */
+  .linklike { background:none; border:0; padding:2px 2px; font:inherit; font-size:12px;
+    color:var(--dim); cursor:pointer; flex:none; }
+  .linklike:hover:not(:disabled) { color:var(--ink); text-decoration:underline; }
+  .linklike:disabled { opacity:.4; cursor:default; }
 
   .handoff { margin-top:11px; border:1px solid var(--edge2); border-radius:11px;
     background:var(--panel); padding:11px 13px; }
@@ -568,8 +600,7 @@
     /* The sidebar becomes a horizontal bar here. Section headings stay — with
        three model sections, hiding them orphans the notes underneath. */
     .seclabel { display:block; width:100%; margin:6px 0 2px; }
-    .famgroup, #customTree { display:contents; }
-    .famkids.open { display:flex; flex-wrap:wrap; margin-left:0; padding-left:0; border-left:0; }
+    #customTree, .pinned { display:contents; }
   }
 </style>
 </head>
@@ -582,10 +613,13 @@
     <div class="navlink active" data-scroll="top"><span data-ic="dashboard"></span>Dashboard</div>
     <div class="navlink" data-scroll="terminal"><span data-ic="terminal"></span>Terminal</div>
     <div class="navlink" data-scroll="playground"><span data-ic="zap"></span>Playground</div>
-    <div class="navlink" id="libNav"><span data-ic="grid"></span>Library</div>
 
     <div class="seclabel">Models</div>
     <div id="modelTree"><div class="modelnote">Loading…</div></div>
+    <!-- Library sits with the models rather than up in the page-nav group: now
+         that the sidebar lists only pinned models, it is the way to reach the
+         ones that aren't pinned, so it belongs beside them. -->
+    <div class="navlink" id="libNav"><span data-ic="grid"></span>Library</div>
 
     <div class="seclabel">Custom GGUFs</div>
     <div id="customTree"></div>
@@ -622,6 +656,38 @@
     </div>
 
     <div class="strip" id="device"></div>
+
+    <!-- One square per day you did anything here. Sits above Model because it is
+         about you rather than the machine, and a student arriving should see
+         their own practice before the hardware readout. -->
+    <div class="sec" id="activity">
+      <h2>Activity</h2>
+      <div class="act-head">
+        <select id="actYear" class="act-year" aria-label="Year"></select>
+        <span class="act-sum" id="actSummary"></span>
+      </div>
+      <div class="act-scroll">
+        <div class="act-body">
+          <!-- Only alternate rows are labelled, as GitHub does — seven labels in
+               an 11px row pitch is unreadable. -->
+          <div class="act-days">
+            <span></span><span>Mon</span><span></span><span>Wed</span>
+            <span></span><span>Fri</span><span></span>
+          </div>
+          <div>
+            <div class="act-months" id="actMonths"></div>
+            <div class="act-grid" id="actGrid"></div>
+          </div>
+        </div>
+      </div>
+      <div class="act-legend">
+        <span>Less</span>
+        <span class="act-cell l0"></span><span class="act-cell l1"></span>
+        <span class="act-cell l2"></span><span class="act-cell l3"></span>
+        <span class="act-cell l4"></span>
+        <span>More</span>
+      </div>
+    </div>
 
     <div class="sec" id="model">
       <h2>Model</h2>
@@ -687,7 +753,7 @@
           <label class="chk"><input type="checkbox" id="selffix" checked /> Auto-fix on errors (up to 3×)</label>
           <span class="ctxmeter" id="ctxMeter" hidden></span>
           <span class="composer-actions">
-            <button id="newChatBtn" class="ghost" title="Start a fresh chat">New chat</button>
+            <button id="newChatBtn" class="linklike" title="Start a fresh chat">+ New chat</button>
             <button id="stopBtn" class="ghost" disabled>Stop</button>
             <button id="runBtn" class="act"><span data-ic="zap"></span>Generate<span class="kbdhint" id="runKbd"></span></button>
           </span>
@@ -849,6 +915,7 @@ import { saveModel, listModels, getModelBlob, deleteModel, storageInfo,
          requestPersistence } from './model-store.js';
 import { getHistory, addTurn, clearHistory, historyFor, usage,
          handoffText, CTX_TOKENS, REFUSE_AT } from './chat.js';
+import { recordActivity, activityYears, heatmapModel } from './activity.js';
 
 // ---- inline line-icon set (Feather-style) ----
 const P = 'fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"';
@@ -1071,16 +1138,6 @@ function modelItemHtml(m) {
     + rec + `<span class="badge">${esc(m.size || '')}</span></div>`;
 }
 
-// One collapsible group per family. Groups start closed except the one holding
-// the default model, so the sidebar doesn't open as a wall of entries.
-function familyGroupHtml(family, models, open) {
-  return `<div class="famgroup">`
-    + `<div class="famrow${open ? ' open' : ''}"><span class="cr">${ICONS.chevronright}</span>`
-    + `<span class="nm">${esc(family)}</span><span class="count">${models.length}</span></div>`
-    + `<div class="famkids${open ? ' open' : ''}">${models.map(modelItemHtml).join('')}</div>`
-    + `</div>`;
-}
-
 // ---- Device-based recommendation ----
 // The browser only exposes coarse capability hints: deviceMemory is a
 // privacy-rounded bucket, and there is no CPU load, VRAM or temperature to
@@ -1268,16 +1325,6 @@ function speedTag(m) {
            note: 'Estimated from a quick speed test on this device — run it to see the real figure' };
 }
 
-function groupByFamily(models) {
-  const map = new Map();
-  for (const m of models) {
-    const fam = m.family || 'Other';
-    if (!map.has(fam)) map.set(fam, []);
-    map.get(fam).push(m);
-  }
-  return map;
-}
-
 // Models kept from a previous session. Rendered from metadata only — the Blobs
 // stay in IndexedDB until one is actually clicked.
 async function renderStoredModels() {
@@ -1292,6 +1339,54 @@ async function renderStoredModels() {
 
 // Surfaced because eviction is invisible otherwise: a model simply stops being
 // there, with nothing to explain why.
+// ---- Activity heatmap ----
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function renderActivity(year) {
+  const sel = $('actYear');
+  const years = activityYears();
+  // Rebuild the dropdown only when the set of years changes, so re-rendering
+  // after every generation doesn't fight the user's own selection.
+  const wanted = years.join(',');
+  if (sel.dataset.years !== wanted) {
+    sel.dataset.years = wanted;
+    sel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
+  }
+  const shown = year || +sel.value || years[0];
+  sel.value = String(shown);
+
+  const m = heatmapModel(shown);
+  const grid = $('actGrid');
+
+  // Month labels ride above the grid on the same 11px column track, so a label
+  // lines up with the week its month starts in rather than being spaced evenly.
+  // They are allowed to overflow their column — "Jan" is wider than a square.
+  $('actMonths').innerHTML = m.weeks.map((_, i) => {
+    const hit = m.monthLabels.find(l => l.week === i);
+    return `<span style="overflow:visible;white-space:nowrap">${hit ? MONTH_NAMES[hit.month] : ''}</span>`;
+  }).join('');
+
+  grid.innerHTML = m.weeks.map(week => week.map(day => {
+    if (!day) return `<span class="act-cell pad"></span>`;
+    const label = day.count
+      ? `${day.count} ${day.count === 1 ? 'thing' : 'things'} on ${day.date}`
+      : `Nothing on ${day.date}`;
+    return `<span class="act-cell l${day.level}" title="${esc(label)}"></span>`;
+  }).join('')).join('');
+
+  $('actSummary').innerHTML =
+    `<b>${m.total}</b> ${m.total === 1 ? 'thing' : 'things'} over ${m.days} days · `
+    + `<b>${m.activeDays}</b> active ${m.activeDays === 1 ? 'day' : 'days'}`;
+}
+
+$('actYear').onchange = () => renderActivity(+$('actYear').value);
+
+// One place to record, so every caller gets the redraw for free.
+function noteActivity() {
+  recordActivity();
+  renderActivity();
+}
+
 async function renderStorageNote() {
   const el = $('storageNote');
   if (!el) return;
@@ -1482,6 +1577,7 @@ $('varSave').onclick = () => {
       + '(private browsing or quota full). Your changes were not kept; try again or free up space.';
     return;                                            // modal stays open
   }
+  noteActivity();                    // writing rules is practice too
   varModal.hidden = true;
   renderVariants();
 };
@@ -1545,18 +1641,19 @@ function renderModelTree(models) {
   const pins = pinnedUrls();
   const all = models.filter(m => ['model', 'community'].includes(m.tier || 'model'));
   const pinnedList = all.filter(m => pins.includes(m.url));
-  const byFamily = groupByFamily(all.filter(m => !pins.includes(m.url)));
 
-  // Open the family holding the recommendation, so it's visible on load.
-  const openFamily = rec ? rec.model.family : (all.find(m => m.default) || {}).family;
-  // Pinned models sit loose at the top of the list rather than inside a group
-  // of their own — a collapsible "Pinned" header just buried the thing you
-  // pinned to keep it handy.
+  // The sidebar lists ONLY pinned models. It used to carry every model grouped
+  // by family, which made the one model this device can actually run compete
+  // for attention with a dozen it can't. Browsing moved to the command palette
+  // (Cmd/Ctrl+K), which already lists every model and can load one directly —
+  // so the sidebar became the short list you curate, not the catalogue.
   const pinnedHtml = pinnedList.length
     ? `<div class="pinned">${pinnedList.map(modelItemHtml).join('')}</div>` : '';
-  $('modelTree').innerHTML = pinnedHtml + ([...byFamily].map(([fam, list]) =>
-    familyGroupHtml(fam, list, fam === openFamily && !pinnedList.some(p => p.url === recommendedUrl))).join('')
-    || (pinnedHtml ? '' : '<div class="modelnote">No models in models.json.</div>'));
+  // With nothing pinned the section would be silently empty, which reads as a
+  // bug rather than a choice — so say where the rest of the models went.
+  $('modelTree').innerHTML = pinnedHtml
+    || `<div class="modelnote">No models pinned. Press <b>${IS_MAC ? '⌘K' : 'Ctrl+K'}</b> to browse `
+       + `them all, and pin the ones you use.</div>`;
 
   const custom = tier('custom');
   $('customTree').innerHTML = custom.length
@@ -1582,22 +1679,6 @@ function renderModelTree(models) {
 
 // Delegated, so it keeps working when the tree is re-rendered.
 document.querySelector('.sidebar').addEventListener('click', (e) => {
-  const fam = e.target.closest('.famrow');
-  if (fam) {
-    // Accordion: opening one family closes the others in the same section, so
-    // the sidebar never grows into a long scroll. Clicking an open one closes it.
-    const opening = !fam.classList.contains('open');
-    const scope = fam.closest('#modelTree, #customTree') || document;
-    scope.querySelectorAll('.famrow.open').forEach(r => {
-      r.classList.remove('open');
-      r.nextElementSibling?.classList.remove('open');
-    });
-    if (opening) {
-      fam.classList.add('open');
-      fam.nextElementSibling?.classList.add('open');
-    }
-    return;
-  }
   const item = e.target.closest('.modelitem');
   if (!item) return;
   document.querySelectorAll('.modelitem').forEach(x => x.classList.remove('active'));
@@ -1610,6 +1691,7 @@ document.querySelector('.sidebar').addEventListener('click', (e) => {
 // so a failed/slow fetch must not leave #variantTree empty.
 renderVariants();
 renderStoredModels();
+renderActivity();
 
 fetch('models.json')
   .then(r => r.json())
@@ -1941,6 +2023,7 @@ async function withLoad(label, loadFn) {
     await loadFn();
     modelLabel = label; prog.style.width = '100%';
     pushRecent(loadedUrl);        // only on success — a failed load isn't "recent"
+    noteActivity();               // getting a model loaded is a day's work of its own
     const elapsed = (performance.now() - t0) / 1000;
     // Learn this connection's real throughput, so the next estimate is measured
     // rather than guessed. Skipped for cached loads, which would read as absurd.
@@ -2261,6 +2344,7 @@ async function handleGenerate() {
   if (finalText.trim()) {
     addTurn('user', request);
     addTurn('assistant', finalText);
+    noteActivity();                  // a completed generation counts as practice
   }
   refreshUsage();
 }
@@ -2586,6 +2670,21 @@ window.addEventListener('keydown', (e) => {
   if (runBtn.disabled) return;              // a run is already in flight
   e.preventDefault();
   runBtn.click();
+});
+
+// ---- Cmd/Ctrl + N for a new chat ----
+// Caveat worth knowing: on desktop Chrome and Safari, Cmd/Ctrl+N is a RESERVED
+// browser shortcut (new window). Reserved shortcuts are handled before the page
+// sees them, so preventDefault here cannot stop a new window opening and this
+// handler may never fire in an ordinary tab. It does work in an installed PWA /
+// standalone window, where the browser chrome isn't claiming the key.
+window.addEventListener('keydown', (e) => {
+  if (e.key.toLowerCase() !== 'n' || !(e.metaKey || e.ctrlKey)) return;
+  if (!$('palette').hidden || !libModal.hidden || !$('ollamaModal').hidden || !setModal.hidden) return;
+  const newChatBtn = $('newChatBtn');
+  if (newChatBtn.disabled) return;          // a handoff or a run is in flight
+  e.preventDefault();
+  newChatBtn.click();
 });
 
 // ---- Runtime switch UI ----
