@@ -206,6 +206,26 @@
   .strip .k { font-size:13px; color:var(--dim); font-weight:560; }
   .strip .v { font-size:21px; font-weight:700; margin-top:6px; letter-spacing:-.015em; }
 
+  /* ---- Model passport ---- */
+  .passport { margin-top:14px; border:1px solid var(--edge2); border-radius:11px;
+    background:var(--panel); padding:13px 15px; }
+  .passport[hidden] { display:none; }
+  .pp-head { display:flex; align-items:center; gap:9px; margin-bottom:10px; }
+  .pp-title { font-size:12.5px; font-weight:640; color:var(--ink); }
+  .pp-lic { font:10.5px var(--mono); padding:2px 8px; border-radius:20px; letter-spacing:.03em; }
+  .pp-lic.clear { background:rgba(110,231,183,.14); color:#6ee7b7; }
+  .pp-lic.conditions { background:rgba(240,190,90,.14); color:#f0be5a; }
+  .pp-lic.unreviewed, .pp-lic.unknown { background:rgba(248,113,113,.14); color:#f87171; }
+  .pp-dl { margin-left:auto; }
+  .pp-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(118px,1fr)); gap:9px 16px; }
+  .pp-f .k { font-size:10px; letter-spacing:.07em; text-transform:uppercase; color:var(--dimmer); }
+  .pp-f .v { font:12px var(--mono); color:var(--ink); margin-top:2px; word-break:break-word; }
+  .pp-note { margin-top:11px; padding-top:10px; border-top:1px solid var(--hair);
+    font-size:11.5px; line-height:1.6; color:var(--dim); }
+  .pp-note b { color:var(--ink); font-weight:620; }
+  .pp-unk { margin-top:7px; font-size:11.5px; line-height:1.6; color:var(--dimmer); }
+  .pp-unk b { color:#f0be5a; font-weight:600; }
+
   /* ---- Activity heatmap ---- */
   .act-head { display:flex; align-items:center; gap:12px; margin:2px 0 0; }
   .act-year { flex:none; width:auto; background:var(--panel); color:var(--ink);
@@ -708,6 +728,9 @@
       </div>
       <div id="status">Idle · pick a model and press Load.</div>
 
+      <!-- What is this model, actually? Filled in once something is loaded. -->
+      <div id="passport" class="passport" hidden></div>
+
       <!-- Shown only while Ollama is the active runtime: which local model to use -->
       <div class="rt-body" id="rtBody" hidden></div>
     </div>
@@ -915,6 +938,7 @@ import { saveModel, listModels, getModelBlob, deleteModel, storageInfo,
 import { getHistory, addTurn, clearHistory, historyFor, usage,
          handoffText, CTX_TOKENS, REFUSE_AT } from './chat.js';
 import { recordActivity, activityYears, heatmapModel } from './activity.js';
+import { buildPassport, toCycloneDX } from './provenance.js';
 
 // ---- inline line-icon set (Feather-style) ----
 const P = 'fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"';
@@ -1338,6 +1362,61 @@ async function renderStoredModels() {
 
 // Surfaced because eviction is invisible otherwise: a model simply stops being
 // there, with nothing to explain why.
+// ---- Model passport ----
+// Shown after a load, because "what did I just run?" is the question this whole
+// project exists to make answerable. The unverifiable list is deliberately as
+// prominent as the facts — for open models the absences are the story.
+let lastPassport = null;
+
+function renderPassport({ entry, local } = {}) {
+  const el = $('passport');
+  const measured = loadedUrl ? (measuredTokps()[loadedUrl] || null) : null;
+  const p = buildPassport({
+    entry, local,
+    runtime: activeRuntime === 'ollama' ? `ollama:${ollamaModel || '?'}` : 'wasm:wllama',
+    measured,
+  });
+  lastPassport = p;
+
+  const rev = p.licenceReview;
+  const field = (k, v) => v ? `<div class="pp-f"><div class="k">${esc(k)}</div><div class="v">${esc(String(v))}</div></div>` : '';
+  const params = p.params ? (p.params / 1e6).toFixed(0) + 'M' : null;
+
+  el.innerHTML =
+      `<div class="pp-head">`
+    +   `<span class="pp-title">Model passport</span>`
+    +   `<span class="pp-lic ${rev.level}">${esc(rev.label)}</span>`
+    +   `<button type="button" class="ghost pp-dl" id="ppDownload" `
+    +     `style="padding:4px 10px; font-size:11.5px">Download AI-BOM</button>`
+    + `</div>`
+    + `<div class="pp-grid">`
+    +   field('Name', p.name)
+    +   field('Base model', p.base)
+    +   field('Architecture', p.arch)
+    +   field('Parameters', params)
+    +   field('Context', p.ctx ? p.ctx.toLocaleString() + ' tokens' : null)
+    +   field('Runtime', p.runtime)
+    +   field('Measured', measured ? measured + ' tok/s here' : null)
+    + `</div>`
+    + `<div class="pp-note">${esc(rev.detail)}</div>`
+    + (p.unverifiable && p.unverifiable.length
+        ? `<div class="pp-unk"><b>Can't be verified from here:</b> ${esc(p.unverifiable.join(', '))}. `
+          + `Open weights ship without their training data — that gap is normal, and it is exactly what `
+          + `an auditor asks about first.</div>`
+        : '');
+
+  $('ppDownload').onclick = () => {
+    const bom = toCycloneDX(lastPassport);
+    const blob = new Blob([JSON.stringify(bom, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${(lastPassport.name || 'model').replace(/[^\w.-]+/g, '-')}.ai-bom.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  el.hidden = false;
+}
+
 // ---- Activity heatmap ----
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -2010,6 +2089,10 @@ document.getElementById('sysToggle').onclick = () => {
 
 let wllama = null, modelLabel = '', abort = false;
 let loadedUrl = null;   // which model is in memory, so measured tok/s can be attributed
+// Set only while a from-disk load is in flight. The passport needs to know it
+// is describing a dropped file (almost nothing knowable) rather than a
+// catalogue entry (licence, base, architecture all recorded).
+let pendingLocalFile = null;
 
 async function withLoad(label, loadFn) {
   loadBtn.disabled = true; runBtn.disabled = true; browseBtn.disabled = true;
@@ -2023,6 +2106,10 @@ async function withLoad(label, loadFn) {
     modelLabel = label; prog.style.width = '100%';
     pushRecent(loadedUrl);        // only on success — a failed load isn't "recent"
     noteActivity();               // getting a model loaded is a day's work of its own
+    // A catalogue entry carries provenance; a dropped file carries almost none,
+    // and renderPassport says which of the two you are looking at.
+    renderPassport({ entry: (lastModels || []).find(x => x.url === loadedUrl) || null,
+                     local: pendingLocalFile });
     const elapsed = (performance.now() - t0) / 1000;
     // Learn this connection's real throughput, so the next estimate is measured
     // rather than guessed. Skipped for cached loads, which would read as absurd.
@@ -2059,6 +2146,7 @@ const CONFIG = {
 
 loadBtn.onclick = () => {
   const url = urlIn.value.trim();
+  pendingLocalFile = null;          // this one comes from the catalogue
   withLoad(pendingLabel || 'model', () => {
     status.textContent = 'Downloading model weights… (cached after first load)';
     loadedUrl = url;
@@ -2073,6 +2161,7 @@ async function loadLocal(file) {
   if (!file) return;
   if (!file.name.toLowerCase().endsWith('.gguf')) { status.innerHTML = `<span style="color:var(--bad)">✗ Not a .gguf file.</span>`; return; }
   let kept = null;
+  pendingLocalFile = { name: file.name, size: file.size };
   await withLoad(file.name, async () => {
     status.textContent = `Reading ${file.name} (${(file.size/1048576).toFixed(0)} MB) into WASM…`;
     await wllama.loadModel([file], { n_ctx: 4096 });
