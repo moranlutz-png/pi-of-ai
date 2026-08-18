@@ -2216,11 +2216,16 @@ async function handleGenerate() {
   // 3) reveal the FINAL code — every block checked and annotated
   await renderFinal(intro, finalText);
 
-  // Only the accepted answer joins the history. The auto-fix retries above are
-  // an internal exchange between the app and the model — putting them in would
-  // carry up to three rejected attempts and three correction prompts into every
-  // later turn's context, on a window that has already overflowed once.
-  if (!abort && finalText.trim()) {
+  // renderFinal runs unconditionally, so whatever is in finalText always
+  // reaches the transcript; gating history on `abort` while rendering
+  // unconditionally is what would desync them. History must match what the
+  // user can see — a stopped, partial answer is on screen too, so it belongs
+  // in history. Only the accepted answer joins the history otherwise: the
+  // auto-fix retries above are an internal exchange between the app and the
+  // model — putting them in would carry up to three rejected attempts and
+  // three correction prompts into every later turn's context, on a window
+  // that has already overflowed once.
+  if (finalText.trim()) {
     addTurn('user', request);
     addTurn('assistant', finalText);
   }
@@ -2267,13 +2272,18 @@ function segments(text) {
   return segs;
 }
 
+// #output ships with placeholder copy in the markup. Drop it the first time
+// anything real is written — a turn OR a note — and never again, so nothing
+// already appended can be destroyed. Checking structurally beats matching the
+// placeholder string, which would rot the moment the copy changes.
+function dropPlaceholder() {
+  if (!output.querySelector('.turn, .sandnote')) output.innerHTML = '';
+}
+
 // #output used to be a single slot overwritten per generation. It is now a
 // transcript, so a turn is appended rather than replacing what came before.
 function appendTurn(role, html) {
-  // #output ships with a literal placeholder ("model output appears here…").
-  // Detect "no real turns yet" structurally — no .turn children — rather than
-  // string-matching that text, so the check keeps working if the copy changes.
-  if (!output.querySelector('.turn')) output.innerHTML = '';
+  dropPlaceholder();
   const el = document.createElement('div');
   el.className = 'turn ' + role;
   el.innerHTML = `<div class="who">${role === 'user' ? 'You' : 'Model'}</div>`
@@ -2311,6 +2321,7 @@ runBtn.onclick = async () => {
   // like the app had ignored the click.
   if (!runtimeReady()) {
     // += (not =) so an existing transcript survives this message.
+    dropPlaceholder();
     output.innerHTML += `<div class="sandnote bad">No model loaded yet. `
       + (activeRuntime === 'ollama'
           ? `Pick one from the Ollama list above.`
@@ -2324,6 +2335,7 @@ runBtn.onclick = async () => {
   // Refuse rather than silently dropping the oldest turn: the model forgetting
   // something still visible on screen is not something a beginner can diagnose.
   if (refreshUsage().full) {
+    dropPlaceholder();
     output.innerHTML += `<div class="sandnote bad">This chat is full — the model's context `
       + `window can't hold any more. Press <b>New chat</b> to carry the important parts over `
       + `and keep going.</div>`;
@@ -2331,6 +2343,7 @@ runBtn.onclick = async () => {
   }
   if (!$('prompt').value.trim()) {
     // Append (not replace) so an existing transcript survives this message.
+    dropPlaceholder();
     output.innerHTML += `<div class="sandnote bad">${esc('⤷ Type a request above first. With an empty prompt the model has nothing to answer, so it just free-associates (that\'s the coffee rambling you saw).')}</div>`;
     return;
   }
@@ -2349,11 +2362,16 @@ runBtn.onclick = async () => {
       ? `Ran out of context. This prompt (plus the auto-fix retries) is longer than the model's `
         + `context window. Try a shorter prompt, fewer max tokens, or turn off auto-fix.`
       : e.message;
+    dropPlaceholder();
     output.innerHTML += `<div class="sandnote bad">error: ${esc(msg)}</div>`;
     console.error(e);
   }
   clearBusy();
   runBtn.disabled = false; stopBtn.disabled = true;
+  // A run that threw between the intro and the final render leaves pendingTurn
+  // pointing at a turn nobody will fill. Reset it here so the next generation
+  // opens a fresh one — on the success path renderFinal has already nulled it.
+  pendingTurn = null;
 };
 stopBtn.onclick = () => { abort = true; };
 
