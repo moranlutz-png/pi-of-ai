@@ -71,13 +71,29 @@ export function usage(systemPrompt = '', pending = '') {
 // The most recent fenced block in the conversation, newest first. Extracted
 // mechanically for the handoff — asking a small model to reproduce code inside
 // a summary invites it to mangle it.
+//
+// A reply truncated at the token limit mid-block still RENDERS as a code block
+// on screen — index.html's segments()/bodyHtml() parse by ``` parity, not by
+// requiring a closing fence. If this function only matched closed fences, a
+// truncated answer would be invisible to it and the handoff would walk back to
+// an older, stale block while labelling it "the latest version". So this must
+// use the same parity split as the renderer, not a regex that requires a close.
 export function lastCodeBlock() {
   for (let i = turns.length - 1; i >= 0; i--) {
     if (turns[i].role !== 'assistant') continue;
-    const m = /```([\w+.-]*)\n([\s\S]*?)```/g;
-    let found = null, hit;
-    while ((hit = m.exec(turns[i].content)) !== null) found = hit;
-    if (found) return { lang: found[1] || 'python', code: found[2].replace(/\n$/, '') };
+    const parts = turns[i].content.split('```');
+    // Same parity as segments()/bodyHtml() in index.html: parts[1], parts[3], …
+    // are code. An EVEN parts.length means the trailing ``` never closed, so
+    // the last element (an odd index) is the open, truncated block. An ODD
+    // parts.length means every fence closed, so the last COMPLETE code block
+    // is the second-to-last element (the final element is trailing prose).
+    const idx = parts.length % 2 === 0 ? parts.length - 1 : parts.length - 2;
+    if (idx < 1) continue;   // no ``` in this turn at all
+    const raw = parts[idx];
+    const m = /^([\w+.-]*)\n([\s\S]*)$/.exec(raw);
+    const lang = (m && m[1]) || 'python';
+    const code = (m ? m[2] : raw).replace(/\n$/, '');
+    return { lang, code };
   }
   return null;
 }

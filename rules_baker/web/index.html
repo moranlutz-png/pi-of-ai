@@ -848,7 +848,7 @@ import { listVariants, getVariant, saveVariant, deleteVariant,
 import { saveModel, listModels, getModelBlob, deleteModel, storageInfo,
          requestPersistence } from './model-store.js';
 import { getHistory, addTurn, clearHistory, historyFor, usage,
-         handoffText, CTX_TOKENS, WARN_AT, REFUSE_AT } from './chat.js';
+         handoffText, CTX_TOKENS, REFUSE_AT } from './chat.js';
 
 // ---- inline line-icon set (Feather-style) ----
 const P = 'fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"';
@@ -1370,6 +1370,7 @@ function applyVariant(id) {
     el.classList.toggle('active', el.dataset.variantId === id));
 
   $('sys').value = v.rules.join('\n');
+  $('sys').dispatchEvent(new Event('input'));        // keep the fullness meter in sync
   $('sysWrap').hidden = false;                       // reveal, don't hide the mechanism
   const sign = document.querySelector('#sysToggle .sign');
   if (sign) sign.textContent = '−';
@@ -2327,7 +2328,13 @@ function appendTurn(role, html) {
 
 function clearTranscript() {
   pendingTurn = null;
-  output.innerHTML = '';
+  // Restore the placeholder copy so a fresh chat looks like a fresh page,
+  // rather than an empty box for the rest of the session. dropPlaceholder()
+  // treats "no .turn or .sandnote inside #output" as empty, and plain
+  // placeholder text has neither, so the two stay in agreement about what
+  // "empty" means — the next appendTurn() drops this exactly as it would the
+  // markup's original placeholder.
+  output.innerHTML = '(model output appears here, streaming token by token)';
 }
 
 async function renderFinal(intro, text) {
@@ -2373,7 +2380,15 @@ runBtn.onclick = async () => {
   // refusing instead of silently trimming is that the user must be able to
   // understand and ACT on the stop, so the two causes need two different
   // messages: one to carry the conversation over, one to shorten this request.
-  if (refreshUsage().full) {
+  // usage() only measures system + history + the pending request — it has no
+  // idea the SAME window still has to hold the reply (maxtok) and, with
+  // auto-fix on, a second attempt plus its ~correction prompt. Reserve that
+  // now, or a chat that never trips the meter can still overflow the window
+  // once generation actually runs — on Ollama that overflow silently drops
+  // the oldest messages, which is exactly the silent amnesia refusing exists
+  // to prevent.
+  const reserve = parseInt($('maxtok').value, 10) * ($('selffix').checked ? 2 : 1) + 64;
+  if (refreshUsage().tokens + reserve >= CTX_TOKENS * REFUSE_AT) {
     dropPlaceholder();
     if (getHistory().length > 0) {
       output.innerHTML += `<div class="sandnote bad">This chat is full — the model's context `
@@ -2392,14 +2407,30 @@ runBtn.onclick = async () => {
     output.innerHTML += `<div class="sandnote bad">${esc('⤷ Type a request above first. With an empty prompt the model has nothing to answer, so it just free-associates (that\'s the coffee rambling you saw).')}</div>`;
     return;
   }
-  appendTurn('user', esc($('prompt').value.trim()));
-  runBtn.disabled = true; stopBtn.disabled = false; abort = false;
+  $('handoff').hidden = true;    // a stale handoff from a previous chat must not
+                                  // linger once a new generation starts
+  // handleGenerate() clears the composer immediately after reading it, so this
+  // is the only place left with the request text if generation later fails.
+  const requestText = $('prompt').value.trim();
+  appendTurn('user', esc(requestText));
+  // newChatBtn is disabled alongside runBtn: New chat during a generation would
+  // clear the in-flight user turn and null pendingTurn out from under it (the
+  // "cleared" chat wouldn't be, and history/transcript would desync).
+  runBtn.disabled = true; stopBtn.disabled = false; $('newChatBtn').disabled = true; abort = false;
   $exec.textContent = ''; $exec.style.display = 'none';
   try {
     await handleGenerate();
     if (!abort) signalDone();
     else $('runStats').textContent = $('runStats').textContent.replace(/ · working…$/, ' · stopped');
   } catch (e) {
+    // A run that throws after writeIntro has streamed leaves a model turn on
+    // screen holding only the intro sentence — which reads like a real reply —
+    // while history gets nothing for it, so the next turn's context is missing
+    // a question the user can still see. Remove the unfilled turn BEFORE
+    // appending the error note below: that innerHTML += reparses #output and
+    // detaches pendingTurn's element, which would make a later .remove() a
+    // silent no-op.
+    if (pendingTurn) { pendingTurn.remove(); pendingTurn = null; }
     // A run that dies mid-stream used to leave the stats line reading
     // "working…" forever, so a finished-but-failed run looked like a hang.
     $('runStats').textContent = $('runStats').textContent.replace(/ · working…$/, ' · failed');
@@ -2409,13 +2440,18 @@ runBtn.onclick = async () => {
       : e.message;
     dropPlaceholder();
     output.innerHTML += `<div class="sandnote bad">error: ${esc(msg)}</div>`;
+    // One click to retry: a failed turn's text otherwise exists only in the
+    // transcript, since handleGenerate() already cleared the composer.
+    $('prompt').value = requestText;
+    window.__fitPrompt();
     console.error(e);
   }
   clearBusy();
-  runBtn.disabled = false; stopBtn.disabled = true;
+  runBtn.disabled = false; stopBtn.disabled = true; $('newChatBtn').disabled = false;
   // A run that threw between the intro and the final render leaves pendingTurn
   // pointing at a turn nobody will fill. Reset it here so the next generation
-  // opens a fresh one — on the success path renderFinal has already nulled it.
+  // opens a fresh one — on the success path renderFinal has already nulled it,
+  // and the catch block above has already removed it from the DOM on failure.
   pendingTurn = null;
 };
 stopBtn.onclick = () => { abort = true; };
@@ -2476,7 +2512,11 @@ $('newChatBtn').onclick = async () => {
   // code block the handoff exists to preserve — and by then history and
   // transcript are already cleared, so it's unrecoverable. finally below
   // re-enables no matter which return path is taken or whether this throws.
+  // runBtn is disabled too: a Generate that starts during the summary await is
+  // a second concurrent completion, and whichever of the two finishes first
+  // would kill the other's busy indicator via clearBusy().
   newChatBtn.disabled = true;
+  runBtn.disabled = true;
   try {
     // A single long pasted prompt can push the meter past 70% with an EMPTY
     // history — the refusal message's "press New chat" advice only works if
@@ -2495,14 +2535,26 @@ $('newChatBtn').onclick = async () => {
 
     let summary = '';
     if (runtimeReady()) {
+      // A stale Stop from an earlier generation must not kill this summary:
+      // abort is set by stopBtn.onclick and otherwise only reset by
+      // runBtn.onclick/termGenerate, neither of which runs on this path, so
+      // "press Stop, then press New chat" would otherwise leave abort true and
+      // both backends would bail on the very first token.
+      abort = false;
       // The model writes the prose; handoffText() appends the code verbatim,
       // because a small model asked to retype a code block will mangle it.
       setBusy('Summarising the chat…');
       try {
+        // The instruction goes LAST, as a trailing user turn, not as a system
+        // message before the history. getHistory() always ends on the accepted
+        // assistant turn, and putting the generation prompt directly after a
+        // just-closed assistant turn reads (in every ChatML-family template) as
+        // "your turn is over" — the model emits EOS immediately and the
+        // summary comes back empty. Ending on a user turn avoids that.
         summary = await complete([
-          { role: 'system', content: 'Summarise this conversation in two or three sentences: what '
-            + 'the user was building and what was decided. Do not include code.' },
           ...getHistory(),
+          { role: 'user', content: 'Summarise the conversation above in two or three sentences: '
+            + 'what I was building and what was decided. Do not include code.' },
         ], 120, null);
       } catch (_) { summary = ''; }
       clearBusy();
@@ -2517,6 +2569,7 @@ $('newChatBtn').onclick = async () => {
     refreshUsage();
   } finally {
     newChatBtn.disabled = false;
+    runBtn.disabled = false;
   }
 };
 
