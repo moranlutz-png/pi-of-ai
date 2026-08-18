@@ -925,6 +925,7 @@ window.__copyCode = (btn) => {
   // than the <pre><code> it copies — walk up until an ancestor has one.
   let container = btn.parentElement;
   while (container && !container.querySelector('code')) container = container.parentElement;
+  if (!container) return;   // no ancestor has a <code> to copy — nothing to do
   const code = container.querySelector('code').innerText;
   if (navigator.clipboard?.writeText) {
     navigator.clipboard.writeText(code).then(() => copiedFlash(btn)).catch(() => fallbackCopy(code, btn));
@@ -2466,42 +2467,57 @@ $('prompt').addEventListener('input', refreshUsage);
 $('sys').addEventListener('input', refreshUsage);
 
 $('newChatBtn').onclick = async () => {
-  // A single long pasted prompt can push the meter past 70% with an EMPTY
-  // history — the refusal message's "press New chat" advice only works if
-  // this also empties the prompt box, or the oversized text just sits there
-  // and the user is stuck in a refusal loop. Clear it (and its auto-grown
-  // height, the same way the autoGrow IIFE fits it) on every path below.
-  const had = getHistory().length > 0;
-  if (!had) {
+  const newChatBtn = $('newChatBtn');
+  if (newChatBtn.disabled) return;   // a handoff is already in flight
+  // Claim it now — the summary await below is long enough to double-click
+  // through. handoffText() reads the LIVE turns array in chat.js, so a second
+  // pass's clearHistory() would empty that array out from under the first
+  // pass's still-pending handoffText(summary) call, silently dropping the
+  // code block the handoff exists to preserve — and by then history and
+  // transcript are already cleared, so it's unrecoverable. finally below
+  // re-enables no matter which return path is taken or whether this throws.
+  newChatBtn.disabled = true;
+  try {
+    // A single long pasted prompt can push the meter past 70% with an EMPTY
+    // history — the refusal message's "press New chat" advice only works if
+    // this also empties the prompt box, or the oversized text just sits there
+    // and the user is stuck in a refusal loop. Clear it (and its auto-grown
+    // height, the same way the autoGrow IIFE fits it) on every path below.
+    const had = getHistory().length > 0;
+    if (!had) {
+      clearTranscript();
+      $('handoff').hidden = true;
+      $('prompt').value = '';
+      window.__fitPrompt();
+      refreshUsage();
+      return;
+    }
+
+    let summary = '';
+    if (runtimeReady()) {
+      // The model writes the prose; handoffText() appends the code verbatim,
+      // because a small model asked to retype a code block will mangle it.
+      setBusy('Summarising the chat…');
+      try {
+        summary = await complete([
+          { role: 'system', content: 'Summarise this conversation in two or three sentences: what '
+            + 'the user was building and what was decided. Do not include code.' },
+          ...getHistory(),
+        ], 120, null);
+      } catch (_) { summary = ''; }
+      clearBusy();
+    }
+
+    $('handoffText').textContent = handoffText(summary);
+    $('handoff').hidden = false;
+    clearHistory();
     clearTranscript();
-    $('handoff').hidden = true;
     $('prompt').value = '';
     window.__fitPrompt();
-    return;
+    refreshUsage();
+  } finally {
+    newChatBtn.disabled = false;
   }
-
-  let summary = '';
-  if (runtimeReady()) {
-    // The model writes the prose; handoffText() appends the code verbatim,
-    // because a small model asked to retype a code block will mangle it.
-    setBusy('Summarising the chat…');
-    try {
-      summary = await complete([
-        { role: 'system', content: 'Summarise this conversation in two or three sentences: what '
-          + 'the user was building and what was decided. Do not include code.' },
-        ...getHistory(),
-      ], 120, null);
-    } catch (_) { summary = ''; }
-    clearBusy();
-  }
-
-  $('handoffText').textContent = handoffText(summary);
-  $('handoff').hidden = false;
-  clearHistory();
-  clearTranscript();
-  refreshUsage();
-  $('prompt').value = '';
-  window.__fitPrompt();
 };
 
 // ---- Cmd/Ctrl + Enter to generate ----
