@@ -827,6 +827,8 @@ import { listVariants, getVariant, saveVariant, deleteVariant,
          exportVariantsJson, importVariantsJson, STARTER_RULES } from './variants.js';
 import { saveModel, listModels, getModelBlob, deleteModel, storageInfo,
          requestPersistence } from './model-store.js';
+import { getHistory, addTurn, clearHistory, historyFor, usage,
+         handoffText, CTX_TOKENS, WARN_AT, REFUSE_AT } from './chat.js';
 
 // ---- inline line-icon set (Feather-style) ----
 const P = 'fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"';
@@ -2171,9 +2173,9 @@ async function handleGenerate() {
   // With the box empty, send NO system message rather than an empty one — an
   // empty system turn still occupies the chat template and can confuse small
   // models. It also makes the rules-baker point properly: no prompt at all.
-  const base = sys.trim()
-    ? [{ role: 'system', content: sys }, { role: 'user', content: request }]
-    : [{ role: 'user', content: request }];
+  // The request now carries the conversation so far. historyFor() puts the
+  // system prompt at index 0 and appends this request last.
+  const base = historyFor(sys, request);
   let messages = base;
   const MAX = $('selffix').checked ? 3 : 1;
   let finalText = '';
@@ -2209,6 +2211,15 @@ async function handleGenerate() {
 
   // 3) reveal the FINAL code — every block checked and annotated
   await renderFinal(intro, finalText);
+
+  // Only the accepted answer joins the history. The auto-fix retries above are
+  // an internal exchange between the app and the model — putting them in would
+  // carry up to three rejected attempts and three correction prompts into every
+  // later turn's context, on a window that has already overflowed once.
+  if (!abort && finalText.trim()) {
+    addTurn('user', request);
+    addTurn('assistant', finalText);
+  }
 }
 
 // A missing module is a limitation of the browser sandbox, not a mistake by the
@@ -2310,6 +2321,7 @@ runBtn.onclick = async () => {
     output.innerHTML += `<div class="sandnote bad">${esc('⤷ Type a request above first. With an empty prompt the model has nothing to answer, so it just free-associates (that\'s the coffee rambling you saw).')}</div>`;
     return;
   }
+  appendTurn('user', esc($('prompt').value.trim()));
   runBtn.disabled = true; stopBtn.disabled = false; abort = false;
   $exec.textContent = ''; $exec.style.display = 'none';
   try {
