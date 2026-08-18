@@ -507,6 +507,12 @@
     overflow-x:auto; white-space:pre; }
   .copybtn.inline { position:static; padding:3px 4px; border:0; background:none; flex:none; }
   .copybtn.inline svg { width:12px; height:12px; }
+  .turn { padding:11px 0; border-top:1px solid var(--hair); }
+  .turn:first-child { border-top:0; padding-top:0; }
+  .turn .who { display:flex; align-items:center; gap:7px; margin-bottom:6px;
+    font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--dimmer); }
+  .turn.user .body { font-size:13.5px; color:var(--ink); white-space:pre-wrap; }
+  .turn.model .body { font-size:13.5px; }
   .disclaimer { display:flex; align-items:flex-start; gap:8px; margin:11px 0 0;
     padding:9px 12px; border-radius:9px; background:rgba(255,255,255,.035);
     border:1px solid var(--edge); font-size:11.5px; line-height:1.6; color:var(--dim); }
@@ -870,7 +876,15 @@ function bodyHtml(text) {
   return html || `<div class="prose">${esc(String(text))}</div>`;
 }
 function renderOutput(text) { output.innerHTML = bodyHtml(text); }
-function renderIntro(text) { output.innerHTML = `<div class="intro">${esc(String(text).split('\n')[0])}</div>`; }
+// The streaming intro gets its own turn, held open so renderFinal can replace
+// its contents with the real answer. Writing to output.innerHTML here would
+// wipe the whole transcript on every generation.
+let pendingTurn = null;
+function renderIntro(text) {
+  if (!pendingTurn) pendingTurn = appendTurn('model', '');
+  pendingTurn.querySelector('.body').innerHTML =
+    `<div class="intro">${esc(String(text).split('\n')[0])}</div>`;
+}
 window.__renderOutput = renderOutput; // for testing
 function copiedFlash(btn) {
   btn.innerHTML = CHECK_SVG; btn.classList.add('copied');
@@ -2237,6 +2251,27 @@ function segments(text) {
   return segs;
 }
 
+// #output used to be a single slot overwritten per generation. It is now a
+// transcript, so a turn is appended rather than replacing what came before.
+function appendTurn(role, html) {
+  // #output ships with a literal placeholder ("model output appears here…").
+  // Detect "no real turns yet" structurally — no .turn children — rather than
+  // string-matching that text, so the check keeps working if the copy changes.
+  if (!output.querySelector('.turn')) output.innerHTML = '';
+  const el = document.createElement('div');
+  el.className = 'turn ' + role;
+  el.innerHTML = `<div class="who">${role === 'user' ? 'You' : 'Model'}</div>`
+    + `<div class="body">${html}</div>`;
+  output.appendChild(el);
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  return el;
+}
+
+function clearTranscript() {
+  pendingTurn = null;
+  output.innerHTML = '';
+}
+
 async function renderFinal(intro, text) {
   setBusy('Checking each block…');
   // The intro is written before the answer exists, so it can't know whether one
@@ -2250,14 +2285,17 @@ async function renderFinal(intro, text) {
     const rep = abort ? { err: 'stopped' } : await checkPython(s.code, 8000);
     html += `<div class="codeblock"><button class="copybtn" title="Copy" onclick="__copyCode(this)">${COPY_SVG}</button><pre><code>${esc(s.code)}</code></pre></div>` + noteHtml(rep);
   }
-  output.innerHTML = html;
+  // Fill the turn the intro opened, or append one if there wasn't an intro.
+  if (pendingTurn) { pendingTurn.querySelector('.body').innerHTML = html; pendingTurn = null; }
+  else appendTurn('model', html);
 }
 
 runBtn.onclick = async () => {
   // Used to `return` silently, so pressing Generate with nothing loaded looked
   // like the app had ignored the click.
   if (!runtimeReady()) {
-    output.innerHTML = `<div class="sandnote bad">No model loaded yet. `
+    // += (not =) so an existing transcript survives this message.
+    output.innerHTML += `<div class="sandnote bad">No model loaded yet. `
       + (activeRuntime === 'ollama'
           ? `Pick one from the Ollama list above.`
           : `Choose one on the left and press <b>Load model</b> — the recommended one for this `
@@ -2268,7 +2306,8 @@ runBtn.onclick = async () => {
     return;
   }
   if (!$('prompt').value.trim()) {
-    output.textContent = '⤷ Type a request above first. With an empty prompt the model has nothing to answer, so it just free-associates (that\'s the coffee rambling you saw).';
+    // Append (not replace) so an existing transcript survives this message.
+    output.innerHTML += `<div class="sandnote bad">${esc('⤷ Type a request above first. With an empty prompt the model has nothing to answer, so it just free-associates (that\'s the coffee rambling you saw).')}</div>`;
     return;
   }
   runBtn.disabled = true; stopBtn.disabled = false; abort = false;
