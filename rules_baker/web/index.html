@@ -2428,11 +2428,18 @@ async function rtUseOllama() {
   }
   rtBody.hidden = false;
   rtStatus.textContent = `connected · ${found.models.length} model${found.models.length > 1 ? 's' : ''}`;
-  rtBody.innerHTML = `<div class="rt-models"><label for="rtModel">Model</label>`
-    + `<select id="rtModel">${found.models.map(n => `<option>${esc(n)}</option>`).join('')}</select></div>`
-    + `<div class="dnote" style="margin-top:8px">Runs on your machine via Ollama — native code and GPU, `
-    + `so no download here and no 4GB WASM ceiling.</div>`;
-  $('rtModel').onchange = (e) => rtSelectModel(e.target.value);
+
+  // A picker is only worth showing when there is something to pick. With one
+  // installed model the select offers no choice, and the status line already
+  // names it — so show nothing and let that line do the work.
+  if (found.models.length > 1) {
+    rtBody.innerHTML = `<div class="rt-models"><label for="rtModel">Model</label>`
+      + `<select id="rtModel">${found.models.map(n => `<option>${esc(n)}</option>`).join('')}</select></div>`;
+    $('rtModel').onchange = (e) => rtSelectModel(e.target.value);
+  } else {
+    rtBody.innerHTML = '';
+    rtBody.hidden = true;
+  }
   rtSelectModel(found.models[0]);
 }
 
