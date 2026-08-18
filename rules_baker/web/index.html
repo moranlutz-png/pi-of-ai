@@ -474,7 +474,17 @@
      narrow screens rather than overlapping. */
   #status { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 14px;
     font:12.5px var(--mono); color:var(--dim); margin-top:10px; min-height:18px; }
-  .statuswarn { margin-left:auto; color:var(--bad); cursor:help; }
+  .statuswarn { display:inline-flex; align-items:center; gap:5px; margin-left:auto; color:var(--bad); }
+  .infobtn { background:none; border:0; padding:0; border-radius:50%; color:var(--bad);
+    display:inline-flex; cursor:pointer; opacity:.8; }
+  .infobtn:hover { background:none; opacity:1; }
+  .infobtn:focus { outline:none; }
+  .infobtn:focus-visible { outline:1px solid var(--bad); outline-offset:2px; }
+  .infobtn svg { width:13px; height:13px; }
+  .mismatchnote { margin-top:9px; padding:11px 13px; border-radius:9px;
+    background:rgba(239,83,80,.07); border:1px solid rgba(239,83,80,.35);
+    font-size:12px; line-height:1.6; color:var(--dim); }
+  .mismatchnote b { color:var(--ink); }
   #output { min-height:104px; margin-top:12px; color:var(--ink); font-size:13px; line-height:1.55; }
   #output .prose { white-space:pre-wrap; }
   #output .intro { color:var(--dim); font-style:italic; margin-bottom:8px; }
@@ -1900,12 +1910,16 @@ async function withLoad(label, loadFn) {
     // If the Ollama runtime is active, this model just loaded into WASM but
     // generation will still go to Ollama's model — so the user would be testing
     // something other than the file they just loaded. Say so on the same line.
+    // A tooltip is hover-only and invisible on touch, so the explanation gets a
+    // real button. It says what is wrong, what will run instead, and offers the
+    // fix rather than describing it.
     const mismatch = activeRuntime === 'ollama'
-      ? `<span class="statuswarn" title="The Runtime toggle is set to Ollama, so generation uses `
-        + `${esc(ollamaModel || 'the Ollama model')} — not this file. Switch to In-browser to use it.">`
-        + `not running via Ollama</span>`
+      ? `<span class="statuswarn">not running via Ollama`
+        + `<button type="button" class="infobtn" id="mismatchInfo" `
+        + `aria-label="Why?" title="Why?">${ICONS.info}</button></span>`
       : '';
     status.innerHTML = `<span style="color:var(--ok)">✓ ${esc(label)} loaded in ${secs}s — running fully in this tab.</span>${mismatch}`;
+    if (mismatch) wireMismatchInfo(label);
     runBtn.disabled = false; modelPick.innerHTML = `<option>${esc(label)}</option>`;
     if (window.__setModelBtn) window.__setModelBtn(label);
   } catch (e) {
@@ -2422,10 +2436,47 @@ async function rtUseOllama() {
   rtSelectModel(found.models[0]);
 }
 
+// Explains the runtime mismatch and offers the fix. Appended after #status so
+// it survives status being rewritten, and removed whenever the mismatch is
+// resolved — a stale explanation of a problem you no longer have is worse than
+// no explanation.
+function wireMismatchInfo(loadedLabel) {
+  const btn = $('mismatchInfo');
+  if (!btn) return;
+  btn.onclick = () => {
+    const existing = $('mismatchNote');
+    if (existing) { existing.remove(); return; }         // toggle
+    const note = document.createElement('div');
+    note.className = 'mismatchnote';
+    note.id = 'mismatchNote';
+    note.innerHTML =
+      `<b>${esc(loadedLabel)} is loaded in this tab, but it will not be used.</b><br>`
+      + `The Runtime toggle at the top is set to <b>Ollama</b>, so every request goes to `
+      + `<b>${esc(ollamaModel || 'the selected Ollama model')}</b> instead. Anything you generate `
+      + `right now tells you about that model, not the one you just loaded.`
+      + `<div class="dactions" style="margin-top:9px">`
+      + `<button type="button" class="act" id="mismatchFix">Use ${esc(loadedLabel)} instead</button>`
+      + `<button type="button" class="backbtn" id="mismatchDismiss">Keep using Ollama</button></div>`;
+    status.insertAdjacentElement('afterend', note);
+    $('mismatchFix').onclick = () => {
+      note.remove();
+      rtSetRuntime('wasm');                              // clears the warning too
+      $('rtStatus').textContent = '';
+      $('rtBody').hidden = true;
+    };
+    $('mismatchDismiss').onclick = () => note.remove();
+  };
+}
+
 function rtSetRuntime(which) {
   activeRuntime = which;
   document.querySelectorAll('.rt-pill').forEach(p =>
     p.classList.toggle('active', p.dataset.rt === which));
+  // The explanation sits outside #status, so rewriting status won't remove it.
+  // Drop it whenever the runtime changes — the mismatch it described is gone.
+  const staleNote = document.getElementById('mismatchNote');
+  if (staleNote) staleNote.remove();
+
   if (which === 'wasm') {
     ollamaModel = null;
     runBtn.disabled = !wllama;
