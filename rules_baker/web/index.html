@@ -2187,6 +2187,16 @@ async function writeIntro(request) {
 async function handleGenerate() {
   const request = $('prompt').value, sys = $('sys').value;
 
+  // This is a chat composer now, not a one-shot prompt box — a chat composer
+  // clears on send. Leaving the text sitting in the box also meant refreshUsage()
+  // (below, and on every subsequent keystroke) counted it AGAIN as "pending" on
+  // top of the identical copy addTurn() is about to push into history, inflating
+  // the meter and risking a false refusal on the very next send. Clear it (and
+  // its auto-grown height, via the same helper newChatBtn.onclick uses) right
+  // after capturing the value, so nothing downstream can double-count it.
+  $('prompt').value = '';
+  window.__fitPrompt();
+
   // 1) intro line — visible, streamed, so the user sees what it's doing
   const intro = await writeIntro(request);
   renderIntro(intro);
@@ -2355,11 +2365,24 @@ runBtn.onclick = async () => {
   }
   // Refuse rather than silently dropping the oldest turn: the model forgetting
   // something still visible on screen is not something a beginner can diagnose.
+  // But the fullness meter counts the pending prompt as well as history (see
+  // refreshUsage/usage), so a single long paste can trip this with history
+  // still empty or trivial. In that state "press New chat" clears a history
+  // that was already empty — a no-op the user can't act on. The whole point of
+  // refusing instead of silently trimming is that the user must be able to
+  // understand and ACT on the stop, so the two causes need two different
+  // messages: one to carry the conversation over, one to shorten this request.
   if (refreshUsage().full) {
     dropPlaceholder();
-    output.innerHTML += `<div class="sandnote bad">This chat is full — the model's context `
-      + `window can't hold any more. Press <b>New chat</b> to carry the important parts over `
-      + `and keep going.</div>`;
+    if (getHistory().length > 0) {
+      output.innerHTML += `<div class="sandnote bad">This chat is full — the model's context `
+        + `window can't hold any more. Press <b>New chat</b> to carry the important parts over `
+        + `and keep going.</div>`;
+    } else {
+      output.innerHTML += `<div class="sandnote bad">This request is too long for the model's `
+        + `context window on its own — there's no conversation history to carry over, so `
+        + `<b>New chat</b> won't help here. Try shortening it.</div>`;
+    }
     return;
   }
   if (!$('prompt').value.trim()) {
