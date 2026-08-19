@@ -3410,7 +3410,7 @@ const termIn = document.getElementById('termIn');
 const termEl = document.getElementById('term');
 // Starts with no system prompt, matching the Playground — a rules-baked model
 // is supposed to obey with an empty one, and /system sets it when you want one.
-const termState = { temp: 0.2, tokens: 256, system: '', autofix: true };
+const termState = { tokens: 256, system: '', autofix: true };
 // The single place sampling settings are read from. /temp used to write
 // termState.temp, which nothing on the generation path ever read — the command
 // reported a change and changed nothing. Both the terminal and the Playground
@@ -3570,7 +3570,7 @@ async function termRun(raw) {
       case 'help': tp(TERM_HELP, 'sysmsg'); break;
       case 'clear': termOut.innerHTML = ''; break;
       case 'models': tp('featherweight (100M) · chromebook (0.5B) · laptop (1.5B) — or /load <url>', 'sysmsg'); break;
-      case 'status': tp(`model: ${modelLabel || 'none'}\ntemp: ${termState.temp}   tokens: ${termState.tokens}   autofix: ${termState.autofix ? 'on' : 'off'}\nsystem: ${termState.system}`, 'sysmsg'); break;
+      case 'status': tp(`model: ${modelLabel || 'none'}\ntemp: ${$('temp').value}   tokens: ${termState.tokens}   autofix: ${termState.autofix ? 'on' : 'off'}\nsystem: ${termState.system}`, 'sysmsg'); break;
       case 'temp': {
         const v = parseFloat(arg);
         if (isNaN(v)) { tp('usage: /temp 0.2', 'errmsg'); break; }
@@ -3580,7 +3580,7 @@ async function termRun(raw) {
         const opts = [...$('temp').options].map(o => parseFloat(o.value));
         const near = opts.reduce((b, c) => Math.abs(c - v) < Math.abs(b - v) ? c : b, opts[0]);
         $('temp').value = String(near);
-        termState.temp = near;
+        $('temp').dispatchEvent(new Event('change'));
         tp(near === v ? `temperature = ${near}`
                       : `temperature = ${near}  (nearest available to ${v})`, 'sysmsg');
         break;
