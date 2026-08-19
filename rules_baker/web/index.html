@@ -196,6 +196,20 @@
   .loss-chart .dot { fill:var(--ok); }
   .loss-ax { display:flex; justify-content:space-between; margin-top:3px;
     font-size:11px; color:var(--dimmer); font-variant-numeric:tabular-nums; }
+
+  /* ---- Compare: base vs baked ---- */
+  .cmpgrid { display:grid; grid-template-columns:1fr 1fr; gap:11px; margin-top:11px; }
+  /* One column on narrow screens — a Chromebook in a classroom is the target,
+     and two columns of code at 400px wide is unreadable. */
+  @media (max-width:720px) { .cmpgrid { grid-template-columns:1fr; } }
+  .cmpcol { min-width:0; }              /* lets the pre scroll instead of stretching the grid */
+  .cmphead { font-size:11.5px; color:var(--dim); margin-bottom:4px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cmpout { margin:0; padding:9px 11px; border-radius:9px; min-height:70px;
+    background:rgba(0,0,0,.26); border:1px solid var(--edge2);
+    font:12px var(--mono); color:var(--ink);
+    white-space:pre-wrap; overflow-wrap:anywhere; overflow-x:auto;
+    max-height:300px; overflow-y:auto; }
   #varModal textarea { width:100%; }
 
   .modelitem { display:flex; align-items:center; gap:7px; padding:4px 8px; border-radius:6px;
@@ -1006,6 +1020,46 @@
         <button type="button" class="backbtn" id="varExport">Export all</button>
         <button type="button" class="backbtn" id="varImport">Import…</button>
         <input type="file" id="varImportFile" accept=".json,application/json" hidden />
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ COMPARE: base vs baked (Rung 2's payoff) ============ -->
+  <div id="cmpModal" class="modal" hidden>
+    <div class="modal-panel">
+      <button class="modal-close" id="cmpClose" title="Close">&times;</button>
+      <h2 class="modal-title">Base vs baked</h2>
+      <div class="rt-body">
+        <div class="dnote">The same request goes to both models with <b>no system prompt at
+          all</b>. The base model has never seen your rules, so it ignores them. The baked one
+          obeys — not because it is told to, but because the rules are in its weights.</div>
+
+        <div class="varrow" style="margin-top:11px">
+          <span style="flex:1"><label class="varlabel" for="cmpA">Base model</label>
+            <select id="cmpA" class="varselect" style="width:100%"></select></span>
+          <span style="flex:1"><label class="varlabel" for="cmpB">Your baked model</label>
+            <select id="cmpB" class="varselect" style="width:100%"></select></span>
+        </div>
+
+        <label class="varlabel" for="cmpPrompt">Request</label>
+        <textarea id="cmpPrompt" rows="2" style="width:100%"></textarea>
+
+        <div class="dnote" id="cmpStatus" style="margin-top:9px"></div>
+
+        <div class="cmpgrid" id="cmpGrid" hidden>
+          <div class="cmpcol"><div class="cmphead" id="cmpHeadA"></div>
+            <pre class="cmpout" id="cmpOutA"></pre></div>
+          <div class="cmpcol"><div class="cmphead" id="cmpHeadB"></div>
+            <pre class="cmpout" id="cmpOutB"></pre></div>
+        </div>
+
+        <details id="cmpProof" hidden style="margin-top:10px">
+          <summary class="dnote" style="cursor:pointer">What was actually sent</summary>
+          <pre class="cmpout" id="cmpProofBody" style="margin-top:6px"></pre>
+        </details>
+      </div>
+      <div class="dactions">
+        <button type="button" class="act" id="cmpRun">Run both</button>
       </div>
     </div>
   </div>
@@ -2069,6 +2123,119 @@ $('varSave').onclick = () => {
   renderVariants();
 };
 
+// ---- Compare: base vs baked (Rung 2's payoff) -----------------------------
+// Two views prove different things and both are needed: the loss curve shows
+// training happened, this shows YOUR rules were learned.
+//
+// wllama holds one model at a time, so the two runs are strictly sequential —
+// load A, generate, load B, generate. Slower than it looks like it should be,
+// and there is no way around it short of two runtimes.
+const cmpModal = $('cmpModal');
+
+function fillComparePickers() {
+  const items = modelMenuItems();
+  const opts = items.map((i, n) =>
+    `<option value="${n}">${esc(i.name)}${i.size ? ` · ${esc(i.size)}` : ''}</option>`).join('');
+  $('cmpA').innerHTML = opts;
+  $('cmpB').innerHTML = opts;
+  // Guess usefully: A is the first catalogue model, B the first stored one,
+  // which is where a bake lands. Wrong guesses are one click to fix.
+  const firstStored = items.findIndex(i => i.storedId);
+  const firstCatalogue = items.findIndex(i => i.url);
+  if (firstCatalogue >= 0) $('cmpA').value = String(firstCatalogue);
+  if (firstStored >= 0) $('cmpB').value = String(firstStored);
+  return items;
+}
+
+function openCompare() {
+  const items = fillComparePickers();
+  if (items.length < 2) {
+    status.innerHTML = `<span style="color:var(--bad)">✗ Compare needs two models — `
+      + `load or bake a second one first.</span>`;
+    return;
+  }
+  if (!$('cmpPrompt').value.trim()) {
+    $('cmpPrompt').value = 'Write a function that looks up a user by id.';
+  }
+  $('cmpGrid').hidden = true;
+  $('cmpProof').hidden = true;
+  $('cmpStatus').textContent = 'Both models answer the same request, one after the other — '
+    + 'the browser can only hold one at a time.';
+  cmpModal.hidden = false;
+}
+
+$('cmpClose').onclick = () => { cmpModal.hidden = true; };
+cmpModal.addEventListener('click', (e) => { if (e.target === cmpModal) cmpModal.hidden = true; });
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !cmpModal.hidden) cmpModal.hidden = true;
+});
+
+// Loads whichever kind of entry modelMenuItems() produced. Catalogue entries
+// carry a URL; stored .gguf files carry an id and live only in IndexedDB.
+async function loadCompareModel(item) {
+  wllama = new Wllama(CONFIG);
+  if (item.url) {
+    await wllama.loadModelFromUrl(item.url, { n_ctx: CTX_TOKENS });
+  } else if (item.storedId) {
+    const blob = await getModelBlob(item.storedId);
+    if (!blob) throw new Error(`"${item.name}" is no longer in browser storage`);
+    await wllama.loadModel([blob], { n_ctx: CTX_TOKENS });
+  } else {
+    throw new Error(`don't know how to load "${item.name}"`);
+  }
+  modelLabel = item.name;
+  loadedUrl = item.url || null;
+}
+
+$('cmpRun').onclick = async () => {
+  const btn = $('cmpRun');
+  if (btn.disabled) return;
+  const prompt = $('cmpPrompt').value.trim();
+  if (!prompt) { $('cmpStatus').textContent = 'Type a request first.'; return; }
+
+  const items = modelMenuItems();
+  const a = items[Number($('cmpA').value)], b = items[Number($('cmpB').value)];
+  if (!a || !b) { $('cmpStatus').textContent = 'Pick two models.'; return; }
+
+  // THE CLAIM. One user turn, no system message, identical for both. If this
+  // ever grows a system prompt the comparison stops meaning anything, because
+  // the baked model would be being told the rules it is supposed to have
+  // learned. Built once and reused for exactly that reason.
+  const messages = [{ role: 'user', content: prompt }];
+  $('cmpProofBody').textContent = JSON.stringify(messages, null, 2);
+  $('cmpProof').hidden = false;
+
+  btn.disabled = true;
+  $('cmpGrid').hidden = false;
+  $('cmpHeadA').textContent = `${a.name} — base`;
+  $('cmpHeadB').textContent = `${b.name} — baked`;
+  $('cmpOutA').textContent = '';
+  $('cmpOutB').textContent = '';
+
+  const wasRuntime = activeRuntime;
+  activeRuntime = 'wasm';        // Ollama serves its own model, not these two
+  const maxTok = parseInt($('maxtok').value, 10) || 256;
+  try {
+    for (const [item, pane] of [[a, 'cmpOutA'], [b, 'cmpOutB']]) {
+      $('cmpStatus').textContent = `Loading ${item.name}…`;
+      await loadCompareModel(item);
+      $('cmpStatus').textContent = `Generating with ${item.name}…`;
+      await complete(messages, maxTok, (t) => { $(pane).textContent = t; });
+    }
+    $('cmpStatus').innerHTML = `<span style="color:var(--ok)">✓ Both done.</span> `
+      + `Same request, no system prompt. Any difference in style came from the weights.`;
+    noteActivity();
+  } catch (e) {
+    $('cmpStatus').innerHTML = `<span style="color:var(--bad)">✗ ${esc(e.message || String(e))}</span>`;
+  } finally {
+    activeRuntime = wasRuntime;
+    btn.disabled = false;
+    clearBusy();
+    // The compare left a different model loaded than the status line claims.
+    status.innerHTML = `<span class="note">Compare left <b>${esc(modelLabel)}</b> loaded.</span>`;
+  }
+};
+
 // ---- Bake into weights (Rung 2) -------------------------------------------
 // The browser cannot train, so the deliverable here is a notebook. Everything
 // heavy happens on Colab's GPU, on the student's own Google account, with
@@ -2925,7 +3092,9 @@ function renderTrainingLog(log) {
 
   box.innerHTML =
       `<div class="pp-head"><span class="pp-title">Your bake — ${esc(log.variant)}</span>`
-    + `<span class="pp-lic">${esc(log.quant || '')}</span></div>`
+    + `<span class="pp-lic">${esc(log.quant || '')}</span>`
+    + `<button type="button" class="ghost pp-dl" id="cmpOpen"`
+    + ` style="padding:4px 10px; font-size:11.5px">Compare base vs baked</button></div>`
     + `<div class="pp-note" style="border-top:0;padding-top:0;margin-top:0">`
     + `${esc(meta)}</div>`
     + `<div class="loss-wrap">`
@@ -2946,6 +3115,8 @@ function renderTrainingLog(log) {
         : `Loss did not fall. The bake ran, but the model learned little — usually too few `
           + `examples, or rules too vague to infer from code alone.`}</div>`
     + (log.ggufFile ? `<div class="pp-note">Pairs with <b>${esc(log.ggufFile)}</b>.</div>` : '');
+  // Wired after the innerHTML above replaces the node it lives on.
+  $('cmpOpen').onclick = openCompare;
   box.hidden = false;
 }
 
