@@ -2330,7 +2330,21 @@ function openBakeModal(id) {
 }
 
 $('bakeClose').onclick = () => { bakeModal.hidden = true; };
-$('bakeDone').onclick = () => { bakeModal.hidden = true; };
+$('bakeDone').onclick = () => {
+  bakeModal.hidden = true;
+  // "Done" means the notebook is downloaded, so the next thing that happens is
+  // the student coming back with two files. Put the target of that step on
+  // screen rather than closing onto whatever they were looking at before and
+  // leaving them to find it — possibly a lesson later, having forgotten where
+  // it was.
+  const dz = $('drop');
+  dz.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // Borrows the drag-over highlight to say "here". It clears itself, and the
+  // drop handlers only ever remove this class, so a real drag can't be
+  // confused by it.
+  dz.classList.add('hot');
+  setTimeout(() => dz.classList.remove('hot'), 1400);
+};
 bakeModal.addEventListener('click', (e) => { if (e.target === bakeModal) bakeModal.hidden = true; });
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !bakeModal.hidden) bakeModal.hidden = true;
