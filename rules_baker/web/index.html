@@ -226,6 +226,20 @@
   .pp-unk { margin-top:7px; font-size:11.5px; line-height:1.6; color:var(--dimmer); }
   .pp-unk b { color:#f0be5a; font-weight:600; }
 
+  .cand { display:grid; grid-template-columns:1fr 54px 1fr 54px; gap:4px 10px;
+    align-items:center; font:12px var(--mono); }
+  .cand .h { font-size:10px; letter-spacing:.07em; text-transform:uppercase;
+    color:var(--dimmer); font-family:inherit; }
+  .cand .tokv { color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:pre; }
+  .cand .barwrap { background:rgba(255,255,255,.06); border-radius:3px; height:13px; position:relative; }
+  .cand .bar { background:rgba(255,255,255,.55); height:100%; border-radius:3px; }
+  .cand .pct { color:var(--dim); text-align:right; font-variant-numeric:tabular-nums; }
+  .cand .gone { opacity:.32; }
+  .toks { display:flex; flex-wrap:wrap; gap:3px; margin-top:4px; }
+  .tok { font:11.5px var(--mono); padding:1px 5px; border-radius:4px;
+    background:rgba(255,255,255,.07); color:var(--ink); white-space:pre; }
+  .tok .id { color:var(--dimmer); margin-left:5px; font-size:10px; }
+
   /* ---- Activity heatmap ---- */
   .act-head { display:flex; align-items:center; gap:12px; margin:2px 0 0; }
   .act-year { flex:none; width:auto; background:var(--panel); color:var(--ink);
@@ -837,6 +851,14 @@
       </div>
       <div class="note" style="margin-top:7px">Code is always sandbox-tested before it's shown.</div>
       <div id="output">(model output appears here, streaming token by token)</div>
+      <div id="inspect" class="passport" hidden>
+        <div class="pp-head">
+          <span class="pp-title">What the model was choosing between</span>
+          <button type="button" class="ghost pp-dl" id="inspectClose"
+                  style="padding:4px 10px; font-size:11.5px">Hide</button>
+        </div>
+        <div id="inspectBody"></div>
+      </div>
       <p class="gentip" id="genTip" hidden><span data-ic="zap"></span><span id="genTipText"></span></p>
       <div class="statline" id="runStats"></div>
       <!-- Shown only once there is real output — see the observer that toggles
@@ -1588,6 +1610,64 @@ function renderPassport({ entry, local } = {}) {
   };
   el.hidden = false;
 }
+
+// ---- generation inspector ----
+// getLogits() returns the model's distribution BEFORE sampling — that is what
+// its doc comment says and it is easy to miss. Rendering only that would give
+// us a temperature control that visibly does nothing, which teaches the exact
+// opposite of the point. So: two columns, raw and sampled, from the same moment.
+async function renderInspector() {
+  const box = $('inspect'), body = $('inspectBody');
+  if (activeRuntime !== 'wasm' || !wllama) {
+    body.innerHTML = `<div class="pp-note">Only available on the in-browser runtime — `
+      + `Ollama does not expose the candidate list here.</div>`;
+    box.hidden = false;
+    return;
+  }
+  let raw;
+  try {
+    raw = await wllama.getLogits(8);
+  } catch (e) {
+    body.innerHTML = `<div class="pp-note">No candidates available yet — generate something first.</div>`;
+    box.hidden = false;
+    return;
+  }
+  if (!raw || !raw.length) {
+    body.innerHTML = `<div class="pp-note">No candidates available yet — generate something first.</div>`;
+    box.hidden = false;
+    return;
+  }
+
+  const s = currentSampling();
+  const sampled = applySampling(raw, s);
+  const kept = new Set(sampled.map(d => d.token));
+  const pieces = await Promise.all(raw.map(d => wllama.detokenize([d.token], true).catch(() => '?')));
+  const pct = (p) => (p * 100).toFixed(1) + '%';
+  const bar = (p) => `<div class="barwrap"><div class="bar" style="width:${Math.round(p * 100)}%"></div></div>`;
+
+  const rows = raw.map((d, i) => {
+    const after = sampled.find(x => x.token === d.token);
+    const cls = kept.has(d.token) ? '' : ' gone';
+    return `<div class="tokv${cls}">${esc(JSON.stringify(pieces[i]).slice(1, -1))}</div>`
+      + `<div class="pct${cls}">${pct(d.p)}</div>`
+      + `<div class="${cls ? 'gone' : ''}">${after ? bar(after.p) : '<span class="pct">cut</span>'}</div>`
+      + `<div class="pct${cls}">${after ? pct(after.p) : '—'}</div>`;
+  }).join('');
+
+  body.innerHTML =
+      `<div class="cand">`
+    +   `<div class="h">Token</div><div class="h">Model</div>`
+    +   `<div class="h">After sampling</div><div class="h">&nbsp;</div>`
+    +   rows
+    + `</div>`
+    + `<div class="pp-unk" style="margin-top:9px">Left is the model's own distribution. `
+    + `Right is the same moment after temperature ${s.temperature}, top-k ${s.topK}, top-p ${s.topP}. `
+    + `Change the temperature and only the right column moves — the model's opinion never changes, `
+    + `only what the sampler does with it.</div>`;
+  box.hidden = false;
+}
+
+$('inspectClose').onclick = () => { $('inspect').hidden = true; };
 
 // ---- Activity heatmap ----
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -2716,6 +2796,7 @@ async function handleGenerate() {
       : abort ? 'stopped' : (finalText.trim() ? 'completed' : 'failed'),
   }).then(renderAuditSummary);
 
+  renderInspector();     // the candidates behind the last token generated
   refreshUsage();
 }
 
@@ -3529,6 +3610,7 @@ const TERM_COMMANDS = [
   { name: 'autofix', args: '<on|off>',    desc: 'sandbox-check generated code' },
   { name: 'status',  args: '',            desc: 'show current settings' },
   { name: 'flush',   args: '',            desc: 'clear the model\'s KV cache' },
+  { name: 'tokens?', args: '<text>',      desc: 'show how text splits into tokens' },
   { name: 'chain',   args: '<goal>',      desc: 'run a short agent loop, guards visible' },
   { name: 'help',    args: '',            desc: 'show this list' },
   { name: 'clear',   args: '',            desc: 'clear the terminal' },
@@ -3675,6 +3757,17 @@ async function termRun(raw) {
           // and then sees 270MB still resident would reasonably think it failed.
           tp('KV cache cleared — the conversation\'s working memory. The weights stay loaded.', 'sysmsg');
         } catch (e) { tp('could not clear cache: ' + e.message, 'errmsg'); }
+        break;
+      }
+      case 'tokens?': {
+        if (activeRuntime !== 'wasm' || !wllama) { tp('no in-browser model loaded', 'errmsg'); break; }
+        if (!arg) { tp('usage: /tokens? strawberry', 'errmsg'); break; }
+        try {
+          const ids = await wllama.tokenize(arg);
+          const pieces = await Promise.all(ids.map(id => wllama.detokenize([id], true).catch(() => '?')));
+          tp(`${ids.length} token${ids.length === 1 ? '' : 's'} for ${arg.length} characters:`, 'sysmsg');
+          tp(pieces.map((p, i) => `${JSON.stringify(p)}·${ids[i]}`).join('  '), 'gen');
+        } catch (e) { tp('tokenize failed: ' + e.message, 'errmsg'); }
         break;
       }
       case 'temp': {
