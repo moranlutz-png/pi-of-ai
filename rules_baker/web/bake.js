@@ -98,8 +98,16 @@ function pyStr(s) {
   return JSON.stringify(String(s == null ? '' : s));
 }
 
+/*
+ * NOTE: this builds the config cell FROM SCRATCH — it does not patch the
+ * template's copy. So every name the later cells rely on has to be emitted
+ * here too. Adding one to bake-template.ipynb alone leaves generated notebooks
+ * raising NameError partway through a run, which is the worst place to find
+ * out. The names below must stay in step with the template's default cell.
+ */
 function configSource({ variant, target, date }) {
   const rules = (variant.rules || []).map(r => String(r).trim()).filter(Boolean);
+  const stem = bakeBasename(variant.name, date);
   return [
     '# ---------------------------------------------------------------------------',
     `# Written by Pi-of-AI from the variant "${String(variant.name || '').replace(/[\r\n]/g, ' ')}".`,
@@ -133,6 +141,12 @@ function configSource({ variant, target, date }) {
     'LORA_ALPHA    = 32',
     'MAX_SEQ_LEN   = 1024',
     'SEED          = 3407',
+    '',
+    '# Defined here, not further down, so re-running a single cell after a',
+    '# failure still knows the filenames.',
+    `GGUF_NAME = ${pyStr(stem + '.gguf')}`,
+    `LOG_NAME  = ${pyStr(stem + '.json')}`,
+    'F16_NAME  = "f16-intermediate.gguf"',
     '',
   ].join('\n');
 }

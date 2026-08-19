@@ -777,6 +777,11 @@
     <div class="subseclabel">Variants</div>
     <div id="variantTree"></div>
     <div class="navlink sub" id="newVariantNav"><span data-ic="plus"></span>New variant</div>
+    <!-- Rung 2's payoff needs its own way in. Hanging it off the training-log
+         card alone made it unreachable for anyone whose .json download failed
+         or who kept only the .gguf — and the two files are independent
+         everywhere else. -->
+    <div class="navlink sub" id="compareNav"><span data-ic="grid"></span>Compare base vs baked</div>
 
     <div class="spacer"></div>
     <div class="navlink" id="setNav"><span data-ic="sliders"></span>Settings</div>
@@ -858,6 +863,11 @@
         <div class="bar" style="flex:1; margin-top:0"><i id="prog"></i></div>
       </div>
       <div id="status">Idle · pick a model and press Load.</div>
+
+      <!-- A save that would overwrite an existing bake waits for an answer here,
+           NOT in #status, which the next load or generation would silently
+           overwrite — taking the unanswered question, and the save, with it. -->
+      <div id="clashBox" class="passport" hidden></div>
 
       <!-- What is this model, actually? Filled in once something is loaded. -->
       <div id="passport" class="passport" hidden></div>
@@ -2132,8 +2142,15 @@ $('varSave').onclick = () => {
 // and there is no way around it short of two runtimes.
 const cmpModal = $('cmpModal');
 
+// Captured when the pickers are built, and read again on Run. The <option>
+// values are indexes into THIS array, and modelMenuItems() reads the stored
+// half from live DOM — so calling it again on Run could renumber the list
+// underneath the selection (a save triggering renderStoredModels, or
+// lastModels arriving late) and load the wrong model under the right label.
+let cmpItems = [];
+
 function fillComparePickers() {
-  const items = modelMenuItems();
+  const items = cmpItems = modelMenuItems();
   const opts = items.map((i, n) =>
     `<option value="${n}">${esc(i.name)}${i.size ? ` · ${esc(i.size)}` : ''}</option>`).join('');
   $('cmpA').innerHTML = opts;
@@ -2164,6 +2181,7 @@ function openCompare() {
   cmpModal.hidden = false;
 }
 
+$('compareNav').onclick = openCompare;
 $('cmpClose').onclick = () => { cmpModal.hidden = true; };
 cmpModal.addEventListener('click', (e) => { if (e.target === cmpModal) cmpModal.hidden = true; });
 window.addEventListener('keydown', (e) => {
@@ -2172,6 +2190,11 @@ window.addEventListener('keydown', (e) => {
 
 // Loads whichever kind of entry modelMenuItems() produced. Catalogue entries
 // carry a URL; stored .gguf files carry an id and live only in IndexedDB.
+// Neither branch re-runs the .gguf header gate, and that is deliberate rather
+// than an oversight: a stored blob was gated by loadLocal on the way in, and a
+// catalogue URL comes from models.json rather than from the URL box, which is
+// the arbitrary-input case the gate exists for. Anything that ever lets a
+// user-supplied URL reach here must gate it first.
 async function loadCompareModel(item) {
   wllama = new Wllama(CONFIG);
   if (item.url) {
@@ -2185,6 +2208,17 @@ async function loadCompareModel(item) {
   }
   modelLabel = item.name;
   loadedUrl = item.url || null;
+  // Everything that DESCRIBES the loaded model has to move with it, or the page
+  // keeps asserting the previous model's identity over this one's output: the
+  // passport would still show the old licence and architecture, and the header
+  // button and picker would still name it. pendingLocalFile is cleared for the
+  // same reason it is cleared on every other load path — buildPassport's local
+  // branch wins over `entry` unconditionally.
+  pendingLocalFile = null;
+  renderPassport({ entry: (lastModels || []).find(x => x.url === loadedUrl) || null,
+                   local: null });
+  modelPick.innerHTML = `<option>${esc(item.name)}</option>`;
+  if (window.__setModelBtn) window.__setModelBtn(item.name);
 }
 
 $('cmpRun').onclick = async () => {
@@ -2193,9 +2227,16 @@ $('cmpRun').onclick = async () => {
   const prompt = $('cmpPrompt').value.trim();
   if (!prompt) { $('cmpStatus').textContent = 'Type a request first.'; return; }
 
-  const items = modelMenuItems();
-  const a = items[Number($('cmpA').value)], b = items[Number($('cmpB').value)];
+  const a = cmpItems[Number($('cmpA').value)], b = cmpItems[Number($('cmpB').value)];
   if (!a || !b) { $('cmpStatus').textContent = 'Pick two models.'; return; }
+
+  // The same in-flight claim every other load path makes. Compare reassigns the
+  // module-level `wllama` twice; without this a Generate or Load started
+  // mid-compare leaves two Wllama instances each holding a model — on a 4GB
+  // Chromebook that is the whole machine — and streams output from an instance
+  // nothing is tracking any more.
+  if (loadBtn.disabled) { $('cmpStatus').textContent = 'A model is already loading — wait for it.'; return; }
+  loadBtn.disabled = true; runBtn.disabled = true; browseBtn.disabled = true;
 
   // THE CLAIM. One user turn, no system message, identical for both. If this
   // ever grows a system prompt the comparison stops meaning anything, because
@@ -2230,9 +2271,16 @@ $('cmpRun').onclick = async () => {
   } finally {
     activeRuntime = wasRuntime;
     btn.disabled = false;
+    loadBtn.disabled = false; runBtn.disabled = !wllama; browseBtn.disabled = false;
     clearBusy();
-    // The compare left a different model loaded than the status line claims.
-    status.innerHTML = `<span class="note">Compare left <b>${esc(modelLabel)}</b> loaded.</span>`;
+    // Compare left a different model loaded than whatever the status line said
+    // before. Say which — and, if the runtime is Ollama, say that generating
+    // will NOT use it: Ollama serves its own model, so claiming this one is
+    // "loaded" without that caveat is exactly the mismatch withLoad warns about.
+    status.innerHTML = activeRuntime === 'ollama'
+      ? `<span class="statuswarn">Compare left <b>${esc(modelLabel)}</b> in the tab, but the `
+        + `runtime is Ollama — Generate will use Ollama's model, not this one.</span>`
+      : `<span class="note">Compare left <b>${esc(modelLabel)}</b> loaded.</span>`;
   }
 };
 
@@ -2310,9 +2358,12 @@ $('bakeGo').onclick = async () => {
       bakeTemplate = await res.json();
     }
     const target = getTarget(bakeTargetId);
-    const nb = buildNotebook(bakeTemplate, { variant: bakingVariant, target });
-    downloadJson(nb, notebookName(bakingVariant.name));
-    const stem = bakeBasename(bakingVariant.name);
+    // One Date for all three, or a bake started at 23:59:59 gets a notebook
+    // stamped today and a promise on screen naming tomorrow's files.
+    const now = new Date();
+    const nb = buildNotebook(bakeTemplate, { variant: bakingVariant, target, date: now });
+    downloadJson(nb, notebookName(bakingVariant.name, now));
+    const stem = bakeBasename(bakingVariant.name, now);
     out.innerHTML = `<span style="color:var(--ok)">✓ Notebook downloaded.</span> `
       + `It will produce <b>${esc(stem)}.gguf</b> and <b>${esc(stem)}.json</b>.`;
     $('bakeSteps').hidden = false;
@@ -2871,6 +2922,10 @@ let loadedUrl = null;   // which model is in memory, so measured tok/s can be at
 let pendingLocalFile = null;
 
 async function withLoad(label, loadFn) {
+  // An unanswered overwrite question belongs to the load that raised it. Once a
+  // different load starts, answering it would save the WRONG file under that
+  // name, so it goes rather than lingering.
+  $('clashBox').hidden = true;
   loadBtn.disabled = true; runBtn.disabled = true; browseBtn.disabled = true;
   prog.style.width = '0%';
   setBusy('Loading model…');
@@ -3034,10 +3089,17 @@ loadBtn.onclick = async () => {
 function offerReplaceOrKeep(file, existing) {
   const when = existing.savedAt ? new Date(existing.savedAt).toLocaleDateString() : 'earlier';
   const mb = existing.size ? ` · ${(existing.size / 1048576).toFixed(0)} MB` : '';
-  status.innerHTML = `<span class="statuswarn">Loaded — but not saved yet. `
-    + `<b>${esc(existing.name)}</b> (saved ${esc(when)}${esc(mb)}) already has this name.</span> `
-    + `<button type="button" class="ghost" id="clashReplace" style="padding:4px 10px;font-size:11.5px">Replace it</button> `
-    + `<button type="button" class="ghost" id="clashKeep" style="padding:4px 10px;font-size:11.5px">Keep both</button>`;
+  const box = $('clashBox');
+  box.innerHTML =
+      `<div class="pp-head"><span class="pp-title">Loaded — but not saved yet</span></div>`
+    + `<div class="pp-note" style="border-top:0;padding-top:0;margin-top:0">`
+    + `<b>${esc(existing.name)}</b> (saved ${esc(when)}${esc(mb)}) already has this name. `
+    + `Replacing it cannot be undone.</div>`
+    + `<div class="dactions" style="margin-top:9px">`
+    + `<button type="button" class="ghost" id="clashKeep" style="padding:4px 10px;font-size:11.5px">Keep both</button>`
+    + `<button type="button" class="ghost" id="clashReplace" style="padding:4px 10px;font-size:11.5px">Replace it</button>`
+    + `</div>`;
+  box.hidden = false;
 
   const finish = async (nameOverride) => {
     $('clashReplace').disabled = true; $('clashKeep').disabled = true;
@@ -3045,14 +3107,18 @@ function offerReplaceOrKeep(file, existing) {
     if (res.ok) {
       await requestPersistence();
       renderStoredModels();
-      status.innerHTML = `<span style="color:var(--ok)">✓ Saved as `
-        + `<b>${esc(nameOverride || file.name)}</b>.</span>`;
+      box.innerHTML = `<div class="pp-note" style="border-top:0;padding-top:0;margin-top:0">`
+        + `<span style="color:var(--ok)">✓ Saved as <b>${esc(nameOverride || file.name)}</b>.</span></div>`;
     } else {
-      status.innerHTML = `<span style="color:var(--bad)">✗ Couldn't save it: ${esc(res.error)}.</span>`;
+      box.innerHTML = `<div class="pp-note" style="border-top:0;padding-top:0;margin-top:0">`
+        + `<span style="color:var(--bad)">✗ Couldn't save it: ${esc(res.error)}. `
+        + `The model is loaded and usable, but it is not stored.</span></div>`;
     }
   };
-  $('clashReplace').onclick = () => finish(null);
+  // "Keep both" first, and the destructive one second: the safe choice should be
+  // the one under the cursor, not the one that ends a lesson's work.
   $('clashKeep').onclick = async () => finish(await freeName(file.name));
+  $('clashReplace').onclick = () => finish(null);
 }
 
 async function loadLocal(file) {
@@ -3093,15 +3159,26 @@ async function loadLocal(file) {
   // Checked BEFORE the load, because afterwards withLoad has already rewritten
   // #status and the question would be buried under a success line.
   const clash = await storedNamed(file.name);
+  let loaded = false;
   await withLoad(file.name, async () => {
     status.textContent = `Reading ${file.name} (${(file.size/1048576).toFixed(0)} MB) into WASM…`;
     await wllama.loadModel([file], { n_ctx: CTX_TOKENS });
+    loaded = true;
     // Only after the model actually loads — never store a file that failed,
     // and never make the user wait on storage before they can use it.
     // A name collision defers the save to the choice offered below instead.
     if (!clash) kept = await saveModel(file);
   });
-  if (clash) { offerReplaceOrKeep(file, clash); return; }
+  // `loaded`, not just `clash`. withLoad CATCHES load failures and writes its
+  // own "✗ Load failed" line rather than throwing, so gating on clash alone
+  // would overwrite that with "Loaded — but not saved yet… [Replace it]" for a
+  // file that did not load at all. A truncated download — Colab's known failure
+  // mode for a 270MB file, which is why this app exists to receive one — passes
+  // the header gate, because the magic and version sit in the first bytes. One
+  // click would then replace a working bake with a broken file: the exact loss
+  // this whole sub-project was built to prevent, caused by the warning meant to
+  // prevent it.
+  if (clash && loaded) { offerReplaceOrKeep(file, clash); return; }
   // Reported AFTER withLoad, not inside it: withLoad writes its own success
   // line to #status once its callback resolves, which would erase anything set
   // from within.
