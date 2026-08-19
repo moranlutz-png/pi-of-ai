@@ -3249,7 +3249,7 @@ async function loadLocal(file) {
 // textbook picture cannot answer.
 const W = 560, H = 120;                 // viewBox units; CSS sets the real size
 
-function renderTrainingLog(log) {
+function renderTrainingLog(log, pairStored = true) {
   const box = $('trainlog');
   const pts = lossPath(log.loss, W, H);
   const first = log.loss[0].loss, last = log.loss[log.loss.length - 1].loss;
@@ -3284,7 +3284,13 @@ function renderTrainingLog(log) {
           + `and into the weights.`
         : `Loss did not fall. The bake ran, but the model learned little — usually too few `
           + `examples, or rules too vague to infer from code alone.`}</div>`
-    + (log.ggufFile ? `<div class="pp-note">Pairs with <b>${esc(log.ggufFile)}</b>.</div>` : '');
+    + (log.ggufFile
+        ? `<div class="pp-note">Pairs with <b>${esc(log.ggufFile)}</b>`
+          + (pairStored
+              ? ` — stored.</div>`
+              : ` — <span class="warn">not stored yet. Drop that file too; this log is only the `
+                + `record of the run, not the model.</span></div>`)
+        : '');
   // Wired after the innerHTML above replaces the node it lives on.
   $('cmpOpen').onclick = openCompare;
   box.hidden = false;
@@ -3304,10 +3310,19 @@ async function loadTrainingLog(file) {
     status.innerHTML = `<span style="color:var(--bad)">✗ ${esc(res.error)}.</span>`;
     return;
   }
-  renderTrainingLog(res.log);
+  // The log names the model it was produced with. If that model is not in
+  // storage, say so HERE rather than leaving a green tick that reads as "both
+  // files are in" — a bake produces two files, and loading one of them
+  // successfully is exactly the state most likely to be mistaken for done.
+  const pairStored = res.log.ggufFile ? await storedNamed(res.log.ggufFile) : null;
+  renderTrainingLog(res.log, !!pairStored || !res.log.ggufFile);
   noteActivity();
   status.innerHTML = `<span style="color:var(--ok)">✓ Training log loaded — `
     + `${res.log.loss.length} points from ${esc(res.log.variant)}.</span>`;
+  if (res.log.ggufFile && !pairStored) {
+    status.innerHTML += ` <span class="statuswarn">The model itself isn't stored yet — `
+      + `drop <b>${esc(res.log.ggufFile)}</b> too.</span>`;
+  }
 }
 
 // One entry point for a dropped file, so the drop zone, the browse button and
