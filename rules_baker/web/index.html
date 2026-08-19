@@ -2978,6 +2978,10 @@ $('newChatBtn').onclick = async () => {
     $('handoff').hidden = false;
     clearHistory();
     clearTranscript();
+    // The transcript and the history array are ours; the KV cache is the model's,
+    // and nothing was clearing it. On a 4GB Chromebook a 4096-token cache is real
+    // memory. Wrapped because kvClear only exists once a model is loaded.
+    try { if (activeRuntime === 'wasm' && wllama) await wllama.kvClear(); } catch (_) {}
     $('prompt').value = '';
     window.__fitPrompt();
     refreshUsage();
@@ -3453,6 +3457,7 @@ const TERM_COMMANDS = [
   { name: 'system',  args: '<text>',      desc: 'set system prompt (blank = show)' },
   { name: 'autofix', args: '<on|off>',    desc: 'sandbox-check generated code' },
   { name: 'status',  args: '',            desc: 'show current settings' },
+  { name: 'flush',   args: '',            desc: 'clear the model\'s KV cache' },
   { name: 'chain',   args: '<goal>',      desc: 'run a short agent loop, guards visible' },
   { name: 'help',    args: '',            desc: 'show this list' },
   { name: 'clear',   args: '',            desc: 'clear the terminal' },
@@ -3586,6 +3591,16 @@ async function termRun(raw) {
       case 'clear': termOut.innerHTML = ''; break;
       case 'models': tp('featherweight (100M) · chromebook (0.5B) · laptop (1.5B) — or /load <url>', 'sysmsg'); break;
       case 'status': tp(`model: ${modelLabel || 'none'}\ntemp: ${$('temp').value}   tokens: ${termState.tokens}   autofix: ${termState.autofix ? 'on' : 'off'}\nsystem: ${termState.system}`, 'sysmsg'); break;
+      case 'flush': {
+        if (activeRuntime !== 'wasm' || !wllama) { tp('no in-browser model loaded', 'errmsg'); break; }
+        try {
+          await wllama.kvClear();
+          // Precise about what was freed. A student who reads "memory released"
+          // and then sees 270MB still resident would reasonably think it failed.
+          tp('KV cache cleared — the conversation\'s working memory. The weights stay loaded.', 'sysmsg');
+        } catch (e) { tp('could not clear cache: ' + e.message, 'errmsg'); }
+        break;
+      }
       case 'temp': {
         const v = parseFloat(arg);
         if (isNaN(v)) { tp('usage: /temp 0.2', 'errmsg'); break; }
