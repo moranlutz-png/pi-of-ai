@@ -991,11 +991,6 @@ import { recordGeneration, auditSummary, auditExport, clearAudit } from './audit
 import { runBenchmark, saveRun, savedRuns, deviceKey, memorySnapshot, BENCH_PROMPT } from './bench.js';
 import { runChain } from './chain.js';
 
-// One source of truth for the context length. It was written out four times —
-// three loadModel calls and a Settings row — and the Settings copy had drifted
-// to 1024 while the loads used 4096.
-const N_CTX = 4096;
-
 // ---- inline line-icon set (Feather-style) ----
 const P = 'fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"';
 const ICONS = {
@@ -1669,7 +1664,9 @@ document.querySelector('.sidebar').addEventListener('click', async (e) => {
   withLoad(name, () => {
     loadedUrl = null;   // from-disk load: don't attribute it to a remote URL
     status.textContent = `Reading ${name} from browser storage…`;
-    return wllama.loadModel([blob], { n_ctx: N_CTX });
+    // CTX_TOKENS lives in chat.js because the conversation-budget logic there
+    // needs it too; every model load below must agree with that value.
+    return wllama.loadModel([blob], { n_ctx: CTX_TOKENS });
   });
 });
 
@@ -1771,7 +1768,7 @@ function updateRuleNote() {
   // Rough: ~4 characters per token. Enough to warn, not precise enough to quote.
   const approxTokens = Math.round($('varRules').value.length / 4);
   $('varRuleNote').textContent = `${rules.length} rule${rules.length === 1 ? '' : 's'} · `
-    + `roughly ${approxTokens} tokens of the 4096-token window, on every request.`;
+    + `roughly ${approxTokens} tokens of the ${CTX_TOKENS.toLocaleString()}-token window, on every request.`;
 }
 
 function openVariantEditor(id) {
@@ -2358,7 +2355,7 @@ loadBtn.onclick = () => {
   withLoad(label, () => {
     status.textContent = 'Downloading model weights… (cached after first load)';
     loadedUrl = url;
-    return wllama.loadModelFromUrl(url, { n_ctx: N_CTX, progressCallback: ({loaded,total}) => {
+    return wllama.loadModelFromUrl(url, { n_ctx: CTX_TOKENS, progressCallback: ({loaded,total}) => {
       const pct = total ? Math.round(100*loaded/total) : 0;
       prog.style.width = pct + '%';
       status.textContent = `Downloading weights… ${(loaded/1048576).toFixed(0)} / ${total?(total/1048576).toFixed(0):'?'} MB (${pct}%)`;
@@ -2372,7 +2369,7 @@ async function loadLocal(file) {
   pendingLocalFile = { name: file.name, size: file.size };
   await withLoad(file.name, async () => {
     status.textContent = `Reading ${file.name} (${(file.size/1048576).toFixed(0)} MB) into WASM…`;
-    await wllama.loadModel([file], { n_ctx: N_CTX });
+    await wllama.loadModel([file], { n_ctx: CTX_TOKENS });
     // Only after the model actually loads — never store a file that failed,
     // and never make the user wait on storage before they can use it.
     kept = await saveModel(file);
@@ -3395,9 +3392,9 @@ window.addEventListener('keydown', (e) => { if (e.key === 'Escape') setModal.hid
   const row = (l, v) => `<div class="set-row"><span>${l}</span><span class="m">${v}</span></div>`;
   document.getElementById('setRuntime').innerHTML =
       row('Engine', 'wllama · WebAssembly (llama.cpp)')
-    // Must track the n_ctx passed at load time — every loadModel call in this
-    // file uses 4096. A hardcoded figure here silently drifts from reality.
-    + row('Context window', `${N_CTX.toLocaleString()} tokens`)
+    // CTX_TOKENS (from chat.js) is also the n_ctx passed at load time, so this
+    // can't drift from what every loadModel call actually requests.
+    + row('Context window', `${CTX_TOKENS.toLocaleString()} tokens`)
     + row('Data leaves device', 'Never — fully offline')
     + row('Threads', iso ? 'multi-thread' : 'single-thread')
     + row('WebGPU', webgpu ? 'available — not used (CPU inference)' : 'no')
@@ -3452,7 +3449,7 @@ async function termLoad(arg) {
   tp('loading ' + label + ' …', 'sysmsg'); setBusy('Loading model…');
   try {
     wllama = new Wllama(CONFIG);
-    await wllama.loadModelFromUrl(new URL(url, location.href).href, { n_ctx: N_CTX });
+    await wllama.loadModelFromUrl(new URL(url, location.href).href, { n_ctx: CTX_TOKENS });
     modelLabel = label;
     if (window.__setModelBtn) window.__setModelBtn(label);
     tp('✓ loaded ' + label, 'okmsg');
