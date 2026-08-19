@@ -38,6 +38,8 @@ class Reader {
   constructor(buf) { this.v = new DataView(buf); this.o = 0; this.end = buf.byteLength; }
   need(n) { if (this.o + n > this.end) throw new RangeError('truncated'); }
   u8()  { this.need(1); return this.v.getUint8(this.o++); }
+  i8()  { this.need(1); return this.v.getInt8(this.o++); }
+  i16() { this.need(2); const x = this.v.getInt16(this.o, true); this.o += 2; return x; }
   u32() { this.need(4); const x = this.v.getUint32(this.o, true); this.o += 4; return x; }
   i32() { this.need(4); const x = this.v.getInt32(this.o, true); this.o += 4; return x; }
   f32() { this.need(4); const x = this.v.getFloat32(this.o, true); this.o += 4; return x; }
@@ -53,8 +55,10 @@ class Reader {
   }
   value(type) {
     switch (type) {
-      case T.U8: case T.I8:   return this.u8();
-      case T.U16: case T.I16: { this.need(2); const x = this.v.getUint16(this.o, true); this.o += 2; return x; }
+      case T.U8:   return this.u8();
+      case T.I8:   return this.i8();
+      case T.U16:  { this.need(2); const x = this.v.getUint16(this.o, true); this.o += 2; return x; }
+      case T.I16:  return this.i16();
       case T.U32:             return this.u32();
       case T.I32:             return this.i32();
       case T.F32:             return this.f32();
@@ -65,6 +69,13 @@ class Reader {
       case T.ARR: {
         const itemType = this.u32();
         const n = this.u64();
+        // Same class of check as str()'s length cap: an item count is read
+        // straight off untrusted bytes, before any bound is known. Without a
+        // ceiling here, a tiny hostile file can declare an absurd count (e.g.
+        // 2^40), the skip loop below runs out of buffer, and the resulting
+        // 'truncated' RangeError gets mistaken for the legitimate large-
+        // vocabulary case — a hostile file walks past the gate as ok:true.
+        if (n > 50_000_000) throw new RangeError(`implausible array item count (${n})`);
         // Vocabularies are huge and we never need their contents — skip the
         // values but keep the cursor exact, or every later key misparses.
         for (let i = 0; i < n; i++) this.value(itemType);
@@ -108,10 +119,34 @@ export async function readGgufHeader(blob) {
       kv[key] = r.value(type);
     }
   } catch (e) {
-    // Running out of buffer is expected for models with large vocabularies and
-    // is NOT corruption — say which it was.
-    if (e instanceof RangeError && e.message === 'truncated') truncated = true;
-    else problems.push('malformed metadata: ' + (e.message || e));
+    // Running out of buffer is expected for models with large vocabularies —
+    // but only when there is genuinely more file beyond our read window. We
+    // only ever read the first HEADER_BYTES of the blob (see above), so if
+    // the blob itself is no bigger than what we read and the parse still ran
+    // off the end, the file is claiming more data than it actually contains.
+    // That is corruption (or a hostile file), not truncation, no matter which
+    // field ran out (a KV key/type, a str() value, or an ARR item count).
+    //
+    // The discriminator is "is there more file we did not read", tested as
+    // blob.size > buf.byteLength. This requires blob.size to be the file's
+    // true size — which is exactly what callers give us: loadLocal hands
+    // over the real File object, never a pre-sliced one. Do NOT "fix" this
+    // by loosening the check because a test built `blob.slice(0, N)` and
+    // expected truncated:true. A blob manually sliced to N bytes has a
+    // .size of exactly N, so blob.size > buf.byteLength is false by
+    // construction — indistinguishable from a small hostile file that
+    // truly only contains N bytes and lies about having more. There is no
+    // signal in the Blob API to tell those two apart; treating the sliced
+    // case as legitimate truncation reopens the exact bypass this comparison
+    // exists to close (see the array-count exploit this function guards
+    // against below). Verified 2026-08: an unsliced blob whose real .size
+    // genuinely exceeds HEADER_BYTES correctly comes back truncated:true.
+    if (e instanceof RangeError && e.message === 'truncated') {
+      if (blob.size > buf.byteLength) truncated = true;
+      else problems.push('file claims more data than it contains');
+    } else {
+      problems.push('malformed metadata: ' + (e.message || e));
+    }
   }
 
   const arch = kv['general.architecture'] || null;
