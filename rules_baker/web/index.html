@@ -2287,6 +2287,11 @@ document.getElementById('sysToggle').onclick = () => {
 };
 
 let wllama = null, modelLabel = '', abort = false;
+// Set by wasmComplete when the repetition detector fires, so the caller — not
+// wasmComplete itself — decides where to show it (Terminal vs. transcript).
+// Cleared at the start of every wasmComplete run, so a reason from a past
+// generation is never reported against a later, healthy one.
+let lastStopReason = null;
 let loadedUrl = null;   // which model is in memory, so measured tok/s can be attributed
 // Set only while a from-disk load is in flight. The passport needs to know it
 // is describing a dropped file (almost nothing knowable) rather than a
@@ -2533,6 +2538,7 @@ async function complete(messages, nPredict, onText) {
 
 async function wasmComplete(messages, nPredict, onText) {
   const t0 = performance.now(); let nTok = 0, full = ''; let degenerate = null;
+  lastStopReason = null;   // this run hasn't stopped for any reason yet
   await wllama.createChatCompletion(messages, {
     nPredict,
     sampling: (() => { const s = currentSampling();
@@ -2554,9 +2560,11 @@ async function wasmComplete(messages, nPredict, onText) {
     },
   });
   if (degenerate) {
-    // Said out loud. A run that stopped early and does not say so looks like a
-    // model that simply had nothing more to add.
-    tp(`[stopped: repeating "${degenerate.phrase}" ${degenerate.times}× — the model is stuck, not finished]`, 'errmsg');
+    // Said out loud — but not here. wasmComplete is called from the Terminal
+    // AND from the main Generate button, which render into different surfaces
+    // (termOut vs. the chat transcript). Record why, and let each caller
+    // report it into its own surface.
+    lastStopReason = { kind: 'repetition', phrase: degenerate.phrase, times: degenerate.times };
   }
   // Real throughput beats any estimate — remember it for the Library tag.
   const elapsed = (performance.now() - t0) / 1000;
@@ -2645,6 +2653,17 @@ async function handleGenerate() {
 
   // 3) reveal the FINAL code — every block checked and annotated
   await renderFinal(intro, finalText);
+
+  // The repetition detector fires inside wasmComplete, which has no idea it
+  // was called from here rather than the Terminal — it just records why it
+  // stopped. This is the transcript's chance to say so, in the same place the
+  // rest of the answer just landed, rather than leaving the notice sitting in
+  // a Terminal section the user has no reason to be looking at.
+  if (lastStopReason && lastStopReason.kind === 'repetition') {
+    output.innerHTML += `<div class="sandnote bad">⚠ stopped: repeating `
+      + `"${esc(lastStopReason.phrase)}" ${lastStopReason.times}× — the model `
+      + `is stuck, not finished</div>`;
+  }
 
   // renderFinal runs unconditionally, so whatever is in finalText always
   // reaches the transcript; gating history on `abort` while rendering
@@ -2761,7 +2780,11 @@ async function renderFinal(intro, text) {
   let html = hasCode ? `<div class="intro">${esc(intro)}</div>` : '';
   for (const s of segments(text)) {
     if (s.type === 'prose') { html += `<div class="prose">${esc(s.text)}</div>`; continue; }
-    const rep = abort ? { err: 'stopped' } : await checkPython(s.code, 8000);
+    // A repetition stop is just as much "not finished" as Ctrl+C — a looping
+    // block must not be run through the sandbox and reported as an ordinary
+    // pass or fail, which is what presented a stalled generation as a normal
+    // answer.
+    const rep = (abort || lastStopReason) ? { err: 'stopped' } : await checkPython(s.code, 8000);
     html += `<div class="codeblock"><button class="copybtn" title="Copy" onclick="__copyCode(this)">${COPY_SVG}</button><pre><code>${esc(s.code)}</code></pre></div>` + noteHtml(rep);
   }
   // Fill the turn the intro opened, or append one if there wasn't an intro.
@@ -2944,6 +2967,12 @@ $('newChatBtn').onclick = async () => {
       $('prompt').value = '';
       window.__fitPrompt();
       refreshUsage();
+      // Empty chat history does not mean an empty KV cache — the Terminal
+      // generates without ever touching chat history, so a Terminal-only
+      // session followed by "+ New chat" would otherwise leave the model's
+      // conversation sitting in memory. Same guard as the path below: wrapped
+      // because kvClear only exists once a model is loaded.
+      try { if (activeRuntime === 'wasm' && wllama) await wllama.kvClear(); } catch (_) {}
       return;
     }
 
@@ -3507,6 +3536,11 @@ async function termGenerate(prompt) {
       nTok++; line.textContent = cur; termEl.scrollTop = termEl.scrollHeight;
     });
   } catch (e) { tp('[error: ' + e.message + ']', 'errmsg'); }
+  if (lastStopReason && lastStopReason.kind === 'repetition') {
+    // Same wording the Terminal has always shown for this — wasmComplete just
+    // records the reason now instead of writing it here itself.
+    tp(`[stopped: repeating "${lastStopReason.phrase}" ${lastStopReason.times}× — the model is stuck, not finished]`, 'errmsg');
+  }
   const secs = ((performance.now() - t0) / 1000).toFixed(1);
   tp(`(${nTok} tokens · ${secs}s · ${modelLabel})`, 'sysmsg');
   if (termState.autofix) {
