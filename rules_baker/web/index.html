@@ -837,6 +837,8 @@
       </div>
       <div class="note" style="margin-top:7px">Code is always sandbox-tested before it's shown.</div>
       <div id="output">(model output appears here, streaming token by token)</div>
+      <p class="gentip" id="genTip" hidden><span data-ic="zap"></span><span id="genTipText"></span></p>
+      <div class="statline" id="runStats"></div>
       <!-- Shown only once there is real output — see the observer that toggles
            it. Small models get things wrong confidently, and a green sandbox
            tick only covers code the sandbox actually ran. -->
@@ -846,8 +848,6 @@
         check it before you use it. A sandbox tick means the code ran without erroring, not that
         it does what you asked.</span>
       </p>
-      <p class="gentip" id="genTip" hidden><span data-ic="zap"></span><span id="genTipText"></span></p>
-      <div class="statline" id="runStats"></div>
       <div class="exec" id="exec"></div>
       <p class="note bakednote">Load a stock 0.5B and ask above → it ignores your house rules. Bake your adapter, drop the <code>.gguf</code> in, ask the same thing → the rules now apply, from the weights.</p>
     </div>
@@ -1121,7 +1121,7 @@ const TIPS = [
   { when: () => true,
     html: () => `<b>${IS_MAC ? '⌘K' : 'Ctrl+K'}</b> searches every model without leaving the keyboard.` },
   { when: () => true,
-    html: () => `<b>${IS_MAC ? '⌘↵' : 'Ctrl+↵'}</b> generates without reaching for the button.` },
+    html: () => `<b>Enter</b> generates without reaching for the button — <b>Shift+Enter</b> for a new line.` },
   { when: () => true,
     html: () => `Prefer typing? The <b>Terminal</b> takes <b>/temp</b>, <b>/tokens</b> and <b>/load</b>.` },
   { when: () => true,
@@ -3041,16 +3041,37 @@ $('newChatBtn').onclick = async () => {
   }
 };
 
-// ---- Cmd/Ctrl + Enter to generate ----
+// ---- Enter to generate (Shift+Enter for a newline); Cmd/Ctrl+Enter kept too ----
 const IS_MAC = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '');
-// Two elements, not one string, so the glyphs get real spacing between them.
-$('runKbd').innerHTML = IS_MAC ? '<span>⌘</span><span>↵</span>' : '<span>Ctrl</span><span>↵</span>';
+// Enter is now the primary shortcut, so the pill needs no modifier glyph.
+$('runKbd').innerHTML = '<span>↵</span>';
 
+// Shared by both handlers below — the palette uses Enter to pick a result and
+// the modals to activate their focused control, so neither should also fire Generate.
+function overlayOwnsKeyboard() {
+  return !$('palette').hidden || !libModal.hidden || !$('ollamaModal').hidden || !setModal.hidden;
+}
+
+// Scoped to the prompt box, not window: a plain-Enter listener on window would
+// also fire Generate from the terminal input, the variant editor, the model
+// URL box, or any modal — anywhere Enter has its own, different job.
+$('prompt').addEventListener('keydown', (e) => {
+  // Shift+Enter must fall through untouched so the textarea inserts its usual
+  // newline. Meta/Ctrl+Enter is left to the window-level handler below, so the
+  // two don't both fire (and double-click runBtn) when both keys are held.
+  if (e.key !== 'Enter' || e.shiftKey || e.metaKey || e.ctrlKey) return;
+  if (overlayOwnsKeyboard()) return;
+  if (runBtn.disabled) return;              // a run is already in flight
+  e.preventDefault();
+  runBtn.click();
+});
+
+// Cmd/Ctrl+Enter still works from anywhere — plenty of chat UIs keep both, and
+// it's the one shortcut worth honoring outside the prompt box (e.g. right after
+// dismissing a modal, before refocusing the textarea).
 window.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey)) return;
-  // Don't hijack Enter while an overlay owns the keyboard — the palette uses it
-  // to pick a result, and the modals to activate the focused control.
-  if (!$('palette').hidden || !libModal.hidden || !$('ollamaModal').hidden || !setModal.hidden) return;
+  if (overlayOwnsKeyboard()) return;
   if (runBtn.disabled) return;              // a run is already in flight
   e.preventDefault();
   runBtn.click();
