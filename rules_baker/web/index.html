@@ -67,7 +67,15 @@
     animation:palIn .16s cubic-bezier(.2,.8,.3,1); }
   @keyframes palIn { from { opacity:0; transform:translateY(-8px) scale(.985); }
                      to   { opacity:1; transform:none; } }
+  /* The field gets a translucent band of its own rather than sharing the panel's
+     surface with the results list — a barely-there lift plus the same top-edge
+     highlight the panel has, so it reads as a distinct piece of glass sitting on
+     the material rather than a region marked out only by the rule beneath it.
+     Kept very low: at higher alpha it stops looking lit and starts looking like
+     a grey input box pasted onto the panel. */
   .pal-in { display:flex; align-items:center; gap:13px; padding:17px 20px;
+    background:rgba(255,255,255,.055);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.07);
     border-bottom:1px solid rgba(255,255,255,.08); }
   .pal-in svg { width:21px; height:21px; color:rgba(255,255,255,.5); flex:none; }
   /* input[type=text] later in this sheet forces mono at 12.5px and matches with
@@ -145,8 +153,7 @@
 
   .varlabel { display:block; margin:11px 0 4px; font-size:11px; letter-spacing:.05em;
     text-transform:uppercase; color:var(--dimmer); }
-  .varselect { background:var(--panel); color:var(--ink); border:1px solid var(--edge2);
-    border-radius:7px; padding:5px 9px; font:inherit; font-size:12.5px; }
+  /* .varselect's appearance is defined with the other frosted selects, further down. */
   .varrow { display:flex; gap:16px; }
   #varModal textarea { width:100%; }
 
@@ -238,13 +245,10 @@
 
   /* ---- Activity heatmap ---- */
   .act-head { display:flex; align-items:center; gap:12px; margin:2px 0 0; }
-  .act-year { flex:none; width:auto; background:var(--panel); color:var(--ink);
-    border:1px solid var(--edge2); border-radius:7px; padding:3px 26px 3px 9px;
-    font:12px inherit; cursor:pointer; appearance:none;
-    background-image:linear-gradient(45deg,transparent 50%,var(--dim) 50%),
-                     linear-gradient(135deg,var(--dim) 50%,transparent 50%);
-    background-position:calc(100% - 14px) 52%, calc(100% - 9px) 52%;
-    background-size:5px 5px, 5px 5px; background-repeat:no-repeat; }
+  /* Sizing only — the frosted material and chevron are shared with the other
+     selects further down, so this rule keeps just what is specific to the year
+     picker sitting in a flex row. */
+  .act-year { flex:none; width:auto; }
   .act-sum { flex:none; font-size:12.5px; color:var(--dim); white-space:nowrap; }
   .act-sum b { color:var(--ink); font-weight:640; }
   /* The year is ~53 columns wide and cannot reflow, so it scrolls inside its
@@ -467,8 +471,7 @@
     border:1px solid var(--edge); border-radius:9px; font-size:12px; line-height:1.6; }
   .rt-why b { color:var(--ink); }
   .rt-models { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:9px; }
-  .rt-models select { background:var(--panel); color:var(--ink); border:1px solid var(--edge2);
-    border-radius:7px; padding:5px 9px; font:inherit; font-size:12.5px; }
+  /* .rt-models select shares the frosted select styling defined further down. */
   .dactions { display:flex; flex-wrap:wrap; gap:9px; margin-top:16px; }
 
   .libcard button { align-self:flex-start; }
@@ -517,6 +520,38 @@
   .dd-btn:hover { background:var(--panel2); }
   .dd-btn svg { width:13px; height:13px; opacity:.8; flex-shrink:0; }
   .dd-btn svg:last-child { width:11px; opacity:.55; }
+  /* Native <select>s in the same frosted material as .dd-menu below, so the two
+     families of control match instead of one being lit glass and the other a
+     flat grey box. This styles the CLOSED control only — a native select's open
+     list is drawn by the OS and cannot be given a backdrop-filter, which is
+     precisely why Temp / Max tokens / the model picker are custom .dd-menu
+     dropdowns rather than native selects. Grouped here, after the three rules it
+     supersedes, because equal specificity means source order decides. */
+  .varselect, .act-year, .rt-models select {
+    appearance:none; -webkit-appearance:none;
+    color:var(--ink); font:inherit; font-size:12.5px; cursor:pointer;
+    padding:5px 26px 5px 9px; border-radius:8px;
+    background-color:rgba(58,58,60,.55);
+    border:1px solid rgba(255,255,255,.13);
+    backdrop-filter:blur(20px) saturate(180%);
+    -webkit-backdrop-filter:blur(20px) saturate(180%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.10);
+    /* Our own chevron, since appearance:none removes the platform one. */
+    background-image:linear-gradient(45deg,transparent 50%,var(--dim) 50%),
+                     linear-gradient(135deg,var(--dim) 50%,transparent 50%);
+    background-position:calc(100% - 14px) 52%, calc(100% - 9px) 52%;
+    background-size:5px 5px, 5px 5px; background-repeat:no-repeat;
+    transition:background-color .13s ease, border-color .13s ease; }
+  .varselect:hover, .act-year:hover, .rt-models select:hover {
+    background-color:rgba(255,255,255,.14); border-color:rgba(255,255,255,.20); }
+  .varselect:focus-visible, .act-year:focus-visible, .rt-models select:focus-visible {
+    outline:2px solid rgba(255,255,255,.30); outline-offset:1px; }
+  /* The OS paints the open list on its own ground, so the options need an opaque
+     colour of their own — inheriting the translucent fill renders them as
+     near-invisible text on some platforms. */
+  .varselect option, .act-year option, .rt-models select option {
+    background:#2c2c2e; color:var(--ink); }
+
   /* Same frosted material as the command palette: a translucent fill over a
      saturated blur, with an inset top highlight so it reads as lit glass
      rather than a flat grey card. */
