@@ -1616,9 +1616,19 @@ function renderPassport({ entry, local } = {}) {
 // its doc comment says and it is easy to miss. Rendering only that would give
 // us a temperature control that visibly does nothing, which teaches the exact
 // opposite of the point. So: two columns, raw and sampled, from the same moment.
+// Re-invoked whenever the temperature changes (see the $('temp') listener
+// below), so two calls can now overlap — the user turning the knob twice
+// before the first getLogits()/detokenize() round-trip lands. Each call
+// stamps its own id and checks, before every DOM write, whether a newer
+// call has since started; if so it discards its own (stale) result instead
+// of racing the newer one to write #inspectBody.
+let inspectorCallId = 0;
 async function renderInspector() {
   const box = $('inspect'), body = $('inspectBody');
+  const myCallId = ++inspectorCallId;
+  const stale = () => myCallId !== inspectorCallId;
   if (activeRuntime !== 'wasm' || !wllama) {
+    if (stale()) return;
     body.innerHTML = `<div class="pp-note">Only available on the in-browser runtime — `
       + `Ollama does not expose the candidate list here.</div>`;
     box.hidden = false;
@@ -1628,20 +1638,24 @@ async function renderInspector() {
   try {
     raw = await wllama.getLogits(8);
   } catch (e) {
+    if (stale()) return;
     body.innerHTML = `<div class="pp-note">No candidates available yet — generate something first.</div>`;
     box.hidden = false;
     return;
   }
   if (!raw || !raw.length) {
+    if (stale()) return;
     body.innerHTML = `<div class="pp-note">No candidates available yet — generate something first.</div>`;
     box.hidden = false;
     return;
   }
+  if (stale()) return;
 
   const s = currentSampling();
   const sampled = applySampling(raw, s);
   const kept = new Set(sampled.map(d => d.token));
   const pieces = await Promise.all(raw.map(d => wllama.detokenize([d.token], true).catch(() => '?')));
+  if (stale()) return;
   const pct = (p) => (p * 100).toFixed(1) + '%';
   const bar = (p) => `<div class="barwrap"><div class="bar" style="width:${Math.round(p * 100)}%"></div></div>`;
 
@@ -1668,6 +1682,17 @@ async function renderInspector() {
 }
 
 $('inspectClose').onclick = () => { $('inspect').hidden = true; };
+
+// The caption promises "change the temperature and only the right column
+// moves" — that only becomes true if something re-renders on change. Only
+// while the panel is already open: never make #inspect appear before a
+// generation has happened, since renderInspector()'s own "no candidates yet"
+// branch would otherwise pop the panel up as a side effect of just turning
+// the knob. $('temp') is a <select>; every place that changes it in code
+// (applyVariant, /temp) dispatches a 'change' event, same as picking it
+// from the dropdown UI, so 'change' alone covers direct interaction and
+// both programmatic paths.
+$('temp').addEventListener('change', () => { if (!$('inspect').hidden) renderInspector(); });
 
 // ---- Activity heatmap ----
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -1814,7 +1839,7 @@ function applyVariant(id) {
   if (sign) sign.textContent = '−';
 
   $('temp').value = String(v.temp);
-  $('temp').dispatchEvent(new Event('change'));      // needs Task 2
+  $('temp').dispatchEvent(new Event('change'));      // re-renders the inspector if open
   $('maxtok').value = String(v.maxTokens);
   $('maxtok').dispatchEvent(new Event('change'));
 
@@ -3842,9 +3867,17 @@ async function termRun(raw) {
         if (!arg) { tp('usage: /tokens? strawberry', 'errmsg'); break; }
         try {
           const ids = await wllama.tokenize(arg);
-          const pieces = await Promise.all(ids.map(id => wllama.detokenize([id], true).catch(() => '?')));
+          // Free-form terminal input, one concurrent WASM call per token — cap
+          // it so a long paste can't fan out unbounded. Truncation is surfaced,
+          // never silent (see renderAuditSummary above for the same rule).
+          const TOKENS_CAP = 300;
+          const shown = ids.slice(0, TOKENS_CAP);
+          const pieces = await Promise.all(shown.map(id => wllama.detokenize([id], true).catch(() => '?')));
           tp(`${ids.length} token${ids.length === 1 ? '' : 's'} for ${arg.length} characters:`, 'sysmsg');
           tp(pieces.map((p, i) => `${JSON.stringify(p)}·${ids[i]}`).join('  '), 'gen');
+          if (ids.length > TOKENS_CAP) {
+            tp(`⚠ truncated to the first ${TOKENS_CAP} of ${ids.length} tokens.`, 'errmsg');
+          }
         } catch (e) { tp('tokenize failed: ' + e.message, 'errmsg'); }
         break;
       }
