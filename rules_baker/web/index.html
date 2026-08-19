@@ -98,6 +98,14 @@
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .pal-row .cat { font-size:11px; color:rgba(255,255,255,.38); flex:none; }
   /* Selection is a tinted fill, the way Spotlight highlights, not a grey block. */
+  /* Not a result — a small text affordance. No icon tile, so it sits visually
+     below the rows above it rather than reading as another model. */
+  .pal-row.pal-more { gap:7px; padding:7px 12px; }
+  .pal-row.pal-more .mic { display:flex; flex:none; }
+  .pal-row.pal-more .mic svg { width:13px; height:13px; color:rgba(255,255,255,.5); }
+  .pal-row.pal-more .t { font-size:12.5px; color:rgba(255,255,255,.72); flex:none; }
+  .pal-row.pal-more .s { font-size:11.5px; color:rgba(255,255,255,.38);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .pal-row.sel { background:rgba(255,255,255,.16); }
   .pal-row.sel .ic { background:rgba(255,255,255,.18); }
   .pal-row.sel .s { color:rgba(255,255,255,.62); }
@@ -2120,24 +2128,42 @@ $('loadLocalNav').onclick = () => fileIn.click();
 const palette = $('palette'), palInput = $('palInput'), palList = $('palList');
 let palRows = [], palSel = 0, palPrevFocus = null;
 
+// Before anything is typed the palette shows just this many models — the most
+// recently loaded ones — with everything else behind "Show more" or a search.
+const PAL_COLLAPSED_MODELS = 2;
+let palExpanded = false;
+
 // Models and GGUF loading only — the palette is a model switcher, not a
 // general command menu. Nav destinations are one click away in the sidebar.
+//
+// Sourced from modelMenuItems(), NOT from the sidebar DOM. This used to walk
+// `.modelitem` elements, which was correct only while the sidebar listed every
+// model; once it became pinned-only, an unpinned model had no element and so
+// could not be reached by ANY search — the palette silently searched the two
+// rows that happened to be on screen. Same defect the model dropdown and
+// `/load <preset>` each had: read the data, not the view.
 function palCommands() {
-  const cmds = [];
-  document.querySelectorAll('.modelitem').forEach(el => {
-    const name = el.querySelector('.nm').textContent.trim();
-    const size = el.querySelector('.badge')?.textContent.trim() || '';
-    const alias = el.querySelector('.alias')?.textContent.trim() || '';
-    const isRec = el.classList.contains('rec');
-    // Alias goes in the subtitle so searching "featherweight" still finds it,
-    // and "recommended" is searchable the same way.
-    const bits = [isRec ? 'Recommended for this device' : '', alias,
-                  size ? `downloads ${size}` : ''].filter(Boolean).join(' · ');
-    cmds.push({ title: name, cat: isRec ? '★ Model' : 'Model', icon: 'download',
-                sub: bits ? `Load model — ${bits}` : 'Load model',
-                run: () => { el.click(); $('loadBtn').click(); } });
+  const cmds = modelMenuItems().map(i => {
+    const isRec = !!i.url && i.url === recommendedUrl;
+    // Alias goes in the subtitle so searching "featherweight" still finds
+    // SmolLM2, and "recommended" is searchable the same way.
+    const bits = [isRec ? 'Recommended for this device' : '', i.alias || '',
+                  i.size ? `downloads ${i.size}` : ''].filter(Boolean).join(' · ');
+    return {
+      title: i.name,
+      cat: isRec ? '★ Model' : (i.storedId ? 'Stored' : 'Model'),
+      icon: 'download',
+      sub: bits ? `Load model — ${bits}` : 'Load model',
+      url: i.url || null,
+      // Catalogue entries carry a URL and no element; stored files carry an
+      // element and no URL. Same split fillModelMenu's onPick handles.
+      run: () => {
+        if (i.url) { urlIn.value = i.url; pendingLabel = i.name; $('loadBtn').click(); }
+        else if (i.el) i.el.click();
+      },
+    };
   });
-  cmds.push({ title: 'Load local .gguf', cat: 'GGUF', icon: 'plus',
+  cmds.push({ title: 'Load local .gguf', cat: 'GGUF', icon: 'plus', isLocal: true,
               sub: 'Pick a .gguf from this machine — nothing is uploaded',
               run: () => $('loadLocalNav').click() });
   return cmds;
@@ -2165,23 +2191,65 @@ function palPaint() {
 
 function palRender() {
   const q = palInput.value.trim().toLowerCase();
-  const scored = [];
-  for (const c of palCommands()) {
-    if (!q) { scored.push({ c, s: 0 }); continue; }
-    const s = Math.max(palScore(q, c.title), palScore(q, c.cat) - 200, palScore(q, c.sub) - 300);
-    if (s > -1) scored.push({ c, s });
+  const all = palCommands();
+
+  if (q) {
+    // A search always reaches everything — the collapse below is only about
+    // what greets you before you type, never about what is findable.
+    const scored = [];
+    for (const c of all) {
+      const s = Math.max(palScore(q, c.title), palScore(q, c.cat) - 200, palScore(q, c.sub) - 300);
+      if (s > -1) scored.push({ c, s });
+    }
+    scored.sort((a, b) => b.s - a.s);
+    palRows = scored.map(x => x.c);
+  } else if (palExpanded) {
+    palRows = all;
+  } else {
+    // Resting state: the last couple of models you actually used, plus the
+    // local-file option, plus a way to see the rest. Opening the palette to a
+    // list of every model makes the common case — switching back to something
+    // you were just using — the same amount of work as the rare one.
+    const local = all.find(c => c.isLocal);
+    const models = all.filter(c => !c.isLocal);
+    const ordered = recentUrls().map(u => models.find(m => m.url === u)).filter(Boolean);
+    // Nothing loaded yet on a first visit, so fall back to the head of the list
+    // rather than showing an empty palette.
+    const shown = (ordered.length ? ordered : models).slice(0, PAL_COLLAPSED_MODELS);
+    palRows = [...shown];
+    if (local) palRows.push(local);
+    const rest = models.length - shown.length;
+    if (rest > 0) {
+      palRows.push({
+        more: true, keepOpen: true, icon: 'chevrondown',
+        title: 'Show more',
+        cat: '',
+        sub: `${rest} more model${rest === 1 ? '' : 's'} — or just type to search`,
+        run: () => { palExpanded = true; palRender(); },
+      });
+    }
   }
-  if (q) scored.sort((a, b) => b.s - a.s);
-  palRows = scored.map(x => x.c);
+
   palSel = 0;
   if (!palRows.length) {
     palList.innerHTML = `<div class="pal-empty">No matches for “${esc(q)}”</div>`;
     return;
   }
-  palList.innerHTML = palRows.map((c, i) => `<div class="pal-row${i ? '' : ' sel'}" data-i="${i}" role="option">`
-    + `<span class="ic">${ICONS[c.icon] || ''}</span>`
-    + `<span class="tx"><div class="t">${esc(c.title)}</div><div class="s">${esc(c.sub)}</div></span>`
-    + `<span class="cat">${esc(c.cat)}</span></div>`).join('');
+  palList.innerHTML = palRows.map((c, i) => {
+    const sel = i === palSel ? ' sel' : '';
+    // The more-row is a small text affordance, not a result: no icon tile, and
+    // its explanatory half sits where a result's category would.
+    if (c.more) {
+      return `<div class="pal-row pal-more${sel}" data-i="${i}" role="option">`
+        + `<span class="mic">${ICONS[c.icon] || ''}</span>`
+        + `<span class="t">${esc(c.title)}</span>`
+        + `<span class="s">${esc(c.sub)}</span></div>`;
+    }
+    return `<div class="pal-row${sel}" data-i="${i}" role="option">`
+      + `<span class="ic">${ICONS[c.icon] || ''}</span>`
+      + `<span class="tx"><div class="t">${esc(c.title)}</div><div class="s">${esc(c.sub)}</div></span>`
+      + `<span class="cat">${esc(c.cat)}</span></div>`;
+  }).join('');
 }
 
 function palMove(d) {
@@ -2194,6 +2262,9 @@ function palMove(d) {
 function palRun(i) {
   const c = palRows[i];
   if (!c) return;
+  // "Show more" rewrites the list in place; closing first would dismiss the
+  // palette the moment you asked it to show you more.
+  if (c.keepOpen) { c.run(); return; }
   palClose();
   c.run();
 }
@@ -2202,6 +2273,7 @@ function palOpen() {
   palPrevFocus = document.activeElement;
   palette.hidden = false;
   palInput.value = '';
+  palExpanded = false;   // every open starts collapsed, not wherever it was left
   palRender();
   palInput.focus();
 }
@@ -2297,7 +2369,9 @@ function pushRecent(url) {
 function modelMenuItems() {
   const fromCatalogue = (lastModels || [])
     .filter(m => ['model', 'community', 'custom'].includes(m.tier || 'model'))
-    .map(m => ({ url: m.url, name: m.name, size: m.size || '' }));
+    // alias travels with the entry so the command palette can search on it
+    // ("featherweight" finding SmolLM2); the dropdown simply ignores it.
+    .map(m => ({ url: m.url, name: m.name, size: m.size || '', alias: m.alias || '' }));
 
   // Stored .gguf files exist only in IndexedDB and have no catalogue row, so
   // they are picked up from the sidebar — the one case where the DOM is the
