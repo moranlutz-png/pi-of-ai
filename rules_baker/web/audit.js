@@ -55,6 +55,11 @@ async function hashPrompt(text) {
  * Record one generation. Everything here is a fact about the run, never its
  * content: which model, how long, how many tokens, what the sandbox made of
  * the code, and whether the user stopped it.
+ *
+ * outcome is one of: completed | stopped | stopped-repeating | failed.
+ * stopped-repeating is distinct from stopped — the model stalled in a
+ * repetition loop and the app cut it short, which is not the same event as
+ * the user pressing Stop.
  */
 export async function recordGeneration(f) {
   const log = read();
@@ -69,7 +74,7 @@ export async function recordGeneration(f) {
     seconds: f.seconds != null ? Math.round(f.seconds * 10) / 10 : null,
     attempts: f.attempts ?? 1,          // auto-fix retries that actually ran
     sandbox: f.sandbox || 'not-run',    // ok | problem | not-run
-    outcome: f.outcome || 'completed',  // completed | stopped | failed
+    outcome: f.outcome || 'completed',  // completed | stopped | stopped-repeating | failed
   });
 
   if (log.entries.length > MAX_ENTRIES) {
@@ -89,6 +94,7 @@ export function auditSummary() {
     dropped: log.dropped,
     since: first ? first.ts : null,
     stopped: log.entries.filter(e => e.outcome === 'stopped').length,
+    stoppedRepeating: log.entries.filter(e => e.outcome === 'stopped-repeating').length,
     failed: log.entries.filter(e => e.outcome === 'failed').length,
     sandboxProblems: log.entries.filter(e => e.sandbox === 'problem').length,
   };

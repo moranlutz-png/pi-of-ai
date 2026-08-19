@@ -1514,6 +1514,7 @@ function renderAuditSummary() {
   const bits = [`<b>${s.count}</b> generation${s.count === 1 ? '' : 's'} logged`];
   if (s.sandboxProblems) bits.push(`<b>${s.sandboxProblems}</b> failed the sandbox`);
   if (s.stopped) bits.push(`<b>${s.stopped}</b> stopped`);
+  if (s.stoppedRepeating) bits.push(`<b>${s.stoppedRepeating}</b> stopped for repeating`);
   if (s.failed) bits.push(`<b>${s.failed}</b> errored`);
   // Truncation is surfaced, never silent — a log that quietly loses records
   // looks complete and is worse than no log at all.
@@ -2692,7 +2693,8 @@ async function handleGenerate() {
     seconds: (performance.now() - auditT0) / 1000,
     attempts: auditAttempts,
     sandbox: auditSandbox,
-    outcome: abort ? 'stopped' : (finalText.trim() ? 'completed' : 'failed'),
+    outcome: (lastStopReason && lastStopReason.kind === 'repetition') ? 'stopped-repeating'
+      : abort ? 'stopped' : (finalText.trim() ? 'completed' : 'failed'),
   }).then(renderAuditSummary);
 
   refreshUsage();
