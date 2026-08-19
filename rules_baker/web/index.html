@@ -164,6 +164,13 @@
   /* .varselect's appearance is defined with the other frosted selects, further down. */
   .varrow { display:flex; gap:16px; }
 
+  /* Sits under the stored-model list, so the durability of those models is
+     stated where the models are, not only in Settings. */
+  .storedwarn { margin:3px 0 2px 8px; font-size:11px; line-height:1.5;
+    max-width:240px; cursor:default; }
+  .storedwarn .ok { color:var(--ok); }
+  .storedwarn .warn { color:var(--warn); }
+
   /* ---- Bake into weights (Rung 2) ---- */
   .baketgt { display:block; width:100%; text-align:left; margin-top:7px; padding:9px 11px;
     border-radius:10px; cursor:pointer; font:inherit; color:var(--ink);
@@ -768,6 +775,11 @@
     <div class="seclabel">Custom GGUFs</div>
     <div id="customTree"></div>
     <div id="storedTree"></div>
+    <!-- Eviction is invisible otherwise: a model a student spent a lesson
+         producing simply stops being there, with nothing to explain why. This
+         says so BEFORE that happens, next to the models it applies to, rather
+         than only in Settings where nobody looks until something is wrong. -->
+    <div id="storedWarn" class="storedwarn" hidden></div>
     <div class="navlink" id="loadLocalNav"><span data-ic="plus"></span>Load local .gguf</div>
 
     <!-- Variants sit under Custom GGUFs as a sub-section: they are the simplest
@@ -1608,6 +1620,29 @@ async function renderStoredModels() {
     + `<span class="nm">${esc(m.name)}</span>`
     + `<span class="sz">${(m.size / 1048576).toFixed(0)} MB</span>`
     + `<span class="del">remove</span></div>`).join('');
+  renderStoredWarning(models.length);
+}
+
+/**
+ * Dropped models are kept in IndexedDB and DO survive a reload — but only
+ * "best-effort" until the browser grants persistent storage, and Chrome grants
+ * that on engagement rather than on request. Until it does, a model can be
+ * evicted when the disk runs low, which looks exactly like the app losing it.
+ *
+ * Asked for again on every render rather than once: the answer changes as the
+ * student uses the site more, and persist() is cheap and idempotent.
+ */
+async function renderStoredWarning(count) {
+  const el = $('storedWarn');
+  if (!el) return;
+  if (!count) { el.hidden = true; return; }
+  const granted = await requestPersistence();
+  el.hidden = false;
+  el.innerHTML = granted
+    ? `<span class="ok">Kept until you remove them.</span>`
+    : `<span class="warn" title="Chrome grants persistent storage on engagement rather than on `
+      + `request. Bookmarking the page, or using it a few times, usually earns it.">`
+      + `Saved — but evictable if disk runs low.</span>`;
 }
 
 // Surfaced because eviction is invisible otherwise: a model simply stops being
