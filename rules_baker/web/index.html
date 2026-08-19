@@ -163,6 +163,26 @@
     text-transform:uppercase; color:var(--dimmer); }
   /* .varselect's appearance is defined with the other frosted selects, further down. */
   .varrow { display:flex; gap:16px; }
+
+  /* ---- Bake into weights (Rung 2) ---- */
+  .baketgt { display:block; width:100%; text-align:left; margin-top:7px; padding:9px 11px;
+    border-radius:10px; cursor:pointer; font:inherit; color:var(--ink);
+    background:rgba(255,255,255,.04); border:1px solid var(--edge2);
+    transition:background .13s ease, border-color .13s ease; }
+  .baketgt:hover { background:rgba(255,255,255,.08); }
+  .baketgt.on { background:rgba(255,255,255,.10); border-color:rgba(255,255,255,.32); }
+  .baketgt .r1 { display:flex; align-items:baseline; gap:8px; }
+  .baketgt .nm { font-size:13px; font-weight:600; }
+  .baketgt .sz { font-size:11.5px; color:var(--dim); font-variant-numeric:tabular-nums; }
+  /* Pushed right so the time estimate lines up down the column — it is the
+     number a student actually chooses on. */
+  .baketgt .mins { margin-left:auto; font-size:11.5px; color:var(--dim);
+    font-variant-numeric:tabular-nums; }
+  .baketgt .r2 { font-size:11.5px; color:var(--dim); margin-top:2px; }
+  .baketgt .warn2 { display:block; margin-top:3px; font-size:11.5px; color:var(--warn); }
+  .bakesteps { margin:12px 0 0; padding-left:20px; font-size:12.5px; color:var(--dim);
+    line-height:1.75; }
+  .bakesteps b { color:var(--ink); }
   #varModal textarea { width:100%; }
 
   .modelitem { display:flex; align-items:center; gap:7px; padding:4px 8px; border-radius:6px;
@@ -962,14 +982,44 @@
       </div>
       <div class="dactions">
         <button type="button" class="act" id="varSave">Save variant</button>
-        <button type="button" class="ghost" id="varBake" disabled
-          title="Rung 2 — not built yet">Bake into weights</button>
+        <button type="button" class="ghost" id="varBake"
+          title="Train these rules into the weights on a free Colab GPU">Bake into weights</button>
         <button type="button" class="ghost" id="varDelete" hidden>Delete</button>
       </div>
       <div class="dactions" style="margin-top:8px">
         <button type="button" class="backbtn" id="varExport">Export all</button>
         <button type="button" class="backbtn" id="varImport">Import…</button>
         <input type="file" id="varImportFile" accept=".json,application/json" hidden />
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ BAKE INTO WEIGHTS (Rung 2) ============ -->
+  <div id="bakeModal" class="modal" hidden>
+    <div class="modal-panel small">
+      <button class="modal-close" id="bakeClose" title="Close">&times;</button>
+      <h2 class="modal-title">Bake <span id="bakeVarName"></span> into weights</h2>
+      <div class="rt-body">
+        <div class="dnote">Training happens on a free Colab GPU, not in this tab — the browser
+          can't train. You'll get a notebook to run there, and come back with a model that obeys
+          these rules without being told.</div>
+
+        <label class="varlabel">Target</label>
+        <div id="bakeTargets"></div>
+
+        <div class="dnote" id="bakeOut" style="margin-top:10px"></div>
+
+        <ol class="bakesteps" id="bakeSteps" hidden>
+          <li>Open <a href="https://colab.research.google.com/" target="_blank"
+              rel="noopener noreferrer">colab.research.google.com</a></li>
+          <li>Upload the notebook that just downloaded</li>
+          <li><b>Runtime &gt; Change runtime type &gt; T4 GPU</b>, then <b>Runtime &gt; Run all</b></li>
+          <li>Come back with two files and drop them here</li>
+        </ol>
+      </div>
+      <div class="dactions">
+        <button type="button" class="act" id="bakeGo">Download notebook</button>
+        <button type="button" class="ghost" id="bakeDone" hidden>Done</button>
       </div>
     </div>
   </div>
@@ -1053,6 +1103,7 @@ import { recordGeneration, auditSummary, auditExport, clearAudit } from './audit
 import { runBenchmark, saveRun, BENCH_PROMPT } from './bench.js';
 import { runChain } from './chain.js';
 import { applySampling, SAMPLING_DEFAULTS } from './sampling.js';
+import { BAKE_TARGETS, getTarget, buildNotebook, notebookName, bakeBasename } from './bake.js';
 import { looksDegenerate } from './repetition.js';
 
 // ---- inline line-icon set (Feather-style) ----
@@ -1999,6 +2050,99 @@ $('varSave').onclick = () => {
   noteActivity();                    // writing rules is practice too
   varModal.hidden = true;
   renderVariants();
+};
+
+// ---- Bake into weights (Rung 2) -------------------------------------------
+// The browser cannot train, so the deliverable here is a notebook. Everything
+// heavy happens on Colab's GPU, on the student's own Google account, with
+// nothing installed on a locked-down Chromebook.
+const bakeModal = $('bakeModal');
+let bakingVariant = null, bakeTargetId = BAKE_TARGETS[0].id;
+// Fetched once and reused. buildNotebook deep-copies before filling it in, so
+// a second bake in the same session cannot inherit the first one's settings.
+let bakeTemplate = null;
+
+function renderBakeTargets() {
+  $('bakeTargets').innerHTML = BAKE_TARGETS.map(t =>
+      `<button type="button" class="baketgt${t.id === bakeTargetId ? ' on' : ''}" data-t="${esc(t.id)}">`
+    + `<span class="r1"><span class="nm">${esc(t.label)}</span>`
+    + `<span class="sz">${esc(t.size)}</span>`
+    + `<span class="mins">${esc(t.minutes)}</span></span>`
+    + `<span class="r2">${esc(t.note)}`
+    + (t.warn ? `<span class="warn2">⚠ ${esc(t.warn)}</span>` : '')
+    + `</span></button>`).join('');
+}
+
+$('bakeTargets').addEventListener('click', (e) => {
+  const b = e.target.closest('.baketgt');
+  if (!b) return;
+  bakeTargetId = b.dataset.t;
+  renderBakeTargets();
+});
+
+function openBakeModal(id) {
+  const v = getVariant(id);
+  if (!v) return;
+  bakingVariant = v;
+  bakeTargetId = BAKE_TARGETS[0].id;      // always reopen on the safe default
+  $('bakeVarName').textContent = v.name;
+  $('bakeOut').textContent = `${v.rules.length} rule${v.rules.length === 1 ? '' : 's'} will be `
+    + `trained in. The notebook carries them — nothing is uploaded from here.`;
+  $('bakeSteps').hidden = true;
+  $('bakeDone').hidden = true;
+  $('bakeGo').hidden = false;
+  $('bakeGo').disabled = false;
+  renderBakeTargets();
+  varModal.hidden = true;
+  bakeModal.hidden = false;
+}
+
+$('bakeClose').onclick = () => { bakeModal.hidden = true; };
+$('bakeDone').onclick = () => { bakeModal.hidden = true; };
+bakeModal.addEventListener('click', (e) => { if (e.target === bakeModal) bakeModal.hidden = true; });
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !bakeModal.hidden) bakeModal.hidden = true;
+});
+
+$('varBake').onclick = () => {
+  // Save first: baking a variant whose edits are still in the boxes would train
+  // the PREVIOUS rules while the student watches their new ones on screen.
+  $('varSave').click();
+  if (!varModal.hidden) return;          // save failed and said why — stay put
+  const v = listVariants().find(x => x.name === $('varName').value.trim());
+  if (v) openBakeModal(v.id);
+};
+
+$('bakeGo').onclick = async () => {
+  const btn = $('bakeGo');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  const out = $('bakeOut');
+  try {
+    if (!bakeTemplate) {
+      out.textContent = 'Fetching the notebook template…';
+      const res = await fetch('bake-template.ipynb');
+      if (!res.ok) throw new Error(`template fetch failed (${res.status})`);
+      bakeTemplate = await res.json();
+    }
+    const target = getTarget(bakeTargetId);
+    const nb = buildNotebook(bakeTemplate, { variant: bakingVariant, target });
+    downloadJson(nb, notebookName(bakingVariant.name));
+    const stem = bakeBasename(bakingVariant.name);
+    out.innerHTML = `<span style="color:var(--ok)">✓ Notebook downloaded.</span> `
+      + `It will produce <b>${esc(stem)}.gguf</b> and <b>${esc(stem)}.json</b>.`;
+    $('bakeSteps').hidden = false;
+    btn.hidden = true;
+    $('bakeDone').hidden = false;
+    noteActivity();
+  } catch (e) {
+    // Loud, and specific about which half failed: a student who gets a notebook
+    // carrying the template's example rules would train on rules they never
+    // wrote, with nothing in the output to reveal it.
+    out.innerHTML = `<span style="color:var(--bad)">✗ Couldn't build the notebook: `
+      + `${esc(e.message || String(e))}</span>`;
+    btn.disabled = false;
+  }
 };
 
 $('varDelete').onclick = () => {
