@@ -15,7 +15,7 @@
  * WASM. This is a mirror, for showing the work.
  */
 
-export const SAMPLING_DEFAULTS = { temperature: 0.2, topK: 40, topP: 0.9 };
+export const SAMPLING_DEFAULTS = Object.freeze({ temperature: 0.2, topK: 40, topP: 0.9 });
 
 /** Temperature rescales the logits before the softmax. We only have post-softmax
  *  probabilities, so recover the logits with log(p), divide, and re-normalise —
@@ -29,7 +29,12 @@ export function applyTemperature(dist, temperature) {
   }
   if (t === 1) return dist.map(d => ({ ...d }));
   const scaled = dist.map(d => ({ ...d, _l: Math.log(Math.max(d.p, 1e-12)) / t }));
-  const max = Math.max(...scaled.map(d => d._l));
+  // Not Math.max(...scaled.map(...)): spreading into a function call passes
+  // every element as a positional argument, and engines throw
+  // "RangeError: Maximum call stack size exceeded" once the array gets into
+  // the tens of thousands — well within real vocabulary sizes (32k-152k+).
+  // reduce() has no such limit.
+  const max = scaled.reduce((m, d) => Math.max(m, d._l), -Infinity);
   const exps = scaled.map(d => ({ ...d, _e: Math.exp(d._l - max) }));
   const sum = exps.reduce((s, d) => s + d._e, 0) || 1;
   return exps.map(({ _l, _e, ...rest }) => ({ ...rest, p: _e / sum }));
@@ -66,6 +71,7 @@ function renormalise(dist) {
 /** All three, in llama.cpp's order. Returns a NEW array, sorted most likely
  *  first, so a caller can render it beside the untouched original. */
 export function applySampling(dist, opts = {}) {
+  if (!Array.isArray(dist) || !dist.length) return [];
   const { temperature, topK, topP } = { ...SAMPLING_DEFAULTS, ...opts };
   let out = applyTemperature(dist, temperature);
   out = applyTopK(out, topK);
