@@ -82,7 +82,18 @@ from that script. Adding a module means adding an import line, not a build confi
   deliberately simple and portable because **Rung 2** (baking) reuses it verbatim as the teacher
   instruction.
 - `model-store.js` — IndexedDB store keeping a locally-loaded `.gguf` across reloads. Records are
-  keyed on lowercased filename so re-saving the same file replaces rather than duplicates it.
+  keyed on lowercased filename so re-saving the same file replaces rather than duplicates it — so
+  `storedNamed()` warns before an overwrite, and `saveModel`'s optional name override is what makes
+  "keep both" possible.
+- `bake.js` + `bake-template.ipynb` — **Rung 2**. The browser cannot train, so a variant's rules
+  become a Colab notebook. `bake.js` fills in exactly one cell of the template, found by the
+  `pi-config` **tag** rather than by matching text, because cells move when the template is edited.
+  All the training code lives in the `.ipynb`, which runs standalone — fixing it must never mean
+  shipping new JavaScript. `buildNotebook` throws rather than emitting a half-filled notebook: a
+  student handed the template's example rules would train on rules they never wrote.
+- `training-log.js` — parses the `.json` a bake produces and shapes its loss curve. Validates
+  hard (checks `kind` explicitly; rejects `null`/`''`/`false`/`[]` losses, which `Number()` would
+  otherwise turn into a misleading perfect `0.0`) and never throws, so the caller can say why.
 - `pyworker.js` — Pyodide in a Web Worker; offline after first load. Two ops: `run` (execute,
   capture stdout) and `check` (scope-aware syntax + undefined-name analysis, then execute).
 - `serve.py` — static server that sets COOP/COEP. `coi-serviceworker.js` is the fallback for

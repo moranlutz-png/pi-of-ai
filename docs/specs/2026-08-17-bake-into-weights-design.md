@@ -1,6 +1,9 @@
 # Bake Into Weights (Rung 2) — design
 
-**Status:** approved, not yet implemented
+**Status:** implemented 2026-08-19 — `bake.js`, `bake-template.ipynb`,
+`training-log.js`, and the bake/compare popups in `index.html`. The notebook's
+own training run is unverified: it needs a Colab GPU, which no in-browser check
+can supply.
 **Date:** 2026-08-17
 **Follows:** `docs/specs/2026-08-16-model-variants-design.md` (Rung 1, shipped)
 
