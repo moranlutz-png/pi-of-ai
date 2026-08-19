@@ -1162,7 +1162,7 @@
 import { Wllama } from 'https://cdn.jsdelivr.net/npm/@wllama/wllama@2/esm/index.js';
 import { listVariants, getVariant, saveVariant, deleteVariant,
          exportVariantsJson, importVariantsJson, STARTER_RULES } from './variants.js';
-import { saveModel, listModels, getModelBlob, deleteModel, storageInfo,
+import { saveModel, listModels, getModelBlob, deleteModel, storageInfo, storedNamed, freeName,
          requestPersistence } from './model-store.js';
 import { getHistory, addTurn, clearHistory, historyFor, usage,
          handoffText, CTX_TOKENS, REFUSE_AT } from './chat.js';
@@ -3021,6 +3021,40 @@ loadBtn.onclick = async () => {
   });
   if (succeeded && note) status.innerHTML += ` <span class="note">${esc(note)}</span>`;
 };
+/**
+ * Two bakes of the same variant on the same day land on the same filename by
+ * design — the second is usually a retry, and replacing beats accumulating
+ * near-identical models. But it must never be SILENT: losing a bake is the
+ * failure the whole naming scheme exists to prevent, and a student who spent
+ * most of a lesson producing the first one deserves to be asked.
+ *
+ * The model is already loaded and usable at this point; only the storing is
+ * outstanding, which is why neither choice blocks using it.
+ */
+function offerReplaceOrKeep(file, existing) {
+  const when = existing.savedAt ? new Date(existing.savedAt).toLocaleDateString() : 'earlier';
+  const mb = existing.size ? ` · ${(existing.size / 1048576).toFixed(0)} MB` : '';
+  status.innerHTML = `<span class="statuswarn">Loaded — but not saved yet. `
+    + `<b>${esc(existing.name)}</b> (saved ${esc(when)}${esc(mb)}) already has this name.</span> `
+    + `<button type="button" class="ghost" id="clashReplace" style="padding:4px 10px;font-size:11.5px">Replace it</button> `
+    + `<button type="button" class="ghost" id="clashKeep" style="padding:4px 10px;font-size:11.5px">Keep both</button>`;
+
+  const finish = async (nameOverride) => {
+    $('clashReplace').disabled = true; $('clashKeep').disabled = true;
+    const res = await saveModel(file, nameOverride);
+    if (res.ok) {
+      await requestPersistence();
+      renderStoredModels();
+      status.innerHTML = `<span style="color:var(--ok)">✓ Saved as `
+        + `<b>${esc(nameOverride || file.name)}</b>.</span>`;
+    } else {
+      status.innerHTML = `<span style="color:var(--bad)">✗ Couldn't save it: ${esc(res.error)}.</span>`;
+    }
+  };
+  $('clashReplace').onclick = () => finish(null);
+  $('clashKeep').onclick = async () => finish(await freeName(file.name));
+}
+
 async function loadLocal(file) {
   if (!file) return;
   if (!file.name.toLowerCase().endsWith('.gguf')) { status.innerHTML = `<span style="color:var(--bad)">✗ Not a .gguf file.</span>`; return; }
@@ -3056,13 +3090,18 @@ async function loadLocal(file) {
 
   let kept = null;
   pendingLocalFile = { name: file.name, size: file.size, header };
+  // Checked BEFORE the load, because afterwards withLoad has already rewritten
+  // #status and the question would be buried under a success line.
+  const clash = await storedNamed(file.name);
   await withLoad(file.name, async () => {
     status.textContent = `Reading ${file.name} (${(file.size/1048576).toFixed(0)} MB) into WASM…`;
     await wllama.loadModel([file], { n_ctx: CTX_TOKENS });
     // Only after the model actually loads — never store a file that failed,
     // and never make the user wait on storage before they can use it.
-    kept = await saveModel(file);
+    // A name collision defers the save to the choice offered below instead.
+    if (!clash) kept = await saveModel(file);
   });
+  if (clash) { offerReplaceOrKeep(file, clash); return; }
   // Reported AFTER withLoad, not inside it: withLoad writes its own success
   // line to #status once its callback resolves, which would erase anything set
   // from within.

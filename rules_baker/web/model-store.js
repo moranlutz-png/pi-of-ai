@@ -47,13 +47,20 @@ function idFor(name) {
   return 'gguf:' + String(name).toLowerCase();
 }
 
-export async function saveModel(file) {
+/**
+ * `nameOverride` exists so a caller can keep BOTH of two files that share a
+ * filename. Two bakes of the same variant on the same day land on the same
+ * name by design — usually a retry, so replacing is right — but a student who
+ * wants to keep the first needs somewhere to put the second.
+ */
+export async function saveModel(file, nameOverride) {
   if (!file || !file.name) return { ok: false, error: 'no file' };
+  const name = String(nameOverride || file.name);
   let db;
   try { db = await openDb(); } catch (e) { return { ok: false, error: e.message }; }
   const record = {
-    id: idFor(file.name),
-    name: file.name,
+    id: idFor(name),
+    name,
     size: file.size,
     savedAt: Date.now(),
     blob: file,
@@ -80,6 +87,32 @@ export async function listModels() {
       .sort((a, b) => (a.savedAt || 0) - (b.savedAt || 0));
   } catch (_) { return []; }
   finally { db.close(); }
+}
+
+/**
+ * The record this filename would replace, or null. Callers use it to warn
+ * BEFORE overwriting — losing a bake is the failure the naming scheme exists
+ * to prevent, and "you asked for it" is no comfort when a lesson's work is
+ * gone. Metadata only, so it stays cheap enough to call on every load.
+ */
+export async function storedNamed(name) {
+  if (!name) return null;
+  const wanted = idFor(name);
+  return (await listModels()).find(m => m.id === wanted) || null;
+}
+
+/** `bake.gguf` -> `bake (2).gguf`, skipping any suffix already taken. */
+export async function freeName(name) {
+  const taken = new Set((await listModels()).map(m => String(m.name).toLowerCase()));
+  if (!taken.has(String(name).toLowerCase())) return name;
+  const dot = name.lastIndexOf('.');
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot) : '';
+  for (let n = 2; n < 999; n++) {
+    const candidate = `${stem} (${n})${ext}`;
+    if (!taken.has(candidate.toLowerCase())) return candidate;
+  }
+  return `${stem} (${Date.now()})${ext}`;
 }
 
 export async function getModelBlob(id) {
