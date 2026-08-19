@@ -991,6 +991,7 @@ import { recordGeneration, auditSummary, auditExport, clearAudit } from './audit
 import { runBenchmark, saveRun, savedRuns, deviceKey, memorySnapshot, BENCH_PROMPT } from './bench.js';
 import { runChain } from './chain.js';
 import { applySampling, SAMPLING_DEFAULTS } from './sampling.js';
+import { looksDegenerate } from './repetition.js';
 
 // ---- inline line-icon set (Feather-style) ----
 const P = 'fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"';
@@ -2531,7 +2532,7 @@ async function complete(messages, nPredict, onText) {
 }
 
 async function wasmComplete(messages, nPredict, onText) {
-  const t0 = performance.now(); let nTok = 0, full = '';
+  const t0 = performance.now(); let nTok = 0, full = ''; let degenerate = null;
   await wllama.createChatCompletion(messages, {
     nPredict,
     sampling: (() => { const s = currentSampling();
@@ -2540,9 +2541,23 @@ async function wasmComplete(messages, nPredict, onText) {
       nTok++; full = currentText; if (onText) onText(currentText);
       const s = (performance.now()-t0)/1000;
       $('runStats').textContent = `${nTok} tokens · ${s.toFixed(1)}s · ${(nTok/s).toFixed(1)} tok/s · ${modelLabel || '—'} · working…`;
+      // Check occasionally rather than per token — the scan is cheap but not
+      // free, and a loop is still a loop eight tokens later.
+      if (nTok % 8 === 0 && opt?.abortSignal) {
+        const rep = looksDegenerate(currentText);
+        if (rep.repeating) {
+          degenerate = rep;           // reported after the loop, not from inside it
+          opt.abortSignal();
+        }
+      }
       if (abort && opt?.abortSignal) opt.abortSignal();
     },
   });
+  if (degenerate) {
+    // Said out loud. A run that stopped early and does not say so looks like a
+    // model that simply had nothing more to add.
+    tp(`[stopped: repeating "${degenerate.phrase}" ${degenerate.times}× — the model is stuck, not finished]`, 'errmsg');
+  }
   // Real throughput beats any estimate — remember it for the Library tag.
   const elapsed = (performance.now() - t0) / 1000;
   if (nTok > 8 && elapsed > 0.5) recordTokps(loadedUrl, nTok / elapsed);
