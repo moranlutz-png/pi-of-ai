@@ -235,10 +235,6 @@
   .cand .bar { background:rgba(255,255,255,.55); height:100%; border-radius:3px; }
   .cand .pct { color:var(--dim); text-align:right; font-variant-numeric:tabular-nums; }
   .cand .gone { opacity:.32; }
-  .toks { display:flex; flex-wrap:wrap; gap:3px; margin-top:4px; }
-  .tok { font:11.5px var(--mono); padding:1px 5px; border-radius:4px;
-    background:rgba(255,255,255,.07); color:var(--ink); white-space:pre; }
-  .tok .id { color:var(--dimmer); margin-left:5px; font-size:10px; }
 
   /* ---- Activity heatmap ---- */
   .act-head { display:flex; align-items:center; gap:12px; margin:2px 0 0; }
@@ -1011,7 +1007,7 @@ import { recordActivity, activityYears, heatmapModel } from './activity.js';
 import { buildPassport, toCycloneDX } from './provenance.js';
 import { readGgufHeader, HEADER_BYTES } from './gguf.js';
 import { recordGeneration, auditSummary, auditExport, clearAudit } from './audit.js';
-import { runBenchmark, saveRun, savedRuns, deviceKey, memorySnapshot, BENCH_PROMPT } from './bench.js';
+import { runBenchmark, saveRun, BENCH_PROMPT } from './bench.js';
 import { runChain } from './chain.js';
 import { applySampling, SAMPLING_DEFAULTS } from './sampling.js';
 import { looksDegenerate } from './repetition.js';
@@ -1675,7 +1671,9 @@ async function renderInspector() {
     +   rows
     + `</div>`
     + `<div class="pp-unk" style="margin-top:9px">Left is the model's own distribution. `
-    + `Right is the same moment after temperature ${s.temperature}, top-k ${s.topK}, top-p ${s.topP}. `
+    + `Right is the same moment after temperature ${s.temperature} and top-p ${s.topP}, applied to `
+    + `these eight candidates. The real sampler also applies top-k ${s.topK} across the model's full `
+    + `vocabulary — with only eight candidates shown here, top-k has nothing left to cut. `
     + `Change the temperature and only the right column moves — the model's opinion never changes, `
     + `only what the sampler does with it.</div>`;
   box.hidden = false;
@@ -1787,6 +1785,12 @@ document.querySelector('.sidebar').addEventListener('click', async (e) => {
     return;
   }
   const name = row.querySelector('.nm').textContent;
+  // A previous drag-and-drop leaves pendingLocalFile set, and buildPassport's
+  // `if (local)` branch wins over `entry` unconditionally — without this,
+  // clicking a different stored model here would show the DROPPED file's
+  // name, arch, layers and quantisation in the passport while this model is
+  // what actually loaded.
+  pendingLocalFile = null;
   withLoad(name, () => {
     loadedUrl = null;   // from-disk load: don't attribute it to a remote URL
     status.textContent = `Reading ${name} from browser storage…`;
@@ -2413,8 +2417,10 @@ document.getElementById('sysToggle').onclick = () => {
 let wllama = null, modelLabel = '', abort = false;
 // Set by wasmComplete when the repetition detector fires, so the caller — not
 // wasmComplete itself — decides where to show it (Terminal vs. transcript).
-// Cleared at the start of every wasmComplete run, so a reason from a past
-// generation is never reported against a later, healthy one.
+// Cleared at the start of complete() — the router both runtimes go through —
+// rather than inside wasmComplete, so a reason from a past generation is never
+// reported against a later, healthy one on EITHER runtime. Clearing it in
+// wasmComplete alone left it set forever once the toggle moved to Ollama.
 let lastStopReason = null;
 let loadedUrl = null;   // which model is in memory, so measured tok/s can be attributed
 // Set only while a from-disk load is in flight. The passport needs to know it
@@ -2494,6 +2500,9 @@ async function checkUrlHeader(url) {
     return { proceed: true, note: 'header not checked — could not reach the server for a range probe (' + (e.message || e) + ')' };
   }
   if (res.status !== 206) {
+    // Unread body on a potentially huge 200 response — release it rather than
+    // leaving it hanging.
+    res.body?.cancel().catch(() => {});
     return { proceed: true, note: `header not checked — server did not honor the range request (status ${res.status})` };
   }
   // "bytes 0-8388607/419430400" — the true size is whatever follows the slash,
@@ -2501,12 +2510,24 @@ async function checkUrlHeader(url) {
   // vocabulary genuinely running past our read window) from a hostile file
   // that is short and lying about it. See the comment in gguf.js.
   const cr = res.headers.get('Content-Range');
-  const totalSize = cr ? Number(cr.slice(cr.indexOf('/') + 1)) : undefined;
+  const totalSize = cr ? Number(cr.slice(cr.indexOf('/') + 1)) : NaN;
+  if (!Number.isFinite(totalSize)) {
+    // A 206 whose Content-Range total is missing or "*" (Number('*') === NaN)
+    // leaves us unable to tell real truncation (large vocabulary genuinely
+    // running past our read window) from a hostile short file lying about its
+    // size — the exact distinction totalSize exists to make. Rather than fall
+    // through with a bogus totalSize and risk refusing a legitimate
+    // large-vocabulary model as "claims more data than it contains", treat
+    // this the same as a server that ignored Range altogether: proceed
+    // unchecked, with a visible note.
+    res.body?.cancel().catch(() => {});
+    return { proceed: true, note: 'header not checked — server did not report a usable Content-Range total' };
+  }
   let blob;
   try { blob = await res.blob(); } catch (e) {
     return { proceed: true, note: 'header not checked — could not read the range response (' + (e.message || e) + ')' };
   }
-  const header = await readGgufHeader(blob, totalSize ? { totalSize } : {});
+  const header = await readGgufHeader(blob, { totalSize });
   if (!header.ok && header.problems.length) return { proceed: false, message: header.problems.join('; ') };
   return { proceed: true, header };
 }
@@ -2555,12 +2576,22 @@ async function loadLocal(file) {
   if (!file) return;
   if (!file.name.toLowerCase().endsWith('.gguf')) { status.innerHTML = `<span style="color:var(--bad)">✗ Not a .gguf file.</span>`; return; }
 
+  // Same in-flight guard the other two load paths (loadBtn.onclick, the
+  // stored-model handler) already have. Without it, dropping a second file
+  // while readGgufHeader(file) is still reading the first one's 8MB slice
+  // lets pendingLocalFile and the `wllama = new Wllama(CONFIG)` in withLoad
+  // race — the first call's closure ends up loading against the SECOND
+  // instance, and the passport describes whichever file won the race.
+  if (loadBtn.disabled) return;   // a load is already in flight
+  loadBtn.disabled = true;        // claim it now — the header read below is awaited
+
   // Read the header BEFORE handing the bytes to wllama. Two reasons: it turns
   // the passport's unknowns into facts, and it refuses obviously bad files
   // rather than passing them to a C++ parser.
   status.textContent = 'Reading the file header…';
   const header = await readGgufHeader(file);
   if (!header.ok && header.problems.length) {
+    loadBtn.disabled = false;   // withLoad isn't reached on this path, so nothing else releases it
     status.innerHTML = `<span style="color:var(--bad)">✗ This file did not pass the header check: `
       + `${esc(header.problems.join('; '))}. Not loading it.</span>`;
     return;
@@ -2726,13 +2757,20 @@ async function ollamaComplete(messages, maxTokens, onText) {
 
 // stream one completion; call onText(currentText) each token if you want it shown live
 async function complete(messages, nPredict, onText) {
+  // Cleared here, not inside wasmComplete: a reason from a past WASM run must
+  // not survive a switch to Ollama. wasmComplete used to reset this itself,
+  // which meant a repetition stop on wasm stayed set forever once the
+  // Runtime toggle moved to Ollama — every later Ollama run then inherited a
+  // stopped-notice, a sandbox skip, and an 'outcome: stopped-repeating' audit
+  // entry that never happened on that run. No run has stopped for any reason
+  // yet, for either runtime, until proven otherwise below.
+  lastStopReason = null;
   if (activeRuntime === 'ollama') return ollamaComplete(messages, nPredict, onText);
   return wasmComplete(messages, nPredict, onText);
 }
 
 async function wasmComplete(messages, nPredict, onText) {
   const t0 = performance.now(); let nTok = 0, full = ''; let degenerate = null;
-  lastStopReason = null;   // this run hasn't stopped for any reason yet
   await wllama.createChatCompletion(messages, {
     nPredict,
     sampling: (() => { const s = currentSampling();
@@ -2964,6 +3002,10 @@ function clearTranscript() {
   // "empty" means — the next appendTurn() drops this exactly as it would the
   // markup's original placeholder.
   output.innerHTML = '(model output appears here, streaming token by token)';
+  // #inspect is a sibling of #output, not a child, so clearing the transcript
+  // above doesn't touch it — without this it would keep showing candidates
+  // from a conversation that no longer exists.
+  $('inspect').hidden = true;
 }
 
 async function renderFinal(intro, text) {
@@ -3662,7 +3704,13 @@ window.addEventListener('keydown', (e) => { if (e.key === 'Escape') setModal.hid
     // CTX_TOKENS (from chat.js) is also the n_ctx passed at load time, so this
     // can't drift from what every loadModel call actually requests.
     + row('Context window', `${CTX_TOKENS.toLocaleString()} tokens`)
-    + row('Data leaves device', 'Never — fully offline')
+    // Matches the network-status tooltip's precision (see netStatus() above)
+    // rather than the blunt absolute this used to state: the WASM runtime and
+    // model weights come from a CDN on first load, and code the model writes
+    // can trigger a package fetch if it contains an import — Pyodide's
+    // loadPackagesFromImports reaches a CDN for that. Inference itself is the
+    // one thing that never leaves this machine.
+    + row('Data leaves device', 'Never during inference. Two exceptions: downloading a model or the WASM runtime the first time, and the Python sandbox fetching a package if generated code imports one.')
     + row('Threads', iso ? 'multi-thread' : 'single-thread')
     + row('WebGPU', webgpu ? 'available — not used (CPU inference)' : 'no')
     + row('Device RAM', mem ? mem + ' GB+' : 'unknown')
@@ -3724,8 +3772,22 @@ async function termLoad(arg) {
   const map = { featherweight: 'feather', chromebook: 'chromebook', laptop: 'laptop' };
   let url, label;
   const preset = map[arg.toLowerCase()];
-  if (preset) { const el = document.querySelector(`.modelitem[data-preset="${preset}"]`); url = el.dataset.url; label = el.querySelector('.nm').textContent.trim(); }
-  else { url = arg; label = arg.split('/').pop(); }
+  if (preset) {
+    // Resolved from the catalogue data (lastModels), not the sidebar DOM —
+    // the sidebar now renders only pinned models plus Custom GGUFs, so a
+    // preset that isn't currently pinned has no .modelitem to read. This is
+    // the same bug class modelMenuItems() was fixed for above: read the data,
+    // not the view.
+    const entry = (lastModels || []).find(m => m.preset === preset);
+    if (!entry) { tp(`✗ preset "${arg}" not found in the model catalogue.`, 'errmsg'); return; }
+    url = entry.url; label = entry.name;
+  } else if (/^https?:\/\//i.test(arg)) {
+    url = arg; label = arg.split('/').pop();
+  } else {
+    tp(`✗ unknown preset "${arg}" — try featherweight, chromebook, laptop, or a full URL.`, 'errmsg');
+    return;
+  }
+  pendingLocalFile = null;   // a stale passport from a previous dropped file must not survive this load
   const resolvedUrl = new URL(url, location.href).href;
   tp('loading ' + label + ' …', 'sysmsg'); setBusy('Loading model…');
   tp('checking file header …', 'sysmsg');
@@ -3735,15 +3797,26 @@ async function termLoad(arg) {
     clearBusy();
     return;
   }
-  try {
-    wllama = new Wllama(CONFIG);
-    await wllama.loadModelFromUrl(resolvedUrl, { n_ctx: CTX_TOKENS });
-    modelLabel = label;
-    if (window.__setModelBtn) window.__setModelBtn(label);
+  // Routed through withLoad, same as every other load path (URL box, stored
+  // model). That is what sets loadedUrl — so wasmComplete's recordTokps()
+  // files the measured speed against THIS model rather than whatever loaded
+  // before it — and it's what renders the passport and the bench box, and
+  // adds this model to Recent. withLoad drives its own #status line and the
+  // top-bar spinner; it never touches #termOut, so the terminal's own
+  // messages below report independently without clashing with it.
+  let succeeded = false;
+  await withLoad(label, async () => {
+    loadedUrl = resolvedUrl;
+    const result = await wllama.loadModelFromUrl(resolvedUrl, { n_ctx: CTX_TOKENS });
+    succeeded = true;
+    return result;
+  });
+  if (succeeded) {
     tp('✓ loaded ' + label, 'okmsg');
     if (check.note) tp(check.note, 'sysmsg');
-  } catch (e) { tp('✗ load failed: ' + e.message, 'errmsg'); }
-  clearBusy();
+  } else {
+    tp('✗ load failed — see the status line above for details.', 'errmsg');
+  }
 }
 
 async function termGenerate(prompt) {
@@ -3851,14 +3924,26 @@ async function termRun(raw) {
       case 'help': tp(TERM_HELP, 'sysmsg'); break;
       case 'clear': termOut.innerHTML = ''; break;
       case 'models': tp('featherweight (100M) · chromebook (0.5B) · laptop (1.5B) — or /load <url>', 'sysmsg'); break;
-      case 'status': tp(`model: ${modelLabel || 'none'}\ntemp: ${$('temp').value}   tokens: ${termState.tokens}   autofix: ${termState.autofix ? 'on' : 'off'}\nsystem: ${termState.system}`, 'sysmsg'); break;
+      case 'status': {
+        // temp is the one setting the terminal itself lets you change; top_k and
+        // top_p are fixed (SAMPLING_DEFAULTS) but are sent on every request just
+        // the same, so "show current settings" has to name them too.
+        const s = currentSampling();
+        tp(`model: ${modelLabel || 'none'}\ntemp: ${$('temp').value}   top_k: ${s.topK}   top_p: ${s.topP}   tokens: ${termState.tokens}   autofix: ${termState.autofix ? 'on' : 'off'}\nsystem: ${termState.system}`, 'sysmsg');
+        break;
+      }
       case 'flush': {
         if (activeRuntime !== 'wasm' || !wllama) { tp('no in-browser model loaded', 'errmsg'); break; }
         try {
           await wllama.kvClear();
           // Precise about what was freed. A student who reads "memory released"
           // and then sees 270MB still resident would reasonably think it failed.
-          tp('KV cache cleared — the conversation\'s working memory. The weights stay loaded.', 'sysmsg');
+          // Also precise about what was NOT touched: chat.js's turns array is
+          // untouched by this, so the next Generate still re-sends the whole
+          // conversation — which is exactly what rebuilds the KV cache this
+          // just cleared.
+          tp('KV cache cleared — the conversation\'s working memory. The weights stay loaded. '
+            + 'The transcript itself is unchanged — the next Generate re-sends it and rebuilds the cache.', 'sysmsg');
         } catch (e) { tp('could not clear cache: ' + e.message, 'errmsg'); }
         break;
       }
@@ -3989,8 +4074,14 @@ termIn.addEventListener('keydown', async (e) => {
   if (raw.trim()) { termHistory.push(raw); histIdx = termHistory.length; }
   tp('❯ ' + raw, 'cmd');
   termBusy = true;
-  await termRun(raw);
-  termBusy = false; termIn.focus();
+  // If anything inside termRun throws unexpectedly, termBusy must still be
+  // released — otherwise `if (termBusy) return;` above swallows every Enter
+  // press for the rest of the session, with nothing on screen to explain why.
+  try {
+    await termRun(raw);
+  } finally {
+    termBusy = false; termIn.focus();
+  }
 });
 
 tp('Pi-of-AI terminal — /help for commands, or type a request to generate.', 'sysmsg');

@@ -71,7 +71,7 @@ Consequences worth internalising:
 
 ### The browser runtime (`rules_baker/web/`)
 
-No build step, no bundler, no dependencies. `index.html` is a single ~2900-line file holding the
+No build step, no bundler, no dependencies. `index.html` is a single ~4000-line file holding the
 markup, all CSS, and one `<script type="module">`; small ES modules sit beside it and are imported
 from that script. Adding a module means adding an import line, not a build config.
 
@@ -105,8 +105,8 @@ callback resolves, so anything set from *inside* the callback gets overwritten â
 after it returns.
 
 **Browser storage keys in use** (do not collide): `pi-of-ai:variants`, `pi-of-ai:pinned`,
-`pi-of-ai:recent`, `pi-of-ai:measured-tokps`, `pi-of-ai:load-mbps`, and IndexedDB database
-`pi-of-ai`, object store `models`.
+`pi-of-ai:recent`, `pi-of-ai:measured-tokps`, `pi-of-ai:load-mbps`, `pi-of-ai:audit`,
+`pi-of-ai:bench`, `pi-of-ai:activity`, and IndexedDB database `pi-of-ai`, object store `models`.
 
 ### The baking pipeline (`rules_baker/`)
 
