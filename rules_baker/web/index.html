@@ -1009,7 +1009,7 @@ import { getHistory, addTurn, clearHistory, historyFor, usage,
          handoffText, CTX_TOKENS, REFUSE_AT } from './chat.js';
 import { recordActivity, activityYears, heatmapModel } from './activity.js';
 import { buildPassport, toCycloneDX } from './provenance.js';
-import { readGgufHeader } from './gguf.js';
+import { readGgufHeader, HEADER_BYTES } from './gguf.js';
 import { recordGeneration, auditSummary, auditExport, clearAudit } from './audit.js';
 import { runBenchmark, saveRun, savedRuns, deviceKey, memorySnapshot, BENCH_PROMPT } from './bench.js';
 import { runChain } from './chain.js';
@@ -1750,6 +1750,17 @@ document.querySelector('.sidebar').addEventListener('click', async (e) => {
     renderStoredModels();
     return;
   }
+  // Stored records predate this gate — saveModel only ever runs after a
+  // successful load, so anything already in the store was never checked.
+  // It's a real Blob with a true .size, so no range logic is needed here.
+  status.textContent = 'Reading the stored file header…';
+  const header = await readGgufHeader(blob);
+  if (!header.ok && header.problems.length) {
+    loadBtn.disabled = false;
+    status.innerHTML = `<span style="color:var(--bad)">✗ This stored file did not pass the header check: `
+      + `${esc(header.problems.join('; '))}. Not loading it.</span>`;
+    return;
+  }
   const name = row.querySelector('.nm').textContent;
   withLoad(name, () => {
     loadedUrl = null;   // from-disk load: don't attribute it to a remote URL
@@ -2437,7 +2448,45 @@ const CONFIG = {
   'multi-thread/wllama.wasm':  'https://cdn.jsdelivr.net/npm/@wllama/wllama@2/esm/multi-thread/wllama.wasm',
 };
 
-loadBtn.onclick = () => {
+// Runs the same header gate as loadLocal, but for a remote URL: fetches just
+// the header window over HTTP Range before any of it reaches wllama, instead
+// of trusting the whole multi-hundred-MB download. This is what closes the
+// gap the drag/drop-only gate left — the spec's own threat model is
+// "arbitrary user-supplied URLs", and a URL never touched readGgufHeader
+// before this.
+//
+// A server that ignores Range replies 200 (not 206) with no Content-Range.
+// That is "unchecked", not "implausible", and the spec only refuses
+// implausible headers — refusing every host without Range support would
+// break loading far more often than the check protects against. So that
+// case, and a network error on the probe itself, resolve with proceed:true
+// and a visible note instead of blocking the load.
+async function checkUrlHeader(url) {
+  let res;
+  try {
+    res = await fetch(url, { headers: { Range: `bytes=0-${HEADER_BYTES - 1}` } });
+  } catch (e) {
+    return { proceed: true, note: 'header not checked — could not reach the server for a range probe (' + (e.message || e) + ')' };
+  }
+  if (res.status !== 206) {
+    return { proceed: true, note: `header not checked — server did not honor the range request (status ${res.status})` };
+  }
+  // "bytes 0-8388607/419430400" — the true size is whatever follows the slash,
+  // which is what readGgufHeader needs to tell real truncation (a large
+  // vocabulary genuinely running past our read window) from a hostile file
+  // that is short and lying about it. See the comment in gguf.js.
+  const cr = res.headers.get('Content-Range');
+  const totalSize = cr ? Number(cr.slice(cr.indexOf('/') + 1)) : undefined;
+  let blob;
+  try { blob = await res.blob(); } catch (e) {
+    return { proceed: true, note: 'header not checked — could not read the range response (' + (e.message || e) + ')' };
+  }
+  const header = await readGgufHeader(blob, totalSize ? { totalSize } : {});
+  if (!header.ok && header.problems.length) return { proceed: false, message: header.problems.join('; ') };
+  return { proceed: true, header };
+}
+
+loadBtn.onclick = async () => {
   const url = urlIn.value.trim();
   pendingLocalFile = null;          // this one comes from the catalogue
   // Resolve the label from the URL actually being loaded, not from whatever was
@@ -2447,15 +2496,35 @@ loadBtn.onclick = () => {
   const match = (lastModels || []).find(m => m.url === url);
   const label = match ? match.name
     : (url ? decodeURIComponent(url.split('/').pop() || 'model') : (pendingLabel || 'model'));
-  withLoad(label, () => {
+
+  let note = null;
+  if (url) {
+    if (loadBtn.disabled) return;   // a load is already in flight
+    loadBtn.disabled = true;        // claim it now — the range probe below is awaited
+    status.textContent = 'Checking the file header…';
+    const check = await checkUrlHeader(url);
+    if (!check.proceed) {
+      loadBtn.disabled = false;
+      status.innerHTML = `<span style="color:var(--bad)">✗ This file did not pass the header check: `
+        + `${esc(check.message)}. Not loading it.</span>`;
+      return;
+    }
+    note = check.note || null;
+  }
+
+  let succeeded = false;
+  await withLoad(label, async () => {
     status.textContent = 'Downloading model weights… (cached after first load)';
     loadedUrl = url;
-    return wllama.loadModelFromUrl(url, { n_ctx: CTX_TOKENS, progressCallback: ({loaded,total}) => {
+    const result = await wllama.loadModelFromUrl(url, { n_ctx: CTX_TOKENS, progressCallback: ({loaded,total}) => {
       const pct = total ? Math.round(100*loaded/total) : 0;
       prog.style.width = pct + '%';
       status.textContent = `Downloading weights… ${(loaded/1048576).toFixed(0)} / ${total?(total/1048576).toFixed(0):'?'} MB (${pct}%)`;
     }});
+    succeeded = true;
+    return result;
   });
+  if (succeeded && note) status.innerHTML += ` <span class="note">${esc(note)}</span>`;
 };
 async function loadLocal(file) {
   if (!file) return;
@@ -3632,13 +3701,22 @@ async function termLoad(arg) {
   const preset = map[arg.toLowerCase()];
   if (preset) { const el = document.querySelector(`.modelitem[data-preset="${preset}"]`); url = el.dataset.url; label = el.querySelector('.nm').textContent.trim(); }
   else { url = arg; label = arg.split('/').pop(); }
+  const resolvedUrl = new URL(url, location.href).href;
   tp('loading ' + label + ' …', 'sysmsg'); setBusy('Loading model…');
+  tp('checking file header …', 'sysmsg');
+  const check = await checkUrlHeader(resolvedUrl);
+  if (!check.proceed) {
+    tp('✗ header check failed: ' + check.message + '. Not loading it.', 'errmsg');
+    clearBusy();
+    return;
+  }
   try {
     wllama = new Wllama(CONFIG);
-    await wllama.loadModelFromUrl(new URL(url, location.href).href, { n_ctx: CTX_TOKENS });
+    await wllama.loadModelFromUrl(resolvedUrl, { n_ctx: CTX_TOKENS });
     modelLabel = label;
     if (window.__setModelBtn) window.__setModelBtn(label);
     tp('✓ loaded ' + label, 'okmsg');
+    if (check.note) tp(check.note, 'sysmsg');
   } catch (e) { tp('✗ load failed: ' + e.message, 'errmsg'); }
   clearBusy();
 }

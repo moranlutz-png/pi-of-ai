@@ -25,7 +25,9 @@ const T = { U8:0, I8:1, U16:2, I16:3, U32:4, I32:5, F32:6, BOOL:7, STR:8, ARR:9,
 // Enough for the header on every model this project ships. The tokenizer's
 // vocabulary lives in the metadata and can run to megabytes, so a parse that
 // runs off the end is reported as truncated rather than treated as corrupt.
-const HEADER_BYTES = 8 * 1024 * 1024;
+// Exported so URL-based callers can request exactly this many bytes via
+// Range, matching the window this module actually reads.
+export const HEADER_BYTES = 8 * 1024 * 1024;
 
 // llama.cpp's file_type enum, trimmed to the ones seen in the wild here.
 const FILE_TYPES = {
@@ -86,7 +88,7 @@ class Reader {
   }
 }
 
-export async function readGgufHeader(blob) {
+export async function readGgufHeader(blob, { totalSize = blob.size } = {}) {
   const problems = [];
   let buf;
   try {
@@ -128,21 +130,26 @@ export async function readGgufHeader(blob) {
     // field ran out (a KV key/type, a str() value, or an ARR item count).
     //
     // The discriminator is "is there more file we did not read", tested as
-    // blob.size > buf.byteLength. This requires blob.size to be the file's
+    // totalSize > buf.byteLength. This requires totalSize to be the file's
     // true size — which is exactly what callers give us: loadLocal hands
-    // over the real File object, never a pre-sliced one. Do NOT "fix" this
-    // by loosening the check because a test built `blob.slice(0, N)` and
-    // expected truncated:true. A blob manually sliced to N bytes has a
-    // .size of exactly N, so blob.size > buf.byteLength is false by
-    // construction — indistinguishable from a small hostile file that
-    // truly only contains N bytes and lies about having more. There is no
-    // signal in the Blob API to tell those two apart; treating the sliced
-    // case as legitimate truncation reopens the exact bypass this comparison
-    // exists to close (see the array-count exploit this function guards
-    // against below). Verified 2026-08: an unsliced blob whose real .size
-    // genuinely exceeds HEADER_BYTES correctly comes back truncated:true.
+    // over the real File object (totalSize defaults to blob.size, its true
+    // size), and a range-read caller passes the true size explicitly via the
+    // second argument (e.g. parsed from a Content-Range response header),
+    // because the blob it hands in is only the sliced-down header window.
+    // Do NOT "fix" this by loosening the check because a test built
+    // `blob.slice(0, N)` and expected truncated:true. A blob manually
+    // sliced to N bytes has a .size of exactly N, so relying on blob.size
+    // alone would make the comparison false by construction — indistinguishable
+    // from a small hostile file that truly only contains N bytes and lies
+    // about having more. There is no signal in the Blob API to tell those
+    // two apart; treating the sliced case as legitimate truncation reopens
+    // the exact bypass this comparison exists to close (see the array-count
+    // exploit this function guards against below). Verified 2026-08: an
+    // unsliced blob whose real .size genuinely exceeds HEADER_BYTES correctly
+    // comes back truncated:true, and so does a range-read blob whose caller
+    // passes the true totalSize.
     if (e instanceof RangeError && e.message === 'truncated') {
-      if (blob.size > buf.byteLength) truncated = true;
+      if (totalSize > buf.byteLength) truncated = true;
       else problems.push('file claims more data than it contains');
     } else {
       problems.push('malformed metadata: ' + (e.message || e));
