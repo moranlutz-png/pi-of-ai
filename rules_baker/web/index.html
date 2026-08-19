@@ -987,6 +987,7 @@ import { getHistory, addTurn, clearHistory, historyFor, usage,
          handoffText, CTX_TOKENS, REFUSE_AT } from './chat.js';
 import { recordActivity, activityYears, heatmapModel } from './activity.js';
 import { buildPassport, toCycloneDX } from './provenance.js';
+import { readGgufHeader } from './gguf.js';
 import { recordGeneration, auditSummary, auditExport, clearAudit } from './audit.js';
 import { runBenchmark, saveRun, savedRuns, deviceKey, memorySnapshot, BENCH_PROMPT } from './bench.js';
 import { runChain } from './chain.js';
@@ -1560,6 +1561,8 @@ function renderPassport({ entry, local } = {}) {
     +   field('Architecture', p.arch)
     +   field('Parameters', params)
     +   field('Context', p.ctx ? p.ctx.toLocaleString() + ' tokens' : null)
+    +   field('Quantisation', p.quant)
+    +   field('Layers', p.layers)
     +   field('Runtime', p.runtime)
     +   field('Measured', measured ? measured + ' tok/s here' : null)
     + `</div>`
@@ -1568,6 +1571,10 @@ function renderPassport({ entry, local } = {}) {
         ? `<div class="pp-unk"><b>Can't be verified from here:</b> ${esc(p.unverifiable.join(', '))}. `
           + `Open weights ship without their training data — that gap is normal, and it is exactly what `
           + `an auditor asks about first.</div>`
+        : '')
+    + (p.headerRead
+        ? `<div class="pp-unk" style="color:var(--dim)">These figures were read from the file's own header, `
+          + `not from a catalogue.</div>`
         : '');
 
   $('ppDownload').onclick = () => {
@@ -2373,8 +2380,20 @@ loadBtn.onclick = () => {
 async function loadLocal(file) {
   if (!file) return;
   if (!file.name.toLowerCase().endsWith('.gguf')) { status.innerHTML = `<span style="color:var(--bad)">✗ Not a .gguf file.</span>`; return; }
+
+  // Read the header BEFORE handing the bytes to wllama. Two reasons: it turns
+  // the passport's unknowns into facts, and it refuses obviously bad files
+  // rather than passing them to a C++ parser.
+  status.textContent = 'Reading the file header…';
+  const header = await readGgufHeader(file);
+  if (!header.ok && header.problems.length) {
+    status.innerHTML = `<span style="color:var(--bad)">✗ This file did not pass the header check: `
+      + `${esc(header.problems.join('; '))}. Not loading it.</span>`;
+    return;
+  }
+
   let kept = null;
-  pendingLocalFile = { name: file.name, size: file.size };
+  pendingLocalFile = { name: file.name, size: file.size, header };
   await withLoad(file.name, async () => {
     status.textContent = `Reading ${file.name} (${(file.size/1048576).toFixed(0)} MB) into WASM…`;
     await wllama.loadModel([file], { n_ctx: CTX_TOKENS });

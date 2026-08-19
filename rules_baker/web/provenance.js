@@ -58,18 +58,32 @@ export function buildPassport({ entry, local, runtime, measured } = {}) {
   const now = new Date().toISOString();
 
   if (local) {
+    const h = local.header || {};
+    // What the file itself says. Anything the header did not carry stays
+    // unverifiable — the list shrinks, it does not disappear, and the
+    // difference between "read from the file" and "typed into a catalogue" is
+    // the whole point.
+    const unverifiable = ['training data', 'evaluation methodology'];
+    if (!h.arch) unverifiable.push('architecture');
+    if (!h.layers) unverifiable.push('layer count');
+    unverifiable.push('licence');            // never present in a GGUF header
+
     return {
       generatedAt: now,
       source: 'local-file',
-      name: local.name,
+      name: h.name || local.name,
       sizeBytes: local.size,
-      // Everything below is genuinely unknown for a dropped file. An honest
-      // "unverifiable" is worth more to an auditor than a confident guess.
       license: null,
       licenceReview: licenceReview(null),
-      base: null, arch: null, params: null, ctx: null,
-      unverifiable: ['licence', 'base model', 'architecture', 'parameter count',
-                     'training data', 'quantisation provenance'],
+      base: null,
+      arch: h.arch || null,
+      layers: h.layers || null,
+      hidden: h.embedding || null,
+      ctx: h.contextLength || null,
+      quant: h.quant || null,
+      params: null,
+      headerRead: !!h.arch,
+      unverifiable,
       runtime, measured: measured || null,
     };
   }
