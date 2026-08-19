@@ -183,6 +183,19 @@
   .bakesteps { margin:12px 0 0; padding-left:20px; font-size:12.5px; color:var(--dim);
     line-height:1.75; }
   .bakesteps b { color:var(--ink); }
+
+  /* ---- Loss curve ----
+     width/height are set on the element AND here. An inline SVG with no CSS
+     size falls back to roughly 300x150 and blows the row out; this file has
+     been bitten by exactly that before. */
+  .loss-wrap { margin-top:9px; }
+  .loss-chart { display:block; width:100%; height:120px; overflow:visible; }
+  .loss-chart .grid { stroke:rgba(255,255,255,.08); stroke-width:1; }
+  .loss-chart .line { fill:none; stroke:var(--ok); stroke-width:1.8;
+    stroke-linejoin:round; stroke-linecap:round; }
+  .loss-chart .dot { fill:var(--ok); }
+  .loss-ax { display:flex; justify-content:space-between; margin-top:3px;
+    font-size:11px; color:var(--dimmer); font-variant-numeric:tabular-nums; }
   #varModal textarea { width:100%; }
 
   .modelitem { display:flex; align-items:center; gap:7px; padding:4px 8px; border-radius:6px;
@@ -818,8 +831,8 @@
       <input type="text" id="url" class="url" />
       <div class="orbar">— or load a model YOU baked —</div>
       <div id="drop" class="drop">
-        <input type="file" id="file" accept=".gguf" hidden />
-        <b>Drag &amp; drop your <code>.gguf</code> here</b>
+        <input type="file" id="file" accept=".gguf,.json,application/json" hidden />
+        <b>Drag &amp; drop your <code>.gguf</code> — or a bake's <code>.json</code> log — here</b>
         <span class="note">or <button id="browseBtn" class="ghost" type="button" style="padding:5px 11px">browse…</button> — loads from disk, nothing uploaded.</span>
       </div>
       <div class="row" style="margin-top:14px; align-items:center; gap:12px">
@@ -834,6 +847,9 @@
 
       <!-- What is this model, actually? Filled in once something is loaded. -->
       <div id="passport" class="passport" hidden></div>
+
+      <!-- The student's own bake: drop the .json the notebook produced. -->
+      <div id="trainlog" class="passport" hidden></div>
 
       <!-- How fast is it HERE — and does it stay that fast? -->
       <div id="benchBox" class="passport" hidden>
@@ -1104,6 +1120,7 @@ import { runBenchmark, saveRun, BENCH_PROMPT } from './bench.js';
 import { runChain } from './chain.js';
 import { applySampling, SAMPLING_DEFAULTS } from './sampling.js';
 import { BAKE_TARGETS, getTarget, buildNotebook, notebookName, bakeBasename } from './bake.js';
+import { parseTrainingLog, lossPath } from './training-log.js';
 import { looksDegenerate } from './repetition.js';
 
 // ---- inline line-icon set (Feather-style) ----
@@ -2889,11 +2906,82 @@ async function loadLocal(file) {
     status.innerHTML += ` <span class="note">Couldn't keep it for next time: ${esc(kept.error)}.</span>`;
   }
 }
+// ---- The training log the bake produced -----------------------------------
+// The chart is the student's OWN run. That is the entire point of rendering it
+// rather than illustrating one: "did my training do anything" is a question a
+// textbook picture cannot answer.
+const W = 560, H = 120;                 // viewBox units; CSS sets the real size
+
+function renderTrainingLog(log) {
+  const box = $('trainlog');
+  const pts = lossPath(log.loss, W, H);
+  const first = log.loss[0].loss, last = log.loss[log.loss.length - 1].loss;
+  const drop = first > 0 ? ((first - last) / first) * 100 : 0;
+  const meta = [
+    log.bakedOn, log.target,
+    log.examples != null ? `${log.examples} examples` : '',
+    log.epochs != null ? `${log.epochs} epochs` : '',
+  ].filter(Boolean).join(' · ');
+
+  box.innerHTML =
+      `<div class="pp-head"><span class="pp-title">Your bake — ${esc(log.variant)}</span>`
+    + `<span class="pp-lic">${esc(log.quant || '')}</span></div>`
+    + `<div class="pp-note" style="border-top:0;padding-top:0;margin-top:0">`
+    + `${esc(meta)}</div>`
+    + `<div class="loss-wrap">`
+    +   `<svg class="loss-chart" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" `
+    +     `preserveAspectRatio="none" role="img" `
+    +     `aria-label="Training loss falling from ${first.toFixed(3)} to ${last.toFixed(3)}">`
+    +     `<line class="grid" x1="0" y1="${H / 2}" x2="${W}" y2="${H / 2}"/>`
+    +     `<polyline class="line" points="${pts}"/>`
+    +   `</svg>`
+    +   `<div class="loss-ax"><span>step ${log.loss[0].step} · loss ${first.toFixed(3)}</span>`
+    +   `<span>step ${log.loss[log.loss.length - 1].step} · loss ${last.toFixed(3)}</span></div>`
+    + `</div>`
+    // Said plainly, because a falling curve is not self-evidently good news to
+    // somebody seeing their first one. A rise is reported as a rise.
+    + `<div class="pp-note">${drop > 0
+        ? `Loss fell ${drop.toFixed(0)}% across the run — the rules moving out of the prompt `
+          + `and into the weights.`
+        : `Loss did not fall. The bake ran, but the model learned little — usually too few `
+          + `examples, or rules too vague to infer from code alone.`}</div>`
+    + (log.ggufFile ? `<div class="pp-note">Pairs with <b>${esc(log.ggufFile)}</b>.</div>` : '');
+  box.hidden = false;
+}
+
+async function loadTrainingLog(file) {
+  let text;
+  try { text = await file.text(); }
+  catch (e) {
+    status.innerHTML = `<span style="color:var(--bad)">✗ Couldn't read that file: ${esc(e.message || e)}</span>`;
+    return;
+  }
+  const res = parseTrainingLog(text);
+  if (!res.ok) {
+    // Rejected loudly and specifically. Drawing an empty chart would read as
+    // "your bake did nothing" when the truth is "this is not a training log".
+    status.innerHTML = `<span style="color:var(--bad)">✗ ${esc(res.error)}.</span>`;
+    return;
+  }
+  renderTrainingLog(res.log);
+  noteActivity();
+  status.innerHTML = `<span style="color:var(--ok)">✓ Training log loaded — `
+    + `${res.log.loss.length} points from ${esc(res.log.variant)}.</span>`;
+}
+
+// One entry point for a dropped file, so the drop zone, the browse button and
+// anything added later all agree about what each file type means.
+function acceptDroppedFile(file) {
+  if (!file) return;
+  if (/\.json$/i.test(file.name)) return loadTrainingLog(file);
+  return loadLocal(file);
+}
+
 browseBtn.onclick = () => fileIn.click();
-fileIn.onchange = () => loadLocal(fileIn.files[0]);
+fileIn.onchange = () => acceptDroppedFile(fileIn.files[0]);
 ['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('hot'); }));
 ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('hot'); }));
-drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) loadLocal(f); });
+drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) acceptDroppedFile(f); });
 
 // ---- Python sandbox (Pyodide in a Web Worker; offline after first load) ----
 const $exec = $('exec');
