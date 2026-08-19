@@ -862,7 +862,8 @@
       <input type="text" id="url" class="url" />
       <div class="orbar">— or load a model YOU baked —</div>
       <div id="drop" class="drop">
-        <input type="file" id="file" accept=".gguf,.json,application/json" hidden />
+        <!-- multiple: a bake returns two files and the popup says to bring both. -->
+        <input type="file" id="file" accept=".gguf,.json,application/json" multiple hidden />
         <b>Drag &amp; drop your <code>.gguf</code> — or a bake's <code>.json</code> log — here</b>
         <span class="note">or <button id="browseBtn" class="ghost" type="button" style="padding:5px 11px">browse…</button> — loads from disk, nothing uploaded.</span>
       </div>
@@ -1621,6 +1622,10 @@ async function renderStoredModels() {
     + `<span class="sz">${(m.size / 1048576).toFixed(0)} MB</span>`
     + `<span class="del">remove</span></div>`).join('');
   renderStoredWarning(models.length);
+  // The Library lists these too, so it has to follow the same data. Guarded
+  // because renderStoredModels() runs at startup, before renderLibrary is
+  // defined further down the module.
+  if (typeof renderLibrary === 'function') renderLibrary();
 }
 
 /**
@@ -3313,11 +3318,43 @@ function acceptDroppedFile(file) {
   return loadLocal(file);
 }
 
+/**
+ * A bake produces TWO files and the popup tells the student to come back with
+ * both, so both have to survive one drop. This used to take dataTransfer.files[0]
+ * and discard the rest: dropping the pair together loaded whichever the browser
+ * listed first — usually the .json, since it sorts before .gguf — and the model
+ * was thrown away silently, which looks exactly like the app refusing to store
+ * it.
+ *
+ * The log is handled first and awaited before the model, because loadLocal runs
+ * a multi-second load that ends by rewriting #status; going the other way round
+ * would bury the model's own result under the log's.
+ */
+async function acceptDroppedFiles(list) {
+  const files = [...(list || [])];
+  if (!files.length) return;
+  if (files.length === 1) return acceptDroppedFile(files[0]);
+
+  const logs = files.filter(f => /\.json$/i.test(f.name));
+  const models = files.filter(f => /\.gguf$/i.test(f.name));
+  const ignored = files.filter(f => !logs.includes(f) && !models.includes(f));
+
+  for (const f of logs) await loadTrainingLog(f);
+  // Only one model can be loaded at a time, so extras are named rather than
+  // quietly dropped — the failure this whole function exists to fix.
+  for (const f of models.slice(0, 1)) await loadLocal(f);
+  const extra = [...models.slice(1), ...ignored];
+  if (extra.length) {
+    status.innerHTML += ` <span class="note">Ignored ${esc(extra.map(f => f.name).join(', '))}`
+      + ` — one model at a time.</span>`;
+  }
+}
+
 browseBtn.onclick = () => fileIn.click();
-fileIn.onchange = () => acceptDroppedFile(fileIn.files[0]);
+fileIn.onchange = () => acceptDroppedFiles(fileIn.files);
 ['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('hot'); }));
 ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('hot'); }));
-drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) acceptDroppedFile(f); });
+drop.addEventListener('drop', e => acceptDroppedFiles(e.dataTransfer.files));
 
 // ---- Python sandbox (Pyodide in a Web Worker; offline after first load) ----
 const $exec = $('exec');
@@ -4168,11 +4205,32 @@ document.querySelectorAll('.rt-pill').forEach(pill => {
     else { rtSetRuntime('wasm'); rtStatus.textContent = ''; rtBody.hidden = true; }
   };
 });
-// Model library — data-driven from models.json (the community-catalog seed)
-(async function library() {
+// Model library — data-driven from models.json (the community-catalog seed),
+// plus whatever the student has stored themselves.
+//
+// Fetched once and cached: this now re-renders whenever the stored list changes,
+// and re-reading the catalogue on every save would be wasted work.
+let libCatalogue = null;
+
+async function renderLibrary() {
   const grid = document.getElementById('libGrid');
+  if (!grid) return;
+  if (!libCatalogue) {
+    try { libCatalogue = await (await fetch('models.json')).json(); }
+    catch (e) {
+      grid.innerHTML = `<div class="note">Couldn't load models.json (${esc(e.message)})</div>`;
+      return;
+    }
+  }
   try {
-    const models = await (await fetch('models.json')).json();
+    const models = libCatalogue;
+    // Read EVERYTHING before touching the DOM. This function is called both at
+    // startup and whenever the stored list changes, so two runs can overlap;
+    // with an await between the clear and the appends, each run cleared the
+    // other's catalogue cards and then appended its own stored ones, and every
+    // stored model showed up twice. Awaiting first makes the whole write
+    // synchronous, so the later run simply replaces the earlier one.
+    const stored = await listModels();
     grid.innerHTML = '';
     models.forEach((m) => {
       const card = document.createElement('div'); card.className = 'libcard';
@@ -4197,10 +4255,37 @@ document.querySelectorAll('.rt-pill').forEach(pill => {
       card.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(); } };
       grid.appendChild(card);
     });
+
+    // The student's own models. They have no catalogue row — nobody wrote a
+    // description for a file that did not exist until this afternoon — so they
+    // get their own card describing what IS known: where it came from, how big
+    // it is, and when it was saved. Without this the Library silently meant
+    // "models someone else published", which is the wrong lesson for a kit
+    // whose whole point is that you can bake your own.
+    stored.forEach((s) => {
+      const card = document.createElement('div'); card.className = 'libcard';
+      const when = s.savedAt ? new Date(s.savedAt).toLocaleDateString() : 'earlier';
+      card.innerHTML =
+          `<div class="h">${ICONS.laptop}<span class="nm">${esc(s.name)}</span>`
+        + `<span class="sz">${((s.size || 0) / 1048576).toFixed(0)} MB</span></div>`
+        + `<div class="tags"><span class="rectag">${ICONS.check} Yours</span></div>`
+        + `<div class="d">Stored in this browser, saved ${esc(when)}. `
+        + `Loads from disk — nothing is downloaded.</div>`
+        + `<span class="cardgo">Load ${ICONS.chevronright}</span>`;
+      card.tabIndex = 0;
+      card.setAttribute('role', 'button');
+      // Reuses the sidebar row's own handler rather than duplicating the
+      // load-from-IndexedDB path, so the two cannot drift.
+      const open = () => document.querySelector(`.storeditem[data-model-id="${CSS.escape(s.id)}"]`)?.click();
+      card.onclick = open;
+      card.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(); } };
+      grid.appendChild(card);
+    });
   } catch (e) {
-    grid.innerHTML = `<div class="note">Couldn't load models.json (${esc(e.message)})</div>`;
+    grid.innerHTML = `<div class="note">Couldn't build the library (${esc(e.message)})</div>`;
   }
-})();
+}
+renderLibrary();
 
 // ---- Library detail view ----
 // Models pinned here are lifted out of their family group and shown in a
