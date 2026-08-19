@@ -990,6 +990,7 @@ import { buildPassport, toCycloneDX } from './provenance.js';
 import { recordGeneration, auditSummary, auditExport, clearAudit } from './audit.js';
 import { runBenchmark, saveRun, savedRuns, deviceKey, memorySnapshot, BENCH_PROMPT } from './bench.js';
 import { runChain } from './chain.js';
+import { applySampling, SAMPLING_DEFAULTS } from './sampling.js';
 
 // ---- inline line-icon set (Feather-style) ----
 const P = 'fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"';
@@ -2533,7 +2534,8 @@ async function wasmComplete(messages, nPredict, onText) {
   const t0 = performance.now(); let nTok = 0, full = '';
   await wllama.createChatCompletion(messages, {
     nPredict,
-    sampling: { temp: parseFloat($('temp').value), top_p: 0.9 },
+    sampling: (() => { const s = currentSampling();
+      return { temp: s.temperature, top_k: s.topK, top_p: s.topP }; })(),
     onNewToken: (tok, piece, currentText, opt) => {
       nTok++; full = currentText; if (onText) onText(currentText);
       const s = (performance.now()-t0)/1000;
@@ -3409,6 +3411,17 @@ const termEl = document.getElementById('term');
 // Starts with no system prompt, matching the Playground — a rules-baked model
 // is supposed to obey with an empty one, and /system sets it when you want one.
 const termState = { temp: 0.2, tokens: 256, system: '', autofix: true };
+// The single place sampling settings are read from. /temp used to write
+// termState.temp, which nothing on the generation path ever read — the command
+// reported a change and changed nothing. Both the terminal and the Playground
+// now resolve through here.
+function currentSampling() {
+  return {
+    temperature: parseFloat($('temp').value),
+    topK: SAMPLING_DEFAULTS.topK,
+    topP: SAMPLING_DEFAULTS.topP,
+  };
+}
 const termHistory = []; let histIdx = 0; let termBusy = false;
 
 function tp(text, cls) { const d = document.createElement('div'); if (cls) d.className = cls; d.textContent = text; termOut.appendChild(d); termEl.scrollTop = termEl.scrollHeight; return d; }
@@ -3558,7 +3571,20 @@ async function termRun(raw) {
       case 'clear': termOut.innerHTML = ''; break;
       case 'models': tp('featherweight (100M) · chromebook (0.5B) · laptop (1.5B) — or /load <url>', 'sysmsg'); break;
       case 'status': tp(`model: ${modelLabel || 'none'}\ntemp: ${termState.temp}   tokens: ${termState.tokens}   autofix: ${termState.autofix ? 'on' : 'off'}\nsystem: ${termState.system}`, 'sysmsg'); break;
-      case 'temp': { const v = parseFloat(arg); if (isNaN(v)) tp('usage: /temp 0.2', 'errmsg'); else { termState.temp = v; tp('temperature = ' + v, 'sysmsg'); } break; }
+      case 'temp': {
+        const v = parseFloat(arg);
+        if (isNaN(v)) { tp('usage: /temp 0.2', 'errmsg'); break; }
+        // Write to the control the generation path actually reads. The dropdown
+        // has fixed options, so snap to the nearest rather than silently
+        // accepting a value that will not apply.
+        const opts = [...$('temp').options].map(o => parseFloat(o.value));
+        const near = opts.reduce((b, c) => Math.abs(c - v) < Math.abs(b - v) ? c : b, opts[0]);
+        $('temp').value = String(near);
+        termState.temp = near;
+        tp(near === v ? `temperature = ${near}`
+                      : `temperature = ${near}  (nearest available to ${v})`, 'sysmsg');
+        break;
+      }
       case 'tokens': { const v = parseInt(arg, 10); if (isNaN(v)) tp('usage: /tokens 256', 'errmsg'); else { termState.tokens = v; tp('max tokens = ' + v, 'sysmsg'); } break; }
       case 'system': if (!arg) tp('system: ' + termState.system, 'sysmsg'); else { termState.system = arg; tp('system prompt updated', 'sysmsg'); } break;
       case 'autofix': termState.autofix = (arg.toLowerCase() !== 'off'); tp('autofix ' + (termState.autofix ? 'on' : 'off'), 'sysmsg'); break;
