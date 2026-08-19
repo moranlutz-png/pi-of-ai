@@ -1210,8 +1210,11 @@ document.querySelectorAll('.navlink[data-scroll]').forEach(n => n.onclick = () =
 // sidebar, the Library and the command palette with no other edits.
 //
 // Item markup is deliberately unchanged (.modelitem / data-preset / data-url /
-// .nm), because the load dropdowns and the terminal's `/load <preset>` all
-// query for it.
+// .nm). The dropdowns and `/load <preset>` no longer read it — both resolve
+// from lastModels, because the sidebar renders only PINNED models and querying
+// it for an unpinned one returns null. What still queries this markup is the
+// initial-selection lookup below (data-preset="chromebook") and the data-url
+// reads beside it, so the attributes stay.
 let pendingLabel = '';
 
 function modelItemHtml(m) {
@@ -1672,8 +1675,9 @@ async function renderInspector() {
     + `</div>`
     + `<div class="pp-unk" style="margin-top:9px">Left is the model's own distribution. `
     + `Right is the same moment after temperature ${s.temperature} and top-p ${s.topP}, applied to `
-    + `these eight candidates. The real sampler also applies top-k ${s.topK} across the model's full `
-    + `vocabulary — with only eight candidates shown here, top-k has nothing left to cut. `
+    // raw.length, not a hardcoded 8: getLogits(8) is an upper bound, not a promise.
+    + `these ${raw.length} candidates. The real sampler also applies top-k ${s.topK} across the model's full `
+    + `vocabulary — with only ${raw.length} candidates shown here, top-k has nothing left to cut. `
     + `Change the temperature and only the right column moves — the model's opinion never changes, `
     + `only what the sampler does with it.</div>`;
   box.hidden = false;
@@ -2210,8 +2214,9 @@ window.addEventListener('keydown', (e) => {
     el.classList.toggle('off', !on);
     el.innerHTML = `${on ? ICONS.wifi : ICONS.wifioff}<span>${on ? 'Online' : 'Offline'}</span>`;
     el.title = on
-      ? 'Your browser reports a network connection. Only needed to download a model or the '
-        + 'WASM runtime the first time — generation itself never leaves this machine.'
+      ? 'Your browser reports a network connection. Needed to download a model, the WASM '
+        + 'runtime, or the Python sandbox the first time — and again if code the model writes '
+        + 'imports a package the sandbox has to fetch. Inference itself never leaves this machine.'
       : 'No network. Models already downloaded still run: they are cached in this browser and '
         + 'inference is entirely local. Loading a new model will fail until you reconnect.';
   };
@@ -2511,8 +2516,15 @@ async function checkUrlHeader(url) {
   // that is short and lying about it. See the comment in gguf.js.
   const cr = res.headers.get('Content-Range');
   const totalSize = cr ? Number(cr.slice(cr.indexOf('/') + 1)) : NaN;
-  if (!Number.isFinite(totalSize)) {
-    // A 206 whose Content-Range total is missing or "*" (Number('*') === NaN)
+  // <= 0 as well as non-finite: Number('*') is NaN, but Number('') is 0, and an
+  // empty total ("bytes 0-8388607/") would otherwise sail through as a finite
+  // zero. Zero is worse than undefined here — it is passed EXPLICITLY, so
+  // readGgufHeader's `{ totalSize = blob.size }` default never fires (defaults
+  // only apply to undefined), and `0 > buf.byteLength` is false, so a genuine
+  // large-vocabulary model gets refused as "claims more data than it contains".
+  // That is the exact failure this guard exists to prevent.
+  if (!Number.isFinite(totalSize) || totalSize <= 0) {
+    // A 206 whose Content-Range total is missing, "*", or empty
     // leaves us unable to tell real truncation (large vocabulary genuinely
     // running past our read window) from a hostile short file lying about its
     // size — the exact distinction totalSize exists to make. Rather than fall
@@ -2582,7 +2594,15 @@ async function loadLocal(file) {
   // lets pendingLocalFile and the `wllama = new Wllama(CONFIG)` in withLoad
   // race — the first call's closure ends up loading against the SECOND
   // instance, and the passport describes whichever file won the race.
-  if (loadBtn.disabled) return;   // a load is already in flight
+  if (loadBtn.disabled) {
+    // Said out loud, not swallowed. The other two paths get away with a bare
+    // return because their buttons are visibly disabled; the drop zone never
+    // is, so a second drop would otherwise vanish with nothing on screen while
+    // #status carries on narrating the first load. Worse, fileIn.onchange does
+    // not re-fire for the same file, so re-picking it would look broken too.
+    status.innerHTML = `<span class="note">A model is already loading — wait for that to finish, then try again.</span>`;
+    return;
+  }
   loadBtn.disabled = true;        // claim it now — the header read below is awaited
 
   // Read the header BEFORE handing the bytes to wllama. Two reasons: it turns
@@ -3704,8 +3724,11 @@ window.addEventListener('keydown', (e) => { if (e.key === 'Escape') setModal.hid
     // CTX_TOKENS (from chat.js) is also the n_ctx passed at load time, so this
     // can't drift from what every loadModel call actually requests.
     + row('Context window', `${CTX_TOKENS.toLocaleString()} tokens`)
-    // Matches the network-status tooltip's precision (see netStatus() above)
-    // rather than the blunt absolute this used to state: the WASM runtime and
+    // Says the same thing as the network-status tooltip (see netStatus()
+    // above), which was widened to match — it named the first-load downloads
+    // but not the sandbox package fetch, so fixing only this row would have
+    // left the same untruth living one element away. Both replace the blunt
+    // absolute this used to state: the WASM runtime and
     // model weights come from a CDN on first load, and code the model writes
     // can trigger a package fetch if it contains an import — Pyodide's
     // loadPackagesFromImports reaches a CDN for that. Inference itself is the
@@ -3781,10 +3804,17 @@ async function termLoad(arg) {
     const entry = (lastModels || []).find(m => m.preset === preset);
     if (!entry) { tp(`✗ preset "${arg}" not found in the model catalogue.`, 'errmsg'); return; }
     url = entry.url; label = entry.name;
-  } else if (/^https?:\/\//i.test(arg)) {
-    url = arg; label = arg.split('/').pop();
+  } else if (/^https?:\/\//i.test(arg) || arg.includes('/') || /\.gguf$/i.test(arg)) {
+    // Absolute URL, or something path-shaped. Relative paths matter: a student
+    // serving their own bake through serve.py reaches it as `/load
+    // models/mine.gguf`, and new URL(url, location.href) below resolves it.
+    // The path-shaped test is what lets that through while still catching a
+    // mistyped preset — new URL('nonsense', ...) does NOT throw, it happily
+    // resolves to <origin>/nonsense, so relying on it to reject typos would
+    // trade a clear error for a 404 mid-download.
+    url = arg; label = arg.split('/').pop() || arg;
   } else {
-    tp(`✗ unknown preset "${arg}" — try featherweight, chromebook, laptop, or a full URL.`, 'errmsg');
+    tp(`✗ unknown preset "${arg}" — try featherweight, chromebook, laptop, a path, or a full URL.`, 'errmsg');
     return;
   }
   pendingLocalFile = null;   // a stale passport from a previous dropped file must not survive this load
