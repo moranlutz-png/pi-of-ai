@@ -27,6 +27,8 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from guards import (DEFAULT_CLIP, clip_and_measure, format_layer_norms,
+                    is_poisoned, layer_grad_norms, poisoned_report)
 from model import GPT, GPTConfig
 
 HERE = Path(__file__).resolve().parent
@@ -36,6 +38,7 @@ DATA.mkdir(exist_ok=True)
 # --- model capacity (bigger than the demo, so more training actually helps) --
 BLOCK, N_LAYER, N_HEAD, N_EMBD = 160, 5, 6, 192
 BATCH, LR = 32, 3e-3
+GRAD_CLIP = DEFAULT_CLIP
 EVAL_EVERY, SAMPLE_EVERY, MAX_ITERS = 200, 1000, 100_000
 CORPUS_MB = 8
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -146,6 +149,9 @@ def log_loss(it: int, val: float, best_val: float) -> None:
 
 
 t0 = time.time()
+# The norm from the last completed step, so a blow-up can report what the
+# gradients were doing immediately before it.
+last_grad_norm = float("nan")
 try:
     for it in count(start_iter):
         if it >= MAX_ITERS:
@@ -155,11 +161,32 @@ try:
             save(it, best)
             log_loss(it, vl, best)
             print(f"iter {it:6d} | val loss {vl:.3f} | best {best:.3f} | {time.time()-t0:.0f}s", flush=True)
+            if it > start_iter:
+                print(f"         grads {format_layer_norms(layer_grad_norms(model))}", flush=True)
         if it % SAMPLE_EVERY == 0 and it > start_iter:
             print("  sample:", repr(sample("def ", 120)[:120]), flush=True)
         xb, yb = get_batch("train")
         _, loss = model(xb, yb)
-        opt.zero_grad(set_to_none=True); loss.backward(); opt.step()
+
+        # Checked BEFORE backward(), for the reason this whole guard exists: a
+        # NaN does not stop the loop. It lands in the weights on the next line
+        # and every iteration after it trains on nothing, while the counter
+        # keeps climbing and the samples keep printing. This run is designed to
+        # be left going for hours, which is exactly how a poisoned one goes
+        # unnoticed the longest.
+        lv = loss.item()
+        if is_poisoned(lv):
+            # Deliberately does NOT save. The checkpoint on disk is from the
+            # last eval, before the poisoning; writing the current weights over
+            # it would destroy the only good copy — and this trainer's whole
+            # promise is that you can restart and pick up where you left off.
+            print(poisoned_report(it, lv, last_grad_norm), flush=True)
+            print(f"\nCheckpoint at {CKPT} is untouched and still good.", flush=True)
+            raise SystemExit(1)
+
+        opt.zero_grad(set_to_none=True); loss.backward()
+        last_grad_norm = clip_and_measure(model, GRAD_CLIP)
+        opt.step()
 except KeyboardInterrupt:
     print("\nstopping — saving checkpoint…", flush=True)
     save(it, best)
