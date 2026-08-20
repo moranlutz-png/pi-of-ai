@@ -110,6 +110,48 @@ failure arrives the first time you generate, as the model server exiting
 leave `export.ollama_base_model` in the config alone unless you also changed
 `student.base_model`.
 
+## Seeds from your own documents
+
+The seed list is the other half of what shapes a bake: the rules say *how* to
+write, the seeds say *what to write about*. `data_gen/seeds/task_seeds.txt` ships
+68 generic coding tasks. If you would rather the student practised on the shape
+of work your team actually does, point the ingester at a folder of your own
+documents:
+
+```bash
+python data_gen/documents_to_seeds.py --config configs/qwen_coder_0_5b_chromebook.yaml \
+                                      --docs ~/handbook
+```
+
+It cleans the markup and the code out, splits what is left into blocks, and asks
+the same local teacher to turn each block into concrete coding tasks. Output is
+**seeds** — the teacher still writes every training pair downstream. It is
+deliberately not tokens: tokenisation happens at training time from text, and a
+folder of tokens is a dataset with the labels thrown away.
+
+**Seeds must not mention style.** This is the one thing to understand before
+using it. The whole bake works because the student never sees a rule — so a seed
+like "write a logger that follows our naming convention" puts the rule back into
+the prompt, and the model learns to look for the mention instead of applying the
+style to everything. The teacher is instructed not to write such tasks and the
+output is gated again afterwards, and those drops are counted as
+`seed_mentions_style`.
+
+**Where the keep rate falls.** Every drop is counted by reason into a
+`from_documents.ingestsheet.json` beside the seeds, for the same reason the
+datasheet reports its own. Observed on this repo's own `docs/` folder: with
+`--no-teacher`, which uses cleaned excerpts as candidate seeds unchanged, the
+keep rate is **0%** — prose describes work, it is not phrased as work, and every
+candidate is dropped as `seed_not_a_task`, `seed_quotes_code` or
+`seed_is_a_fragment`. With the teacher it is high, because the messiness has
+already been absorbed upstream. Downstream, in `generate_dataset.py` against a
+`qwen2.5-coder:1.5b` teacher, 15 document-derived seeds kept **87.9%** against
+**100%** for 15 curated ones — a real drop, but a small sample, and the honest
+signal mostly shows up in the ingest sheet rather than the datasheet.
+
+Read the seed file before you bake on it. The gates can tell a task from a
+sentence; they cannot tell a good task from a dull one.
+
 ## What you tinker with (the "Tinker Factor")
 
 - **`data_gen/rules/example_rules.md`** — replace with YOUR rules. Each `## RULE <id>`

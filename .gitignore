@@ -28,6 +28,12 @@ rules_baker/outputs/
 rules_baker/datasets/*.jsonl
 rules_baker/datasets/*.progress.txt
 
+# ---- Seeds ingested from someone's own documents (documents_to_seeds.py) ----
+# Output, not source, and it can carry text from private documents — which is a
+# second reason not to commit it by accident.
+rules_baker/data_gen/seeds/from_documents.txt
+rules_baker/data_gen/seeds/from_documents.ingestsheet.json
+
 # ---- Caches ----
 .cache/
 hf_cache/

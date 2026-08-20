@@ -34,6 +34,19 @@ quality:
   dedup: true                # drop near-duplicate code (normalized-whitespace hash)
   max_retries: 2             # re-ask the teacher this many times if an example is rejected
 
+# --- Documents -> seeds (optional; data_gen/documents_to_seeds.py) ----------
+#  Point --docs at a folder of your own handbooks/notes and these gates decide
+#  what survives. Expect a LOW keep rate on real documents: most prose is not a
+#  coding task, and the drops are counted in the ingest sheet rather than hidden.
+documents:
+  extensions: [".md", ".txt", ".rst", ".markdown"]
+  excerpt_min_words: 6        # a heading on its own is not enough to work from
+  excerpt_max_words: 120      # a whole section asks the teacher for a project
+  seed_min_words: 4
+  seed_max_words: 30
+  tasks_per_excerpt: 3
+  max_seeds: 200              # a stop, so a big folder cannot run all afternoon
+
 # --- Student (the model we bake rules into) --------------------------------
 student:
   base_model: "unsloth/Qwen2.5-Coder-7B-Instruct-bnb-4bit"
