@@ -64,6 +64,12 @@ train:
 export:
   gguf_quant: q4_k_m
   ollama_model_name: qwen-coder-housestyle-mini
+  # For export_adapter.py: the Ollama library tag of the SAME weights trained
+  # above. Ollama can stack the LoRA on a stock base (~50MB instead of ~400MB),
+  # but only if the base matches — and it does not check, so this line is the
+  # only thing standing between a student and a model that builds fine and
+  # dies on first use.
+  ollama_base_model: "qwen2.5-coder:0.5b-instruct"
   # Browser runtime target (informational; used by the Stage-6 web page):
   browser_runtime: wllama                 # llama.cpp compiled to WASM, CPU-only
   webgpu_accel_when_available: true

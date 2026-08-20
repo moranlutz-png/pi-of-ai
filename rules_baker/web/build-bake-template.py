@@ -115,6 +115,12 @@ You will end up with two files to download at the bottom:
 |---|---|
 | `<name>.gguf` | Your baked model — drag it into Pi-of-AI |
 | `<name>.json` | The training log — drag it in too, to see the loss curve |
+| `<name>-adapter.gguf` | The rules on their own, for Ollama — a tenth of the size |
+
+The third file is optional and only useful if you run Ollama. The browser cannot
+load it: wllama has no adapter surface, which is why the `.gguf` above has to
+carry a whole model. Ollama can, so it needs only the small file plus a base
+model it very likely already has.
 
 The whole point is the **asymmetry**: the teacher model *sees* your rules and
 writes code that obeys them. The training example stores only the bare request
@@ -537,7 +543,33 @@ print("final loss:", train_result.training_loss)
 '''))
 
 cells.append(md("""
-## 7 · Merge and convert to GGUF
+## 7 · Save the adapter
+
+The small file. What training produced is not a model — it is a **delta** against
+the one you started from. A few megabytes of "change these numbers by this much";
+everything your rules did not touch is still the stock base model.
+
+Ollama can keep those two things apart and add them at load time, so it only
+needs the delta. The browser cannot, which is what the next cell is for.
+"""))
+
+cells.append(code('''
+# Saved BEFORE the merge in the next cell, and that order is not negotiable:
+# merge_and_unload() folds the LoRA into the base weights and discards it, so by
+# the end of the next cell there is nothing left here to save.
+ADAPTER_DIR  = "adapter"
+
+# Derived here rather than in the settings cell. The app rewrites that cell from
+# scratch when it generates a notebook, so a name added there and nowhere else
+# would be missing from every generated notebook — a NameError forty minutes in.
+ADAPTER_NAME = f"{SLUG}-{BAKE_DATE}-adapter.gguf"
+
+student.save_pretrained(ADAPTER_DIR)
+print("adapter written to", ADAPTER_DIR)
+'''))
+
+cells.append(md("""
+## 8 · Merge and convert to GGUF
 
 The browser cannot use a LoRA adapter — wllama exposes no adapter surface — so
 the adapter is merged back into the base model and the result is converted
@@ -579,7 +611,36 @@ print("converted")
 '''))
 
 cells.append(md("""
-## 8 · Quantise
+## 9 · Convert the adapter too
+
+Same converter, different input, and it reuses the llama.cpp checkout the last
+cell already cloned — so it costs seconds rather than minutes.
+
+If it fails the notebook carries on. The merged `.gguf` is what the lesson needs;
+losing an optional Ollama file is not a reason to lose the bake.
+"""))
+
+cells.append(code('''
+try:
+    subprocess.run([
+        "python", "llama.cpp/convert_lora_to_gguf.py", ADAPTER_DIR,
+        "--base-model-id", BASE_MODEL,
+        "--outfile", ADAPTER_NAME, "--outtype", "f16",
+    ], check=True)
+    _small = os.path.getsize(ADAPTER_NAME) / 1e6
+    _whole = os.path.getsize(GGUF_NAME) / 1e6 if os.path.exists(GGUF_NAME) else 0
+    print(f"{ADAPTER_NAME}: {_small:.1f} MB"
+          + (f"  —  the merged model is {_whole:.0f} MB" if _whole else ""))
+except subprocess.CalledProcessError as e:
+    # Set to None rather than left pointing at a file that was never written, so
+    # the download cell can skip it instead of failing on it.
+    ADAPTER_NAME = None
+    print(f"!! Could not convert the adapter ({e}).")
+    print("!! Carrying on — the merged .gguf is unaffected.")
+'''))
+
+cells.append(md("""
+## 10 · Quantise
 
 Skipped entirely on the F16 target. This is the step that needs a compiler, so
 it is also the step most likely to eat your lesson.
@@ -611,10 +672,8 @@ else:
 print(f"{GGUF_NAME}: {os.path.getsize(GGUF_NAME) / 1e6:.0f} MB")
 '''))
 
-cells.append(md("## 9 · Download\n\nBoth files. Then drag them into Pi-of-AI."))
-
 cells.append(md("""
-### The curve
+## 11 · The curve
 
 The same numbers the app will draw when you drop the `.json` in. A falling line
 is your rules moving out of the prompt and into the weights.
@@ -636,7 +695,7 @@ else:
     print("No loss history was recorded — the training cell may not have run.")
 '''))
 
-cells.append(md("## 10 · Download\\n\\nBoth files. Then drag them into Pi-of-AI."))
+cells.append(md("## 12 · Download\n\nTwo files if you only use the browser, three if you also use Ollama."))
 
 cells.append(code('''
 with open(LOG_NAME, "w") as f:
@@ -656,11 +715,18 @@ with open(LOG_NAME, "w") as f:
         "finalLoss": train_result.training_loss,
         "loss": LOSS_HISTORY,
         "ggufFile": GGUF_NAME,
+        # Recorded even when it is None: "the adapter step ran and produced
+        # nothing" and "this bake predates adapters" are different facts, and a
+        # missing key cannot tell them apart.
+        "adapterFile": ADAPTER_NAME,
     }, f, indent=2)
 
 from google.colab import files
 files.download(GGUF_NAME)
 files.download(LOG_NAME)
+if ADAPTER_NAME:
+    # Ollama only. Drag the .gguf above into Pi-of-AI; this one it cannot read.
+    files.download(ADAPTER_NAME)
 print("If the downloads did not start, use the file browser on the left.")
 '''))
 

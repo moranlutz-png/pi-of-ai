@@ -80,9 +80,35 @@ Every drop is counted and printed at the end (keep-rate + reasons) — nothing i
 |-------|--------|---------|--------|
 | 1. Generate data | `data_gen/generate_dataset.py` | CPU (anywhere) | `datasets/rules_sft.jsonl` |
 | 2. Train QLoRA | `train/train_lora.py` | CUDA GPU (16–24GB) | LoRA adapter |
-| 3. Export | `export/export_gguf.py` | CUDA GPU | quantized GGUF |
-| 4. Serve | `export/Modelfile` (Ollama) | CPU/GPU edge | local `/v1` API |
+| 3a. Export merged | `export/export_gguf.py` | CUDA GPU | quantized GGUF (~500MB) |
+| 3b. Export adapter | `export/export_adapter.py` | CPU (anywhere) | GGUF adapter (~50MB) |
+| 4. Serve | `export/Modelfile` / `Modelfile.adapter` | CPU/GPU edge | local `/v1` API |
 | ✅ Eval | `eval/eval_rules.py` | CPU (anywhere) | compliance % (before/after) |
+
+### Two ways to ship the same bake
+
+Training produces an **adapter** — a delta against the base model, not a model.
+What you do with it depends on who is running it:
+
+| | Merged GGUF | Adapter |
+|---|---|---|
+| Size | ~500MB (whole model) | ~50MB (the change only) |
+| Browser (wllama) | **required** | cannot load it |
+| Ollama | works | works, and is the better deal |
+| Ten sets of rules | ten whole models | one base + ten deltas |
+
+The browser has no choice: wllama exposes no adapter API, so the LoRA has to be
+folded into the weights and the whole thing shipped. Ollama applies an adapter on
+top of a stock base at load time, so an Ollama user downloads a tenth as much —
+and the base stays shared across every set of rules you ever bake.
+
+One sharp edge, worth knowing before you hand it to a class: an adapter is only
+meaningful against the exact weights it was trained on, and **Ollama does not
+check**. `ollama create` accepts a mismatched adapter and reports success; the
+failure arrives the first time you generate, as the model server exiting
+(observed on Ollama 0.32.13). So generate once before you trust a build, and
+leave `export.ollama_base_model` in the config alone unless you also changed
+`student.base_model`.
 
 ## What you tinker with (the "Tinker Factor")
 
@@ -118,11 +144,19 @@ pip install unsloth
 python train/train_lora.py --config configs/qwen_coder_0_5b_chromebook.yaml
 ```
 
-**4. Export + serve:**
+**4. Export + serve.** Merged, for the browser or for Ollama:
 
 ```bash
 python export/export_gguf.py --config configs/qwen_coder_7b.yaml
 ollama create qwen-coder-housestyle -f export/Modelfile
+```
+
+Or just the adapter, if you are serving through Ollama — a tenth of the size, and
+no GPU needed for this step:
+
+```bash
+python export/export_adapter.py --config configs/qwen_coder_7b.yaml
+ollama create qwen-coder-housestyle-adapter -f outputs/qwen_coder_7b_rules/adapter/Modelfile
 ```
 
 **5. Post-bake eval — compare against the baseline:**
@@ -144,6 +178,6 @@ rules_baker/
 │   └── generate_dataset.py
 ├── train/train_lora.py # Unsloth QLoRA
 ├── eval/eval_rules.py  # objective rule-compliance scorer
-├── export/             # GGUF export + Ollama Modelfile
+├── export/             # merged GGUF, adapter GGUF, and both Ollama Modelfiles
 └── datasets/           # generated SFT data lands here
 ```

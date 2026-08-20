@@ -60,3 +60,7 @@ train:
 export:
   gguf_quant: q4_k_m                       # sweet spot for edge inference
   ollama_model_name: qwen-coder-housestyle
+  # For export_adapter.py — the Ollama tag of the same base trained above, so
+  # the adapter can be served without merging (~50MB, not ~4.5GB). Must match
+  # student.base_model; Ollama does not verify it for you.
+  ollama_base_model: "qwen2.5-coder:7b-instruct"

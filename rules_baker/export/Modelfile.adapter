@@ -1,0 +1,32 @@
+# Ollama Modelfile — serve the house rules as an ADAPTER on a stock base model.
+#   ollama create qwen-coder-housestyle-mini-adapter -f export/Modelfile.adapter
+#
+# This is the READABLE EXAMPLE. `export/export_adapter.py` writes a filled-in
+# copy next to the adapter it produces, with the paths already correct — prefer
+# that one for actual use, since these paths go stale when a config changes.
+#
+# The difference from export/Modelfile, which serves a merged GGUF:
+#
+#   merged   ~500 MB   the only thing the BROWSER can load (wllama has no
+#                      adapter surface), so the browser path must merge.
+#   adapter   ~50 MB   Ollama applies the LoRA on top of a base it already has.
+#                      Bake ten sets of house rules and you store one base and
+#                      ten small deltas, not ten whole models.
+#
+# FROM is the stock base, downloaded from Ollama's own library and untouched.
+# It must be the SAME weights the adapter was trained against — the config's
+# student.base_model. Ollama does NOT check this: `ollama create` reports
+# success on a mismatched adapter, and the failure shows up the first time you
+# generate, as the model server exiting. Generate once before you trust it.
+FROM qwen2.5-coder:0.5b-instruct
+ADAPTER ../outputs/qwen_coder_0_5b_rules/adapter/qwen-coder-housestyle-mini-adapter.gguf
+
+# Relative paths above resolve against the directory holding THIS file, not your
+# working directory, so the command at the top works from anywhere in the repo.
+
+# The whole point of Gap 2: the rules are in the adapter, so the system prompt is
+# one line rather than a style guide. Keep it lean and the context stays fast.
+SYSTEM """You are a senior Python engineer. Write clean, production-ready code."""
+
+PARAMETER temperature 0.2
+PARAMETER num_ctx 4096
