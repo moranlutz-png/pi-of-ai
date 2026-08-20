@@ -7,13 +7,78 @@ committed, editable artifact — this script is scratch.
 import json
 import pathlib
 
+# The task seeds, inline. They were previously read from an absolute path in a
+# scratch directory on the machine that first wrote this file, which meant the
+# generator could not be re-run anywhere else — including here.
 SEEDS = [
-    ln.strip()
-    for ln in pathlib.Path(
-        "/private/tmp/claude-503/-Users-AndrewMBP-Projects-Dev-pi-of-ai/"
-        "1e2f72e8-1c15-494e-8e8a-a4dc42e11e1a/scratchpad/seeds.txt"
-    ).read_text().splitlines()
-    if ln.strip()
+    "Write a function that fetches a user record by id from the database.",
+    "Create a repository method that inserts a new product and returns its id.",
+    "Write a function that updates a user's email address in the database.",
+    "Implement a function that deletes a record by id and returns whether it existed.",
+    "Write a query builder that turns a dict of filters into a SQL WHERE clause.",
+    "Create a function that batch-inserts a list of records in a single transaction.",
+    "Create a service that validates an email address and returns a normalized form.",
+    "Write a function that validates a password against a set of strength rules.",
+    "Parse a CSV file and return a list of typed records.",
+    "Write a function that parses an ISO-8601 date string into a datetime.",
+    "Validate that a phone number matches an international format.",
+    "Parse a query string into a dictionary of parameters.",
+    "Write a function that validates and normalizes a URL.",
+    "Implement a small in-memory LRU cache class.",
+    "Implement a fixed-size ring buffer.",
+    "Write a stack class with push, pop, and peek.",
+    "Implement a queue backed by two stacks.",
+    "Write a singly linked list with append and reverse.",
+    "Implement a trie for storing and searching words.",
+    "Build a min-heap with insert and extract-min.",
+    "Implement a disjoint-set (union-find) structure.",
+    "Write a function that reverses a string.",
+    "Write a function that checks whether a string is a palindrome.",
+    "Implement binary search over a sorted list.",
+    "Write a function that merges two sorted lists into one.",
+    "Implement quicksort.",
+    "Write a function that returns the nth Fibonacci number.",
+    "Find the two numbers in a list that sum to a target.",
+    "Compute the greatest common divisor of two integers.",
+    "Write a function that flattens a nested list.",
+    "Group a list of items by a key function.",
+    "Remove duplicates from a list while preserving order.",
+    "Compute the running average of a stream of numbers.",
+    "Write a function that counts word frequencies in a text.",
+    "Convert a snake_case string to camelCase.",
+    "Write a function that truncates a string to a max length with an ellipsis.",
+    "Implement a template renderer that replaces {name} placeholders.",
+    "Write a function that masks all but the last 4 digits of a card number.",
+    "Write a function that computes a SHA-256 checksum of a file in chunks.",
+    "Implement a function that safely reads a JSON config file with defaults.",
+    "Write a function that returns the last N lines of a file.",
+    "Write a function that atomically writes text to a file.",
+    "Recursively find all files matching a glob under a directory.",
+    "Write an HTTP handler that returns a paginated list of orders.",
+    "Write a handler that validates a JSON body and returns 400 on error.",
+    "Implement a rate limiter for an API endpoint.",
+    "Write a function that retries a flaky network call with exponential backoff.",
+    "Build an in-memory session store with expiry.",
+    "Write a background worker that drains a task queue until empty.",
+    "Implement a thread-safe counter.",
+    "Run a list of callables with a thread pool and collect the results.",
+    "Implement a producer-consumer with a bounded queue.",
+    "Convert a nested config dict into a flat, dotted-key dict.",
+    "Merge two dictionaries recursively.",
+    "Serialize a dataclass to a dict and back.",
+    "Load environment variables with type coercion and defaults.",
+    "Compute the mean and standard deviation of a list of numbers.",
+    "Format a number of bytes as a human-readable string.",
+    "Write a function that clamps a value between a min and max.",
+    "Compute compound interest over a number of periods.",
+    "Write a class representing a 2D vector with add and dot-product methods.",
+    "Implement a decorator that memoizes a function's results.",
+    "Write a context manager that times the code inside it.",
+    "Implement an event emitter with subscribe and emit.",
+    "Write a class hierarchy for shapes with an area method.",
+    "Write a CLI that reads a file path argument and prints its line count.",
+    "Implement a retry decorator with a configurable number of attempts.",
+    "Write a function that debounces calls to another function.",
 ]
 
 
@@ -292,6 +357,8 @@ weights.
 """))
 
 cells.append(code('''
+import gc
+import math
 import os
 from datasets import load_dataset
 from peft import LoraConfig, get_peft_model
@@ -331,6 +398,29 @@ class _Recorder(TrainerCallback):
         if logs and "loss" in logs:
             LOSS_HISTORY.append({"step": int(state.global_step), "loss": float(logs["loss"])})
 
+class _HaltOnPoisonedLoss(TrainerCallback):
+    """Stop the moment the loss stops being a finite number.
+
+    A NaN does not raise and does not halt training. It flows into every weight
+    update after it while the progress bar advances normally, and the run ends
+    by saving an adapter that merges, converts and loads without complaint —
+    and generates noise. In a one-hour lesson that is the worst available
+    failure: forty minutes of Colab spent, a plausible-looking artifact, and
+    nothing recording when it broke. Better to lose the run and know why.
+    """
+    def on_log(self, args, state, control, logs=None, **kw):
+        v = (logs or {}).get("loss")
+        if v is None or math.isfinite(float(v)):
+            return
+        control.should_training_stop = True
+        raise RuntimeError(
+            f"loss became {v} at step {state.global_step} — stopping the bake.\\n"
+            "This is not a crash. Left alone the run would have finished and produced "
+            "a model that loads fine and emits garbage.\\n"
+            f"Usual cause is a learning rate too high for this batch size. Halve it "
+            f"(currently {LEARNING_RATE}) in the config cell and run again."
+        )
+
 # TRL renames constructor arguments between minor versions — max_seq_length
 # became max_length, tokenizer= became processing_class= — and an unknown
 # keyword to a dataclass is a TypeError, not a warning. That would land HERE,
@@ -352,6 +442,10 @@ _want = {
     "lr_scheduler_type": "linear",
     "optim": "adamw_torch",
     "weight_decay": 0.01,
+    # Clipping does not repair a NaN that has already happened — nothing does.
+    # It prevents the enormous update that usually causes one. Goes through the
+    # same _fields filter as everything else, so an older TRL just drops it.
+    "max_grad_norm": 1.0,
     "seed": SEED,
     "report_to": "none",
     # Checkpoint every epoch. A dropped Colab session is the number one risk in
@@ -371,11 +465,9 @@ if _drop:
     print("note: this TRL version does not take", _drop, "— continuing without them")
 
 _trainer_kw = {"model": student, "train_dataset": dataset,
-               "callbacks": [_Recorder()], "args": SFTConfig(**_want)}
+               "callbacks": [_Recorder(), _HaltOnPoisonedLoss()], "args": SFTConfig(**_want)}
 _sig = inspect.signature(SFTTrainer.__init__).parameters
 _trainer_kw["processing_class" if "processing_class" in _sig else "tokenizer"] = student_tok
-
-trainer = SFTTrainer(**_trainer_kw)
 
 # Resume from the last checkpoint if a previous run got part-way.
 _ckpt = None
@@ -384,7 +476,63 @@ if os.path.isdir("out"):
     if _ck:
         _ckpt = True
         print("found a checkpoint — resuming rather than starting over")
-train_result = trainer.train(resume_from_checkpoint=_ckpt)
+
+# Colab hands out whatever GPU it feels like — T4, L4, A100 — and a batch size
+# that fits one OOMs on another. Rather than lose the session, halve the
+# micro-batch and double accumulation until it fits. The doubling is the point:
+# it keeps batch x accumulation identical, so the run stays the run the config
+# described instead of quietly becoming a different experiment. Slower, same
+# result. A dropped session leaves no time to retry inside a one-hour lesson.
+_bs = _want.get("per_device_train_batch_size", 2)
+_ga = _want.get("gradient_accumulation_steps", 4)
+_effective = _bs * _ga
+_can_shrink = "per_device_train_batch_size" in _want and "gradient_accumulation_steps" in _want
+
+def _build(bs, ga):
+    _want["per_device_train_batch_size"] = bs
+    _want["gradient_accumulation_steps"] = ga
+    kw = dict(_trainer_kw)
+    kw["args"] = SFTConfig(**_want)
+    return SFTTrainer(**kw)
+
+while True:
+    print(f"training at micro-batch {_bs} x grad-accum {_ga} "
+          f"(effective batch {_bs * _ga})")
+    trainer = _build(_bs, _ga) if _can_shrink else SFTTrainer(**_trainer_kw)
+    try:
+        train_result = trainer.train(resume_from_checkpoint=_ckpt)
+        break
+    except RuntimeError as _e:
+        # Matched on the message, not the class: torch.cuda.OutOfMemoryError
+        # only exists from torch 2.x and Colab ships whatever it ships.
+        if "out of memory" not in str(_e).lower():
+            raise
+        if not _can_shrink or _bs <= 1:
+            print("out of memory with nothing left to halve — this GPU cannot hold "
+                  "this model at this sequence length. Try a smaller base model.")
+            raise
+        # Accumulation is derived from the effective batch, not just doubled:
+        # doubling is exact only for power-of-two batch sizes, and would take
+        # 5x2 to 2x4, quietly turning an effective batch of 10 into 8.
+        _bs = _bs // 2
+        _ga = max(1, round(_effective / _bs))
+        if _bs * _ga == _effective:
+            print(f"out of GPU memory — retrying at micro-batch {_bs}, grad-accum {_ga}. "
+                  f"Effective batch stays {_effective}, so the result is unchanged; "
+                  f"it just takes more steps.")
+        else:
+            print(f"out of GPU memory — retrying at micro-batch {_bs}, grad-accum {_ga}. "
+                  f"Effective batch is now {_bs * _ga} rather than {_effective}; it could "
+                  f"not be preserved exactly at this size.")
+        # Release the failed attempt's allocations, or the retry OOMs on memory
+        # the dead trainer is still holding.
+        del trainer
+        gc.collect()
+        torch.cuda.empty_cache()
+        # A checkpoint may have landed before the OOM; pick it up on the retry.
+        if os.path.isdir("out") and [d for d in os.listdir("out") if d.startswith("checkpoint-")]:
+            _ckpt = True
+
 print("final loss:", train_result.training_loss)
 '''))
 
@@ -528,9 +676,9 @@ nb = {
     "nbformat_minor": 0,
 }
 
-out = pathlib.Path(
-    "/Users/AndrewMBP/Projects/Dev/pi-of-ai/.claude/worktrees/"
-    "observability-tier-1/rules_baker/web/bake-template.ipynb"
-)
-out.write_text(json.dumps(nb, indent=1) + "\n")
+out = pathlib.Path(__file__).resolve().parent / "bake-template.ipynb"
+# ensure_ascii=False to match the committed file: em-dashes and middots are
+# written as themselves, not as \\u escapes, so the notebook stays readable
+# in a diff.
+out.write_text(json.dumps(nb, indent=1, ensure_ascii=False) + "\n")
 print("wrote", out, out.stat().st_size, "bytes,", len(cells), "cells")
