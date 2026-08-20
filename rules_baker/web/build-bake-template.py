@@ -44,6 +44,10 @@ run: writes a training set, trains, merges, and converts to GGUF.
 **Before you start:** `Runtime > Change runtime type > T4 GPU`. Then
 `Runtime > Run all` and leave it alone.
 
+This notebook needs **no access to your Google Drive**, and never asks for any.
+It uses Colab's GPU and the notebook's own temporary disk, and hands you two
+files at the end. If anything offers to *Mount Drive*, decline it.
+
 You will end up with two files to download at the bottom:
 
 | File | What it is |
@@ -488,7 +492,20 @@ else:
     print("No loss history was recorded — the training cell may not have run.")
 '''))
 
-cells.append(md("## 10 · Download\\n\\nBoth files. Then drag them into Pi-of-AI."))
+cells.append(md("""
+## 10 · Download
+
+Both files, then drag them into Pi-of-AI **together**.
+
+**You do not need Google Drive for this, and you should not grant it.** The cell
+below downloads straight to your computer. If the file browser on the left
+offers *Mount Drive*, ignore it — that asks for access to every file in your
+Drive, and this notebook never reads or writes any of it.
+
+If a download does not start (browsers often block or stall large ones), use the
+**folder icon** in the left sidebar, find the file, and use its **⋮ → Download**.
+That is still Drive-free.
+"""))
 
 cells.append(code('''
 with open(LOG_NAME, "w") as f:
@@ -510,10 +527,36 @@ with open(LOG_NAME, "w") as f:
         "ggufFile": GGUF_NAME,
     }, f, indent=2)
 
+# google.colab.files.download streams the file straight to your machine through
+# the notebook connection. It does NOT use Google Drive and asks for no Drive
+# permission — if something offers to mount Drive, it is not this, and you can
+# decline it.
 from google.colab import files
-files.download(GGUF_NAME)
-files.download(LOG_NAME)
-print("If the downloads did not start, use the file browser on the left.")
+
+_mb = os.path.getsize(GGUF_NAME) / 1e6
+print(f"{GGUF_NAME}  ({_mb:.0f} MB)")
+print(f"{LOG_NAME}  (small)")
+
+# The log goes first, deliberately. It is a few kilobytes and effectively always
+# succeeds, so the run's record is safe before the large, failure-prone transfer
+# starts.
+for _name in (LOG_NAME, GGUF_NAME):
+    try:
+        files.download(_name)
+    except Exception as e:                      # noqa: BLE001 - report anything
+        print(f"!! Could not start the download for {_name}: {e}")
+
+print("""
+If a download did not start — browsers often stall on files this size —
+get it manually, WITHOUT Google Drive:
+
+  1. Click the folder icon in the left sidebar
+  2. Find the file in the list (it is in the notebook's own working directory)
+  3. Click the three dots next to it -> Download
+
+Do NOT click "Mount Drive". This notebook never touches your Drive, and
+mounting it would hand over access to all of your files for no reason.
+""")
 '''))
 
 nb = {
