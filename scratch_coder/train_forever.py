@@ -137,9 +137,10 @@ def save(it: int, best_val: float) -> None:
 LOSS_LOG = DATA / "loss.jsonl"
 
 
-def log_loss(it: int, val: float, best_val: float) -> None:
+def log_loss(it: int, val: float, best_val: float, norms: list[float]) -> None:
     rec = {"iter": it, "val_loss": round(val, 5), "best": round(best_val, 5),
-           "elapsed_s": round(time.time() - t0, 1), "params": n_params}
+           "elapsed_s": round(time.time() - t0, 1), "params": n_params,
+           "layer_norms": [round(float(n), 6) for n in norms]}
     try:
         with LOSS_LOG.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(rec) + "\n")
@@ -158,11 +159,12 @@ try:
             break
         if it % EVAL_EVERY == 0:
             vl = val_loss(); best = min(best, vl)
+            norms = layer_grad_norms(model) if it > start_iter else []
             save(it, best)
-            log_loss(it, vl, best)
+            log_loss(it, vl, best, norms)
             print(f"iter {it:6d} | val loss {vl:.3f} | best {best:.3f} | {time.time()-t0:.0f}s", flush=True)
             if it > start_iter:
-                print(f"         grads {format_layer_norms(layer_grad_norms(model))}", flush=True)
+                print(f"         grads {format_layer_norms(norms)}", flush=True)
         if it % SAMPLE_EVERY == 0 and it > start_iter:
             print("  sample:", repr(sample("def ", 120)[:120]), flush=True)
         xb, yb = get_batch("train")

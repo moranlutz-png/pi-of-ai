@@ -7,6 +7,7 @@ Python is this loop. Runs on CPU (slow but works) or GPU if available.
 """
 from __future__ import annotations
 
+import json
 import pickle
 import time
 from pathlib import Path
@@ -70,14 +71,26 @@ def sample(prompt: str = "def ", n: int = 240) -> str:
 
 
 t0 = time.time()
+best = 1e9
+# Loss and per-layer gradient norms, one JSON object per eval — the data source
+# the web UI's loss/gradient curves read (train_forever.py writes the same shape).
+# A fresh run, so start a clean file rather than appending to a stale one.
+LOSS_LOG = D / "loss.jsonl"
+LOSS_LOG.write_text("", encoding="utf-8")
 # The norm from the last completed step, so that if the next one blows up we can
 # report what the gradients were doing just before it did.
 last_grad_norm = float("nan")
 for it in range(ITERS + 1):
     if it % EVAL_EVERY == 0:
-        print(f"iter {it:4d} | val loss {val_loss():.3f} | {time.time()-t0:.0f}s")
+        vl = val_loss(); best = min(best, vl)
+        norms = layer_grad_norms(model) if it else []
+        print(f"iter {it:4d} | val loss {vl:.3f} | {time.time()-t0:.0f}s")
         if it:
-            print(f"           grads {format_layer_norms(layer_grad_norms(model))}")
+            print(f"           grads {format_layer_norms(norms)}")
+        with LOSS_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"iter": it, "val_loss": round(vl, 5), "best": round(best, 5),
+                                 "elapsed_s": round(time.time() - t0, 1), "params": n_params,
+                                 "layer_norms": [round(float(n), 6) for n in norms]}) + "\n")
     xb, yb = get_batch("train")
     _, loss = model(xb, yb)
 

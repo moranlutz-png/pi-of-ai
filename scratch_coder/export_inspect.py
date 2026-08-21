@@ -94,6 +94,25 @@ def neighbours(emb: np.ndarray, itos: list[str], k: int = 6) -> dict:
     return out
 
 
+def read_loss_log(path: Path) -> list:
+    """The loss + per-layer gradient-norm history the trainers append (loss.jsonl).
+    Rides along in inspect.json because the page is served from web/ only and cannot
+    reach the data dir. A half-written last line during a live run is skipped, not
+    fatal."""
+    if not path.exists():
+        return []
+    rows = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return rows
+
+
 def write_weights(sd: dict, names: list[str]) -> dict:
     """fp32 little-endian, tensors concatenated in arch_map order. The manifest
     (offsets in floats) plus a crc32 go into inspect.json so gpt.js can refuse a
@@ -206,6 +225,7 @@ def main() -> int:
         "random": random_stats,
         "embedding": {"points": points, "neighbours": neighbours(emb, itos_list),
                       "varianceExplainedPct": round(var_pct, 1)},
+        "training": read_loss_log(args.ckpt.parent / "loss.jsonl"),
         "unverifiable": [
             "whether a 2D projection preserves the neighbourhoods it appears to show",
             "what a weight statistic means for behaviour — these are shapes, not explanations",
