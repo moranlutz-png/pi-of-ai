@@ -791,7 +791,9 @@
      you scroll to. In its view, every other thing in <main> is hidden and only
      #scratch shows; the sidebar item toggles the body class. */
   #scratch { display:none; }
-  body.view-scratch .main > :not(#scratch) { display:none; }
+  /* Hide everything except the scratch section — but keep the terminal drawer and its
+     overlay alive so the Terminal opens over the top from the Scratch-Coder page too. */
+  body.view-scratch .main > :not(#scratch):not(#terminal):not(#termOverlay) { display:none; }
   body.view-scratch #scratch { display:block; margin:0; }
   body.view-scratch .main { padding:8px; }
 </style>
@@ -839,8 +841,6 @@
 
     <div class="spacer"></div>
     <div class="navlink" id="setNav"><span data-ic="sliders"></span>Settings</div>
-    <div class="navlink" id="aboutNav"><span data-ic="info"></span>About</div>
-    <div class="navlink" onclick="window.open('https://github.com/ngxson/wllama','_blank')"><span data-ic="external"></span>wllama</div>
   </aside>
 
   <!-- ============ MAIN ============ -->
@@ -1197,6 +1197,7 @@
             <p class="lead">What this is, and why it exists.</p>
             <p class="note" style="line-height:1.7">Runtime: <code>wllama</code> (llama.cpp compiled to WebAssembly). On a locked-down school Chromebook the browser is the one runtime that's never disabled — so this app loads a quantized GGUF and runs inference entirely on-device, offline.</p>
             <p class="note" style="line-height:1.7; margin-top:12px">It's the Chromebook delivery target for the <b>Rules-Baker</b>: the <b>"Raspberry Pi of AI"</b> — cheap, hackable, private, and it runs on nearly any computer. Models can be baked with your own house-style rules and shared through the Library.</p>
+            <p class="note" style="margin-top:14px">Runtime engine: <a href="https://github.com/ngxson/wllama" target="_blank" rel="noopener">wllama on GitHub ↗</a></p>
           </div>
           <div class="set-pane" data-pane="runtime" hidden>
             <h3>Runtime</h3>
@@ -4548,7 +4549,7 @@ function selectPane(name) {
 }
 function openSettings(pane) { renderStorageNote(); setModal.hidden = false; if (pane) selectPane(pane); }
 document.getElementById('setNav').onclick = () => openSettings('about');
-document.getElementById('aboutNav').onclick = () => openSettings('about');
+document.getElementById('aboutNav')?.addEventListener('click', () => openSettings('about'));
 document.getElementById('setClose').onclick = () => { setModal.hidden = true; };
 setModal.addEventListener('click', (e) => { if (e.target === setModal) setModal.hidden = true; });
 document.querySelectorAll('#setModal .set-item').forEach(it => { it.onclick = () => selectPane(it.dataset.pane); });
