@@ -51,6 +51,21 @@
   .nbrrow { display:flex; justify-content:space-between; gap:14px; padding:3px 0; }
   .nbrch { color:var(--ink); }
   .nbrcos { color:var(--dimmer); }
+
+  /* ---- Live attention ---- */
+  #attnSection[hidden] { display:none; }
+  .attninput { display:flex; gap:10px; align-items:center; margin:8px 0 4px; }
+  #attnPrompt { background:var(--panel); border:1px solid var(--edge2); color:var(--ink);
+    border-radius:8px; padding:8px 11px; font:13px var(--mono); width:280px; max-width:60vw; }
+  #attnRun { background:#ececec; color:#1a1a1a; border:0; border-radius:8px; padding:8px 15px;
+    font:inherit; font-size:13px; font-weight:600; cursor:pointer; }
+  #attnRun:hover { background:#fff; }
+  #attnRun:disabled { opacity:.4; cursor:not-allowed; }
+  .attnrow { display:flex; flex-wrap:wrap; gap:14px; margin-bottom:14px; }
+  .attncell { display:flex; flex-direction:column; gap:4px; }
+  .attnlbl { font:10.5px var(--mono); color:var(--dim); }
+  .attncell canvas { border:1px solid var(--edge); border-radius:4px;
+    image-rendering:pixelated; background:var(--panel); }
 </style>
 </head>
 <body>
@@ -82,13 +97,26 @@
     </div>
   </section>
 
+  <section id="attnSection" hidden>
+    <h1 style="font-size:18px; margin:36px 0 4px">Live attention</h1>
+    <p class="lead">Type a prompt; every head's attention over it is computed here in the browser — the whole thing, no sampling. Rows are layers, columns are heads; a bright cell (i, j) means position i attended to position j. It is lower-triangular because a token can only see itself and what came before.</p>
+    <div class="attninput">
+      <input id="attnPrompt" type="text" value="def hello(" spellcheck="false" autocomplete="off" />
+      <button id="attnRun">Run forward</button>
+    </div>
+    <p class="viewhint" id="attnStatus"></p>
+    <div id="attn"></div>
+  </section>
+
 <script type="module">
 import { parseInspect, parseArch } from './inspect.js';
 import { renderKnobs } from './knobs.js';
 import { renderEmbedding } from './embedding.js';
+import { ScratchGPT } from './gpt.js';
+import { renderAttention } from './attention.js';
 
 const $ = (id) => document.getElementById(id);
-let model = null, hasValues = false;
+let model = null, hasValues = false, gpt = null;
 
 const HINTS = {
   trained: 'The trained model — brightness is each tensor’s weight spread.',
@@ -152,6 +180,35 @@ async function boot() {
     $('embedSection').hidden = false;
     renderEmbedding($('embedSection'), model.embedding);
   }
+
+  // Rung 3 — live attention. Needs weights.bin (export_inspect.py --weights).
+  if (hasValues && model.weights) {
+    $('attnSection').hidden = false;
+    $('attnRun').onclick = runAttn;
+    $('attnPrompt').addEventListener('keydown', (e) => { if (e.key === 'Enter') runAttn(); });
+    try { gpt = await ScratchGPT.load('.'); await runAttn(); }
+    catch (e) { $('attnStatus').textContent = 'attention unavailable: ' + e.message; $('attnRun').disabled = true; }
+  } else if (hasValues) {
+    // Values are here but no weights.bin — show how to get it, don't regress the rest.
+    $('attnSection').hidden = false;
+    $('attnStatus').innerHTML = 'Re-export with <code>python export_inspect.py --weights</code> to enable the live forward pass.';
+    $('attnRun').disabled = true;
+  }
+}
+
+async function runAttn() {
+  if (!gpt) return;
+  const prompt = $('attnPrompt').value;
+  if (!prompt) { $('attnStatus').textContent = 'type a prompt first'; return; }
+  $('attnRun').disabled = true;
+  const ids = gpt.encode(prompt);
+  const t0 = performance.now();
+  const { attn } = gpt.forward(ids, { collectAttention: true });
+  const ms = (performance.now() - t0).toFixed(0);
+  renderAttention($('attn'), attn, ids.map((i) => gpt.vocab[i]));
+  window.__lastForward = { attn, ids };     // read by the verification snippet
+  $('attnStatus').textContent = `${ids.length} tokens · ${gpt.cfg.n_layer} layers × ${gpt.cfg.n_head} heads · forward in ${ms} ms`;
+  $('attnRun').disabled = false;
 }
 boot();
 </script>
