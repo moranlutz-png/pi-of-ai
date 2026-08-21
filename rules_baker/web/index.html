@@ -786,6 +786,13 @@
     .seclabel { display:block; width:100%; margin:6px 0 2px; }
     #customTree, .pinned { display:contents; }
   }
+
+  /* Scratch-Coder is its own page, swapped in over the dashboard — not a section
+     you scroll to. In its view, every other thing in <main> is hidden and only
+     #scratch shows; the sidebar item toggles the body class. */
+  #scratch { display:none; }
+  body.view-scratch .main > :not(#scratch) { display:none; }
+  body.view-scratch #scratch { display:block; }
 </style>
 </head>
 <body>
@@ -797,7 +804,7 @@
     <div class="navlink active" data-scroll="top"><span data-ic="dashboard"></span>Dashboard</div>
     <div class="navlink" id="termDrawerNav"><span data-ic="terminal"></span>Terminal</div>
     <div class="navlink" data-scroll="playground"><span data-ic="zap"></span>Playground</div>
-    <div class="navlink" data-scroll="scratch"><span data-ic="cpu"></span>Scratch-Coder</div>
+    <div class="navlink" id="scratchNav"><span data-ic="cpu"></span>Scratch-Coder</div>
 
     <div class="seclabel">Models</div>
     <div id="modelTree"><div class="modelnote">Loading…</div></div>
@@ -1428,12 +1435,22 @@ function stopTips() {
 function setBusy(t) { busyText.textContent = t; busyEl.hidden = false; startTips(); }
 function clearBusy() { busyEl.hidden = true; stopTips(); }
 
-// nav scroll
+// nav scroll — these are dashboard sections; clicking one also leaves the
+// Scratch-Coder page (which is a separate view, not a section) back to the dashboard.
 document.querySelectorAll('.navlink[data-scroll]').forEach(n => n.onclick = () => {
+  document.body.classList.remove('view-scratch');
   document.querySelectorAll('.navlink').forEach(x => x.classList.remove('active'));
   n.classList.add('active');
   const id = n.dataset.scroll;
   (id === 'top' ? document.querySelector('.main') : $(id))?.scrollIntoView({behavior:'smooth', block:'start'});
+});
+
+// Scratch-Coder is its own page: swap the whole main view rather than scroll to it.
+document.getElementById('scratchNav')?.addEventListener('click', () => {
+  document.body.classList.add('view-scratch');
+  document.querySelectorAll('.navlink').forEach(x => x.classList.remove('active'));
+  document.getElementById('scratchNav').classList.add('active');
+  document.querySelector('.main')?.scrollTo({ top: 0 });
 });
 
 // ---- Sidebar model tree, built from models.json ----
