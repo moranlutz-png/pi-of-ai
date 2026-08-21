@@ -286,6 +286,18 @@ def main() -> int:
     if args.weights:
         print(f"  weights.bin: {out['weights']['byteLength'] / 1e6:.2f} MB ({out['weights']['totalFloats']:,} floats)")
     print(f"  -> {OUT}")
+
+    # The rules_baker app embeds a same-origin copy of the inspector (a section in
+    # its sidebar). Mirror the generated files there so it stays in sync. The user
+    # chose to merge the two builds; this keeps that copy honest without a second
+    # export command to remember.
+    mirror = HERE.parent / "rules_baker" / "web" / "scratch"
+    if mirror.is_dir():
+        import shutil
+        shutil.copy2(OUT, mirror / "inspect.json")
+        if args.weights and WEIGHTS.exists():
+            shutil.copy2(WEIGHTS, mirror / "weights.bin")
+        print(f"  mirrored -> {mirror}")
     return 0
 
 

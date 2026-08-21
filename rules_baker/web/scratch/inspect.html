@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Scratch-Coder — Model Inspector</title>
+<style>
+  :root { --bg:#1c1c1f; --panel:#26262a; --edge:#37373d; --edge2:#45454d;
+    --ink:#e9e9e9; --dim:#9a9a9a; --dimmer:#6b6b6b; --ok:#3fb950; --bad:#ef5350;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:14px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; padding:26px 30px 70px; }
+  h1 { font-size:22px; margin:0 0 4px; letter-spacing:-.02em; }
+  .lead { color:var(--dim); margin:0; font-size:13.5px; max-width:74ch; }
+  .cfg { color:var(--dimmer); font:12px var(--mono); margin:12px 0 16px; }
+  .banner { background:rgba(212,162,75,.09); border:1px solid rgba(212,162,75,.3);
+    color:#d4a24b; border-radius:8px; padding:10px 13px; font-size:13px; margin:0 0 18px; }
+  .banner[hidden] { display:none; }
+  .toggle { display:inline-flex; border:1px solid var(--edge2); border-radius:9px; overflow:hidden; margin-bottom:8px; }
+  .toggle button { background:var(--panel); color:var(--dim); border:0; padding:7px 15px;
+    font:inherit; font-size:13px; font-weight:600; cursor:pointer; border-right:1px solid var(--edge); }
+  .toggle button:last-child { border-right:0; }
+  .toggle button.active { background:var(--edge2); color:var(--ink); }
+  .toggle button:disabled { opacity:.4; cursor:not-allowed; }
+  .viewhint { color:var(--dim); font-size:12.5px; margin:0 0 20px; min-height:17px; }
+  #knobs { display:flex; flex-wrap:wrap; gap:22px 26px; align-items:flex-start; }
+  .kgroup { display:flex; flex-direction:column; gap:8px; }
+  .kglabel { font:11px var(--mono); color:var(--dim); text-transform:uppercase; letter-spacing:.06em; }
+  .kgshare { color:var(--dimmer); }
+  .kcells { display:flex; flex-wrap:wrap; gap:5px; align-items:center; max-width:236px; }
+  .knob { border:1px solid; border-radius:5px; cursor:help; transition:transform .1s; }
+  .knob:hover { transform:scale(1.09); }
+  .knob.buffer { background:repeating-linear-gradient(45deg,#2a2a2e,#2a2a2e 4px,#232327 4px,#232327 8px) !important;
+    border:1px dashed var(--edge2) !important; }
+  .legend { margin-top:26px; color:var(--dim); font-size:12.5px; max-width:78ch; line-height:1.65; }
+  .legend b { color:var(--ink); }
+  code { font:12px var(--mono); background:var(--panel); padding:1px 5px; border-radius:4px; }
+
+  /* ---- Embedding neighbourhoods ---- */
+  #embedSection[hidden] { display:none; }
+  .embed-wrap { display:flex; gap:22px; flex-wrap:wrap; align-items:flex-start; margin-top:6px; }
+  #embed { width:460px; max-width:100%; height:auto; background:var(--panel);
+    border:1px solid var(--edge); border-radius:10px; }
+  .glyph { font:12.5px var(--mono); fill:var(--dim); cursor:pointer;
+    text-anchor:middle; dominant-baseline:middle; }
+  .glyph:hover, .glyph.sel { fill:var(--ink); font-weight:700; }
+  .nbrpanel { min-width:176px; background:var(--panel); border:1px solid var(--edge);
+    border-radius:10px; padding:12px 14px; font:13px var(--mono); }
+  .nbrhead { color:var(--dim); margin-bottom:9px; font-size:12px; line-height:1.45; }
+  .nbrrow { display:flex; justify-content:space-between; gap:14px; padding:3px 0; }
+  .nbrch { color:var(--ink); }
+  .nbrcos { color:var(--dimmer); }
+
+  /* ---- Live attention ---- */
+  #attnSection[hidden] { display:none; }
+  .attninput { display:flex; gap:10px; align-items:center; margin:8px 0 4px; }
+  #attnPrompt { background:var(--panel); border:1px solid var(--edge2); color:var(--ink);
+    border-radius:8px; padding:8px 11px; font:13px var(--mono); width:280px; max-width:60vw; }
+  #attnRun { background:#ececec; color:#1a1a1a; border:0; border-radius:8px; padding:8px 15px;
+    font:inherit; font-size:13px; font-weight:600; cursor:pointer; }
+  #attnRun:hover { background:#fff; }
+  #attnRun:disabled { opacity:.4; cursor:not-allowed; }
+  .attnrow { display:flex; flex-wrap:wrap; gap:14px; margin-bottom:14px; }
+  .attncell { display:flex; flex-direction:column; gap:4px; }
+  .attnlbl { font:10.5px var(--mono); color:var(--dim); }
+  .attncell canvas { border:1px solid var(--edge); border-radius:4px;
+    image-rendering:pixelated; background:var(--panel); }
+
+  /* ---- Training curves ---- */
+  #curvesSection[hidden] { display:none; }
+  .curves-wrap { display:flex; flex-wrap:wrap; gap:26px; align-items:flex-start; margin-top:6px; }
+  .curvebox h3 { font:12px var(--mono); color:var(--dim); text-transform:uppercase;
+    letter-spacing:.06em; margin:0 0 6px; font-weight:600; }
+  #lossCurve, #gradCurve { width:460px; max-width:100%; height:auto;
+    background:var(--panel); border:1px solid var(--edge); border-radius:10px; }
+  #gradLegend { display:flex; flex-wrap:wrap; gap:12px; margin-top:8px; font:11.5px var(--mono); color:var(--dim); }
+  .gradchip { display:inline-flex; align-items:center; gap:6px; }
+  .gradchip i { width:12px; height:3px; border-radius:2px; display:inline-block; }
+  #curvesNote { color:var(--dim); font-size:12.5px; margin-top:12px; max-width:78ch; line-height:1.6; }
+</style>
+</head>
+<body>
+  <h1>Scratch-Coder · Model Inspector</h1>
+  <p class="lead">Every weight tensor in the from-scratch GPT, drawn from the architecture — one cell per tensor, sized by how many parameters it holds. This is a model small enough to see all the way through. It will never be a useful coder; that is the point.</p>
+  <div class="cfg" id="cfg">loading…</div>
+  <div class="banner" id="banner" hidden></div>
+
+  <div class="toggle" id="toggle">
+    <button id="viewTrained" class="active">Trained</button>
+    <button id="viewRandom">Random</button>
+    <button id="viewDiff">Difference</button>
+  </div>
+  <p class="viewhint" id="viewhint"></p>
+
+  <div id="knobs"></div>
+
+  <p class="legend">Cell <b>size</b> is parameter count (√-scaled, or <code>head.weight</code> would drown every LayerNorm). Cell <b>brightness</b> is the tensor's weight spread (std) in the selected view. <b>Difference</b> is trained minus random — what training actually changed, which at four layers is <b>less than you would guess, and not evenly</b>. The striped cell is the causal mask: a fixed buffer, in the stack but never trained.</p>
+
+  <section id="embedSection" hidden>
+    <h1 style="font-size:18px; margin:36px 0 4px">Embedding neighbourhoods</h1>
+    <p class="lead">Each character placed where its learned embedding lands, projected to 2D — drawn as the character itself. Hover or click a glyph to see its nearest characters in the full 128-dimensional space, which is the check on the flat picture. A lightly-trained model may not have separated digits from letters from whitespace yet; mixed neighbours are the honest state of the model, not a rendering bug.</p>
+    <div class="embed-wrap">
+      <div>
+        <svg id="embed" role="img" aria-label="character embedding scatter"></svg>
+        <p class="viewhint" id="embedVar"></p>
+      </div>
+      <div class="nbrpanel" id="embedNeighbours"></div>
+    </div>
+  </section>
+
+  <section id="attnSection" hidden>
+    <h1 style="font-size:18px; margin:36px 0 4px">Live attention</h1>
+    <p class="lead">Type a prompt; every head's attention over it is computed here in the browser — the whole thing, no sampling. Rows are layers, columns are heads; a bright cell (i, j) means position i attended to position j. It is lower-triangular because a token can only see itself and what came before.</p>
+    <div class="attninput">
+      <input id="attnPrompt" type="text" value="def hello(" spellcheck="false" autocomplete="off" />
+      <button id="attnRun">Run forward</button>
+    </div>
+    <p class="viewhint" id="attnStatus"></p>
+    <div id="attn"></div>
+  </section>
+
+  <section id="curvesSection" hidden>
+    <h1 style="font-size:18px; margin:36px 0 4px">Training curves</h1>
+    <p class="lead">Loss over training, and the per-layer gradient norms — both from what the trainer logs each eval and would otherwise throw away.</p>
+    <div class="curves-wrap">
+      <div class="curvebox"><h3>Validation loss</h3><svg id="lossCurve" role="img" aria-label="validation loss over training"></svg></div>
+      <div class="curvebox"><h3>Gradient norm per layer</h3><svg id="gradCurve" role="img" aria-label="per-layer gradient norms over training"></svg><div id="gradLegend"></div></div>
+    </div>
+    <p id="curvesNote"></p>
+  </section>
+
+<script type="module">
+import { parseInspect, parseArch } from './inspect.js';
+import { renderKnobs } from './knobs.js';
+import { renderEmbedding } from './embedding.js';
+import { ScratchGPT } from './gpt.js';
+import { renderAttention } from './attention.js';
+import { renderCurves } from './curves.js';
+
+const $ = (id) => document.getElementById(id);
+let model = null, hasValues = false, gpt = null;
+
+const HINTS = {
+  trained: 'The trained model — brightness is each tensor’s weight spread.',
+  random: 'A freshly-initialised model of the same shape and seed, before any training.',
+  diff: 'Trained minus random: the tensors training changed most are brightest.',
+};
+
+function setView(v) {
+  if (!hasValues && v !== 'trained') return;
+  ['Trained', 'Random', 'Diff'].forEach((k) => {
+    const id = 'view' + k;
+    $(id).classList.toggle('active', id.toLowerCase().includes(v));
+  });
+  $('viewhint').textContent = hasValues
+    ? HINTS[v]
+    : 'No checkpoint exported — showing structure only. Values light up after an export.';
+  renderKnobs($('knobs'), model, v);
+}
+
+async function boot() {
+  // Prefer the full inspect file; fall back to structure-only arch.json so the
+  // model still draws with no checkpoint at all.
+  try {
+    const r = await fetch('inspect.json', { cache: 'no-store' });
+    if (!r.ok) throw new Error('no inspect.json');
+    const p = parseInspect(await r.text());
+    if (!p.ok) throw new Error(p.error);
+    model = p.data; hasValues = true;
+  } catch (_) {
+    try {
+      const p = parseArch(await (await fetch('arch.json', { cache: 'no-store' })).text());
+      if (!p.ok) { $('cfg').textContent = 'could not load the model: ' + p.error; return; }
+      model = p.data; hasValues = false;
+    } catch (e2) { $('cfg').textContent = 'could not load the model: ' + e2.message; return; }
+  }
+
+  const a = model.arch || model, c = a.config;
+  let line = `${a.total_params.toLocaleString()} params · ${c.n_layer} layers · ${c.n_head} heads · n_embd ${c.n_embd} · block ${c.block_size} · vocab ${c.vocab_size}`;
+  if (hasValues && model.checkpoint) {
+    const ck = model.checkpoint;
+    const bits = [`from ${ck.path}`];
+    if (Number.isFinite(ck.iter)) bits.push(`iter ${ck.iter}`);
+    if (Number.isFinite(ck.valLoss)) bits.push(`val ${ck.valLoss.toFixed(3)}`);
+    line += '  ·  ' + bits.join(', ');
+  }
+  $('cfg').textContent = line;
+
+  if (!hasValues) {
+    $('banner').hidden = false;
+    $('banner').innerHTML = 'No checkpoint exported yet — this is the default architecture. Run <code>python export_inspect.py</code> to light up the trained and random values.';
+    $('viewRandom').disabled = true; $('viewDiff').disabled = true;
+  } else if (model.customLayer) {
+    $('banner').hidden = false;
+    $('banner').textContent = `Custom layer "${model.customLayer.mlp}" — arch_map cannot describe it, so the shapes here are taken from the checkpoint itself.`;
+  }
+
+  $('viewTrained').onclick = () => setView('trained');
+  $('viewRandom').onclick = () => setView('random');
+  $('viewDiff').onclick = () => setView('diff');
+  setView('trained');
+
+  // Rung 2 — embedding neighbourhoods (only when a checkpoint's values exist).
+  if (hasValues && model.embedding && Array.isArray(model.embedding.points)) {
+    $('embedSection').hidden = false;
+    renderEmbedding($('embedSection'), model.embedding);
+  }
+
+  // Rung 3 — live attention. Needs weights.bin (export_inspect.py --weights).
+  if (hasValues && model.weights) {
+    $('attnSection').hidden = false;
+    $('attnRun').onclick = runAttn;
+    $('attnPrompt').addEventListener('keydown', (e) => { if (e.key === 'Enter') runAttn(); });
+    try { gpt = await ScratchGPT.load('.'); await runAttn(); }
+    catch (e) { $('attnStatus').textContent = 'attention unavailable: ' + e.message; $('attnRun').disabled = true; }
+  } else if (hasValues) {
+    // Values are here but no weights.bin — show how to get it, don't regress the rest.
+    $('attnSection').hidden = false;
+    $('attnStatus').innerHTML = 'Re-export with <code>python export_inspect.py --weights</code> to enable the live forward pass.';
+    $('attnRun').disabled = true;
+  }
+
+  // Rung 4 — training curves (loss + per-layer gradient norms, from loss.jsonl).
+  if (hasValues && Array.isArray(model.training) && model.training.length) {
+    $('curvesSection').hidden = false;
+    renderCurves($('curvesSection'), model.training);
+  }
+}
+
+async function runAttn() {
+  if (!gpt) return;
+  const prompt = $('attnPrompt').value;
+  if (!prompt) { $('attnStatus').textContent = 'type a prompt first'; return; }
+  $('attnRun').disabled = true;
+  const ids = gpt.encode(prompt);
+  const t0 = performance.now();
+  const { attn } = gpt.forward(ids, { collectAttention: true });
+  const ms = (performance.now() - t0).toFixed(0);
+  renderAttention($('attn'), attn, ids.map((i) => gpt.vocab[i]));
+  window.__lastForward = { attn, ids };     // read by the verification snippet
+  $('attnStatus').textContent = `${ids.length} tokens · ${gpt.cfg.n_layer} layers × ${gpt.cfg.n_head} heads · forward in ${ms} ms`;
+  $('attnRun').disabled = false;
+}
+boot();
+</script>
+</body>
+</html>

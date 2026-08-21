@@ -1,0 +1,623 @@
+{
+  "config": {
+    "vocab_size": 100,
+    "block_size": 160,
+    "n_layer": 5,
+    "n_head": 6,
+    "n_embd": 192,
+    "head_dim": 32
+  },
+  "total_params": 2293824,
+  "groups": [
+    {
+      "name": "embedding",
+      "kind": "embedding",
+      "tensors": [
+        {
+          "name": "tok_emb.weight",
+          "shape": [
+            100,
+            192
+          ],
+          "role": "one row per character in the vocabulary",
+          "params": 19200
+        },
+        {
+          "name": "pos_emb.weight",
+          "shape": [
+            160,
+            192
+          ],
+          "role": "one row per position in the context window",
+          "params": 30720
+        }
+      ],
+      "params": 49920
+    },
+    {
+      "name": "block.0",
+      "kind": "block",
+      "index": 0,
+      "tensors": [
+        {
+          "name": "blocks.0.ln1.weight",
+          "shape": [
+            192
+          ],
+          "role": "norm scale, pre-attention",
+          "params": 192
+        },
+        {
+          "name": "blocks.0.ln1.bias",
+          "shape": [
+            192
+          ],
+          "role": "norm shift, pre-attention",
+          "params": 192
+        },
+        {
+          "name": "blocks.0.attn.c_attn.weight",
+          "shape": [
+            576,
+            192
+          ],
+          "role": "query, key and value projections fused into one matmul",
+          "params": 110592
+        },
+        {
+          "name": "blocks.0.attn.c_attn.bias",
+          "shape": [
+            576
+          ],
+          "role": "q/k/v bias",
+          "params": 576
+        },
+        {
+          "name": "blocks.0.attn.c_proj.weight",
+          "shape": [
+            192,
+            192
+          ],
+          "role": "mixes the attention heads back together",
+          "params": 36864
+        },
+        {
+          "name": "blocks.0.attn.c_proj.bias",
+          "shape": [
+            192
+          ],
+          "role": "output projection bias",
+          "params": 192
+        },
+        {
+          "name": "blocks.0.ln2.weight",
+          "shape": [
+            192
+          ],
+          "role": "norm scale, pre-MLP",
+          "params": 192
+        },
+        {
+          "name": "blocks.0.ln2.bias",
+          "shape": [
+            192
+          ],
+          "role": "norm shift, pre-MLP",
+          "params": 192
+        },
+        {
+          "name": "blocks.0.mlp.c_fc.weight",
+          "shape": [
+            768,
+            192
+          ],
+          "role": "widens to 4x \u2014 where most of the thinking happens",
+          "params": 147456
+        },
+        {
+          "name": "blocks.0.mlp.c_fc.bias",
+          "shape": [
+            768
+          ],
+          "role": "widening bias",
+          "params": 768
+        },
+        {
+          "name": "blocks.0.mlp.c_proj.weight",
+          "shape": [
+            192,
+            768
+          ],
+          "role": "narrows back to the residual width",
+          "params": 147456
+        },
+        {
+          "name": "blocks.0.mlp.c_proj.bias",
+          "shape": [
+            192
+          ],
+          "role": "narrowing bias",
+          "params": 192
+        }
+      ],
+      "params": 444864
+    },
+    {
+      "name": "block.1",
+      "kind": "block",
+      "index": 1,
+      "tensors": [
+        {
+          "name": "blocks.1.ln1.weight",
+          "shape": [
+            192
+          ],
+          "role": "norm scale, pre-attention",
+          "params": 192
+        },
+        {
+          "name": "blocks.1.ln1.bias",
+          "shape": [
+            192
+          ],
+          "role": "norm shift, pre-attention",
+          "params": 192
+        },
+        {
+          "name": "blocks.1.attn.c_attn.weight",
+          "shape": [
+            576,
+            192
+          ],
+          "role": "query, key and value projections fused into one matmul",
+          "params": 110592
+        },
+        {
+          "name": "blocks.1.attn.c_attn.bias",
+          "shape": [
+            576
+          ],
+          "role": "q/k/v bias",
+          "params": 576
+        },
+        {
+          "name": "blocks.1.attn.c_proj.weight",
+          "shape": [
+            192,
+            192
+          ],
+          "role": "mixes the attention heads back together",
+          "params": 36864
+        },
+        {
+          "name": "blocks.1.attn.c_proj.bias",
+          "shape": [
+            192
+          ],
+          "role": "output projection bias",
+          "params": 192
+        },
+        {
+          "name": "blocks.1.ln2.weight",
+          "shape": [
+            192
+          ],
+          "role": "norm scale, pre-MLP",
+          "params": 192
+        },
+        {
+          "name": "blocks.1.ln2.bias",
+          "shape": [
+            192
+          ],
+          "role": "norm shift, pre-MLP",
+          "params": 192
+        },
+        {
+          "name": "blocks.1.mlp.c_fc.weight",
+          "shape": [
+            768,
+            192
+          ],
+          "role": "widens to 4x \u2014 where most of the thinking happens",
+          "params": 147456
+        },
+        {
+          "name": "blocks.1.mlp.c_fc.bias",
+          "shape": [
+            768
+          ],
+          "role": "widening bias",
+          "params": 768
+        },
+        {
+          "name": "blocks.1.mlp.c_proj.weight",
+          "shape": [
+            192,
+            768
+          ],
+          "role": "narrows back to the residual width",
+          "params": 147456
+        },
+        {
+          "name": "blocks.1.mlp.c_proj.bias",
+          "shape": [
+            192
+          ],
+          "role": "narrowing bias",
+          "params": 192
+        }
+      ],
+      "params": 444864
+    },
+    {
+      "name": "block.2",
+      "kind": "block",
+      "index": 2,
+      "tensors": [
+        {
+          "name": "blocks.2.ln1.weight",
+          "shape": [
+            192
+          ],
+          "role": "norm scale, pre-attention",
+          "params": 192
+        },
+        {
+          "name": "blocks.2.ln1.bias",
+          "shape": [
+            192
+          ],
+          "role": "norm shift, pre-attention",
+          "params": 192
+        },
+        {
+          "name": "blocks.2.attn.c_attn.weight",
+          "shape": [
+            576,
+            192
+          ],
+          "role": "query, key and value projections fused into one matmul",
+          "params": 110592
+        },
+        {
+          "name": "blocks.2.attn.c_attn.bias",
+          "shape": [
+            576
+          ],
+          "role": "q/k/v bias",
+          "params": 576
+        },
+        {
+          "name": "blocks.2.attn.c_proj.weight",
+          "shape": [
+            192,
+            192
+          ],
+          "role": "mixes the attention heads back together",
+          "params": 36864
+        },
+        {
+          "name": "blocks.2.attn.c_proj.bias",
+          "shape": [
+            192
+          ],
+          "role": "output projection bias",
+          "params": 192
+        },
+        {
+          "name": "blocks.2.ln2.weight",
+          "shape": [
+            192
+          ],
+          "role": "norm scale, pre-MLP",
+          "params": 192
+        },
+        {
+          "name": "blocks.2.ln2.bias",
+          "shape": [
+            192
+          ],
+          "role": "norm shift, pre-MLP",
+          "params": 192
+        },
+        {
+          "name": "blocks.2.mlp.c_fc.weight",
+          "shape": [
+            768,
+            192
+          ],
+          "role": "widens to 4x \u2014 where most of the thinking happens",
+          "params": 147456
+        },
+        {
+          "name": "blocks.2.mlp.c_fc.bias",
+          "shape": [
+            768
+          ],
+          "role": "widening bias",
+          "params": 768
+        },
+        {
+          "name": "blocks.2.mlp.c_proj.weight",
+          "shape": [
+            192,
+            768
+          ],
+          "role": "narrows back to the residual width",
+          "params": 147456
+        },
+        {
+          "name": "blocks.2.mlp.c_proj.bias",
+          "shape": [
+            192
+          ],
+          "role": "narrowing bias",
+          "params": 192
+        }
+      ],
+      "params": 444864
+    },
+    {
+      "name": "block.3",
+      "kind": "block",
+      "index": 3,
+      "tensors": [
+        {
+          "name": "blocks.3.ln1.weight",
+          "shape": [
+            192
+          ],
+          "role": "norm scale, pre-attention",
+          "params": 192
+        },
+        {
+          "name": "blocks.3.ln1.bias",
+          "shape": [
+            192
+          ],
+          "role": "norm shift, pre-attention",
+          "params": 192
+        },
+        {
+          "name": "blocks.3.attn.c_attn.weight",
+          "shape": [
+            576,
+            192
+          ],
+          "role": "query, key and value projections fused into one matmul",
+          "params": 110592
+        },
+        {
+          "name": "blocks.3.attn.c_attn.bias",
+          "shape": [
+            576
+          ],
+          "role": "q/k/v bias",
+          "params": 576
+        },
+        {
+          "name": "blocks.3.attn.c_proj.weight",
+          "shape": [
+            192,
+            192
+          ],
+          "role": "mixes the attention heads back together",
+          "params": 36864
+        },
+        {
+          "name": "blocks.3.attn.c_proj.bias",
+          "shape": [
+            192
+          ],
+          "role": "output projection bias",
+          "params": 192
+        },
+        {
+          "name": "blocks.3.ln2.weight",
+          "shape": [
+            192
+          ],
+          "role": "norm scale, pre-MLP",
+          "params": 192
+        },
+        {
+          "name": "blocks.3.ln2.bias",
+          "shape": [
+            192
+          ],
+          "role": "norm shift, pre-MLP",
+          "params": 192
+        },
+        {
+          "name": "blocks.3.mlp.c_fc.weight",
+          "shape": [
+            768,
+            192
+          ],
+          "role": "widens to 4x \u2014 where most of the thinking happens",
+          "params": 147456
+        },
+        {
+          "name": "blocks.3.mlp.c_fc.bias",
+          "shape": [
+            768
+          ],
+          "role": "widening bias",
+          "params": 768
+        },
+        {
+          "name": "blocks.3.mlp.c_proj.weight",
+          "shape": [
+            192,
+            768
+          ],
+          "role": "narrows back to the residual width",
+          "params": 147456
+        },
+        {
+          "name": "blocks.3.mlp.c_proj.bias",
+          "shape": [
+            192
+          ],
+          "role": "narrowing bias",
+          "params": 192
+        }
+      ],
+      "params": 444864
+    },
+    {
+      "name": "block.4",
+      "kind": "block",
+      "index": 4,
+      "tensors": [
+        {
+          "name": "blocks.4.ln1.weight",
+          "shape": [
+            192
+          ],
+          "role": "norm scale, pre-attention",
+          "params": 192
+        },
+        {
+          "name": "blocks.4.ln1.bias",
+          "shape": [
+            192
+          ],
+          "role": "norm shift, pre-attention",
+          "params": 192
+        },
+        {
+          "name": "blocks.4.attn.c_attn.weight",
+          "shape": [
+            576,
+            192
+          ],
+          "role": "query, key and value projections fused into one matmul",
+          "params": 110592
+        },
+        {
+          "name": "blocks.4.attn.c_attn.bias",
+          "shape": [
+            576
+          ],
+          "role": "q/k/v bias",
+          "params": 576
+        },
+        {
+          "name": "blocks.4.attn.c_proj.weight",
+          "shape": [
+            192,
+            192
+          ],
+          "role": "mixes the attention heads back together",
+          "params": 36864
+        },
+        {
+          "name": "blocks.4.attn.c_proj.bias",
+          "shape": [
+            192
+          ],
+          "role": "output projection bias",
+          "params": 192
+        },
+        {
+          "name": "blocks.4.ln2.weight",
+          "shape": [
+            192
+          ],
+          "role": "norm scale, pre-MLP",
+          "params": 192
+        },
+        {
+          "name": "blocks.4.ln2.bias",
+          "shape": [
+            192
+          ],
+          "role": "norm shift, pre-MLP",
+          "params": 192
+        },
+        {
+          "name": "blocks.4.mlp.c_fc.weight",
+          "shape": [
+            768,
+            192
+          ],
+          "role": "widens to 4x \u2014 where most of the thinking happens",
+          "params": 147456
+        },
+        {
+          "name": "blocks.4.mlp.c_fc.bias",
+          "shape": [
+            768
+          ],
+          "role": "widening bias",
+          "params": 768
+        },
+        {
+          "name": "blocks.4.mlp.c_proj.weight",
+          "shape": [
+            192,
+            768
+          ],
+          "role": "narrows back to the residual width",
+          "params": 147456
+        },
+        {
+          "name": "blocks.4.mlp.c_proj.bias",
+          "shape": [
+            192
+          ],
+          "role": "narrowing bias",
+          "params": 192
+        }
+      ],
+      "params": 444864
+    },
+    {
+      "name": "output",
+      "kind": "output",
+      "tensors": [
+        {
+          "name": "ln_f.weight",
+          "shape": [
+            192
+          ],
+          "role": "final norm scale",
+          "params": 192
+        },
+        {
+          "name": "ln_f.bias",
+          "shape": [
+            192
+          ],
+          "role": "final norm shift",
+          "params": 192
+        },
+        {
+          "name": "head.weight",
+          "shape": [
+            100,
+            192
+          ],
+          "role": "scores every character as the next one (no bias)",
+          "params": 19200
+        }
+      ],
+      "params": 19584
+    }
+  ],
+  "buffers": [
+    {
+      "name": "blocks.*.attn.mask",
+      "shape": [
+        1,
+        1,
+        160,
+        160
+      ],
+      "per_block_elements": 25600,
+      "role": "lower-triangular causal mask \u2014 a fixed buffer, not learned"
+    }
+  ]
+}

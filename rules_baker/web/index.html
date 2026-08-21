@@ -797,6 +797,7 @@
     <div class="navlink active" data-scroll="top"><span data-ic="dashboard"></span>Dashboard</div>
     <div class="navlink" id="termDrawerNav"><span data-ic="terminal"></span>Terminal</div>
     <div class="navlink" data-scroll="playground"><span data-ic="zap"></span>Playground</div>
+    <div class="navlink" data-scroll="scratch"><span data-ic="cpu"></span>Scratch-Coder</div>
 
     <div class="seclabel">Models</div>
     <div id="modelTree"><div class="modelnote">Loading…</div></div>
@@ -961,6 +962,13 @@
                  spellcheck="false" aria-label="Terminal input" />
         </div>
       </div>
+    </div>
+
+    <div class="sec" id="scratch">
+      <h2>Scratch-Coder</h2>
+      <p class="sub" style="margin:0 0 12px">An X-ray of the from-scratch model — every weight tensor, its character embeddings, live attention, and the training curves. A separate build, embedded here; it runs entirely in this tab.</p>
+      <iframe id="scratchFrame" src="scratch/inspect.html" title="Scratch-Coder inspector" loading="lazy"
+              style="width:100%; height:82vh; border:1px solid var(--edge2); border-radius:12px; background:#1c1c1f;"></iframe>
     </div>
 
     <div class="sec" id="playground">
@@ -1241,6 +1249,7 @@ const ICONS = {
   dashboard:`<svg viewBox="0 0 24 24" ${P}><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>`,
   terminal:`<svg viewBox="0 0 24 24" ${P}><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>`,
   laptop:`<svg viewBox="0 0 24 24" ${P}><path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/></svg>`,
+  cpu:`<svg viewBox="0 0 24 24" ${P}><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>`,
   plus:`<svg viewBox="0 0 24 24" ${P}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
   sliders:`<svg viewBox="0 0 24 24" ${P}><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>`,
   info:`<svg viewBox="0 0 24 24" ${P}><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`,
