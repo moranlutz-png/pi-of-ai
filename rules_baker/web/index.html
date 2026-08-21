@@ -605,12 +605,14 @@
     border:1px solid var(--edge2); border-radius:6px; padding:3px 9px; font-weight:600; }
   .act:hover:not(:disabled) { background:#43434b; }
   .act svg { width:15px; height:15px; opacity:.9; }
-  .split { position:relative; display:inline-flex; gap:4px; }
-  /* Load model is its own fully-rounded pill, matching Generate; the chevron sits
-     beside it as a separate rounded button rather than fused to its right edge. */
-  .split .act { border-radius:6px; }
-  .split-main { border-radius:6px; }
-  .split-dd { border-radius:6px; padding:3px 6px; }
+  .split { position:relative; display:inline-flex; }
+  /* Load model and its chevron stay one connected pill: rounded on the outer corners,
+     fused in the middle (main's right edge meets the chevron's left with no gap).
+     The rules are scoped under .split so they outrank `.split .act` above — otherwise
+     that two-class selector would flatten the outer corners back to square. */
+  .split .act { border-radius:0; }
+  .split .split-main { border-radius:6px 0 0 6px; border-right:0; }
+  .split .split-dd { border-radius:0 6px 6px 0; padding:3px 6px; }
   .split-dd svg { width:13px; height:13px; }
   .split .dd-menu { min-width:206px; }
   button.ghost:hover { background:var(--panel2); }
