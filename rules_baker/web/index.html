@@ -22,6 +22,10 @@
     --ink:#e9e9e9; --dim:#9a9a9a; --dimmer:#6b6b6b;
     --ok:#3fb950; --bad:#ef5350;
     --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    /* How wide the dashboard content is allowed to get, however wide the window
+       is. Nothing about the layout stops growing on its own, so a fullscreen
+       window on a large display stretched every row to fill it. */
+    --content:1200px;
   }
   * { box-sizing:border-box; }
   html,body { height:100%; }
@@ -259,7 +263,17 @@
   .spacer { flex:1; min-height:14px; }
 
   /* ---------- Main ---------- */
-  .main { flex:1; overflow-y:auto; padding:16px 26px 60px; }
+  /* The scroll container stays full-width — a scrollbar belongs at the window
+     edge, not floating in from it — while the content inside it is capped and
+     centred. Capping the children rather than .main itself is what avoids
+     wrapping the six sections in a new element, and percentage padding would
+     not work here anyway: it resolves against the body, so the sidebar's 206px
+     would push the content off centre by half that.
+     Measured before this rule, at a 2560px viewport: a body paragraph ran
+     2302px — around 300 characters a line, where prose is readable to about
+     75 — and the four stat columns sat 572px apart. */
+  .main { flex:1; overflow-y:auto; padding:16px clamp(14px, 1.6vw, 26px) 60px; }
+  .main > * { max-width:var(--content); margin-inline:auto; }
   .crumb { display:flex; align-items:center; gap:8px; color:var(--ink); font-size:13px; font-weight:600; margin-bottom:16px; }
   .crumb svg { width:15px; height:15px; }
   .busy { margin-left:auto; display:inline-flex; align-items:center; gap:8px; font-size:12.5px; font-weight:500; color:var(--dim); }
