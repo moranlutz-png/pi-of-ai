@@ -95,7 +95,7 @@ for it in range(ITERS + 1):
     opt.step()
 
 torch.save({"model": model.state_dict(), "cfg": cfg.__dict__}, D / "ckpt.pt")
-print(f"\nsaved checkpoint -> {D}\\ckpt.pt")
+print(f"\nsaved checkpoint -> {D / 'ckpt.pt'}")
 print("\n===== sample from the from-scratch model =====")
 print(sample("def ", 300))
 print("==============================================")

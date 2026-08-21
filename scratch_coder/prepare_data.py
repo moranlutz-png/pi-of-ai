@@ -53,4 +53,4 @@ with open(OUT / "meta.pkl", "wb") as f:
 
 print(f"vocab size : {len(chars)} distinct characters")
 print(f"train/val  : {n:,} / {len(ids) - n:,} characters")
-print(f"wrote      : {OUT}\\train.bin, val.bin, meta.pkl")
+print(f"wrote      : {OUT / 'train.bin'}, val.bin, meta.pkl")
