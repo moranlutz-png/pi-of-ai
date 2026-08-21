@@ -48,7 +48,7 @@ export function renderEmbedding(root, emb) {
   canvas.width = CSS * dpr; canvas.height = CSS * dpr;
   const ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr);
 
-  let rotX = -0.35, rotY = 0.6, zoom = 1, dragging = false, lastX = 0, lastY = 0, autoRotate = true, hover = -1, byStrength = false;
+  let rotX = -0.35, rotY = 0.6, zoom = 1, dragging = false, lastX = 0, lastY = 0, autoRotate = true, hover = -1, byStrength = true;
 
   function rot([x, y, z]) {
     const cy1 = Math.cos(rotY), sy1 = Math.sin(rotY);
@@ -109,8 +109,16 @@ export function renderEmbedding(root, emb) {
   // Two columns: what the model has learned so far, and what a perfectly trained
   // model should recover — the corpus's own context structure, exported alongside.
   function showNeighbours(ch) {
-    const rows = (list) => (list || []).map((n) =>
-      `<div class="nbrrow"><span class="nbrch">${esc(glyph(n.char))}</span><span class="nbrcos">${Number(n.cos).toFixed(3)}</span></div>`).join('');
+    // Fade each row by its strength within its own column — brightest is the closest
+    // neighbour, dimming down the list — the same brighter-is-stronger cue as the lines.
+    const rows = (list) => {
+      const arr = list || [], cs = arr.map((n) => Number(n.cos));
+      const lo = Math.min(...cs), rng = (Math.max(...cs) - lo) || 1;
+      return arr.map((n) => {
+        const op = (0.4 + 0.6 * ((Number(n.cos) - lo) / rng)).toFixed(3);
+        return `<div class="nbrrow" style="opacity:${op}"><span class="nbrch">${esc(glyph(n.char))}</span><span class="nbrcos">${Number(n.cos).toFixed(3)}</span></div>`;
+      }).join('');
+    };
     nbrEl.innerHTML = `<div class="nbrhead">nearest to <b>${esc(glyph(ch))}</b> · cosine, full space</div>`
       + `<div class="nbrcompare">`
       +   `<div class="nbrcol"><div class="nbrcolhead">model now</div>${rows(nbrs[ch])}</div>`
