@@ -60,20 +60,20 @@
 
   /* ---- Embedding neighbourhoods ---- */
   #embedSection[hidden] { display:none; }
-  /* The graph sits in a wide box spanning nearly the full page width; the neighbour
-     panel floats on top at the top-right, where it used to sit beside the graph. */
+  /* The box IS the whole graph section: full page width and tall, with the 3D graph
+     filling it edge to edge. The neighbour panel floats on top at the top-right. */
   .embed-wrap { position:relative; width:100%; box-sizing:border-box; margin-top:14px;
-    background:var(--panel); border:1px solid var(--edge); border-radius:14px;
-    padding:20px clamp(14px,3vw,40px) 18px; }
-  #embed { width:min(100%, 980px, 88vh); aspect-ratio:1 / 1; background:transparent;
-    border:0; cursor:grab; touch-action:none; display:block; margin:0 auto; }
-  .embed-wrap > div:first-child { min-width:0; text-align:center; }
+    height:min(86vh, 900px); overflow:hidden;
+    background:var(--panel); border:1px solid var(--edge); border-radius:14px; }
+  #embed { position:absolute; inset:0; width:100%; height:100%; background:transparent;
+    border:0; cursor:grab; touch-action:none; display:block; }
   #embed:active { cursor:grabbing; }
+  .embed-controls { text-align:center; margin-top:10px; }
   .embtoggle { display:inline-flex; align-items:center; gap:8px; color:var(--dim); font-size:12.5px; cursor:pointer; margin-top:8px; }
   .embtoggle input { accent-color:#8ab4ff; width:15px; height:15px; }
   /* Solid, elevated surface (lighter than the box behind it) so the values stay
      readable over the graph. Explicit fallbacks: this page has no --panel2/--edge2. */
-  .nbrpanel { position:absolute; top:18px; right:clamp(14px,3vw,40px); z-index:3;
+  .nbrpanel { position:absolute; top:18px; right:clamp(14px,3vw,40px); z-index:5;
     min-width:232px; background:var(--panel2, #3a3a3a); border:1px solid var(--edge2, #43434b);
     border-radius:10px; padding:12px 14px; font:13px var(--mono);
     box-shadow:0 12px 36px rgba(0,0,0,.5); }
@@ -143,12 +143,12 @@
     <h1 style="font-size:18px; margin:36px 0 4px">Embedding neighbourhoods</h1>
     <p class="lead">Each character is a node placed where its learned embedding lands, projected to 3D, with lines to its nearest neighbours in the full 128-dimensional space — the connections the model has learned between characters. <b>Drag to orbit, scroll to zoom</b>, hover a character to read its neighbour list. A lightly-trained model may not have separated digits from letters from whitespace yet; tangled connections are the honest state of the model, not a bug.</p>
     <div class="embed-wrap">
-      <div>
-        <canvas id="embed" role="img" aria-label="3D character embedding graph — drag to orbit, scroll to zoom"></canvas>
-        <p class="viewhint" id="embedVar"></p>
-        <label class="embtoggle"><input type="checkbox" id="embByStrength" checked /> Fade lines by connection strength (brighter = closer neighbours)</label>
-      </div>
+      <canvas id="embed" role="img" aria-label="3D character embedding graph — drag to orbit, scroll to zoom"></canvas>
       <div class="nbrpanel" id="embedNeighbours"></div>
+    </div>
+    <div class="embed-controls">
+      <p class="viewhint" id="embedVar"></p>
+      <label class="embtoggle"><input type="checkbox" id="embByStrength" checked /> Fade lines by connection strength (brighter = closer neighbours)</label>
     </div>
     <p class="viewhint" style="margin-top:10px">Two lists sit side by side. <b>Model now</b> is the characters nearest the hovered one in the embedding the model has learned so far, by <b>cosine similarity</b> (−1 opposite … 1 identical). <b>Ideal</b> is what a fully trained model should recover — the characters the training text actually uses in the same contexts, measured straight from the corpus. A model-now character that also appears in the ideal list is one the model already gets right, so it turns <b style="color:var(--ok)">green</b>. Early on few match; that gap is how far it still has to go. (The two sets are scored differently, so the ideal numbers run higher — compare which characters appear, not the exact values.) Whitespace has no glyph, so: <code>␠</code> space · <code>↵</code> newline · <code>⇥</code> tab · <code>␍</code> carriage return.</p>
   </section>

@@ -42,11 +42,24 @@ export function renderEmbedding(root, emb) {
 
   varEl.textContent = `these three directions carry ${emb.varianceExplainedPct}% of the variation — drag to orbit, scroll to zoom`;
 
-  // Fixed internal resolution; CSS controls the on-screen size (fills the column,
-  // up to 720px), so it scales with the page while staying crisp.
-  const dpr = Math.min(window.devicePixelRatio || 1, 2), CSS = 640;
-  canvas.width = CSS * dpr; canvas.height = CSS * dpr;
-  const ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr);
+  // The canvas fills its box (the full-width graph section); we render at the box's
+  // actual pixel size so the graph is as large as the space allows, and re-fit on
+  // resize. Scale is tied to the smaller side so the graph fills the height and never
+  // clips as it spins — a round point cloud leaves some horizontal margin by nature.
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const ctx = canvas.getContext('2d');
+  const DIST = 3.4;
+  let W = 640, H = 640, CX = 320, CY = 320, FOV = 909;
+  function size() {
+    const r = canvas.getBoundingClientRect();
+    W = Math.max(1, Math.round(r.width)); H = Math.max(1, Math.round(r.height));
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    CX = W / 2; CY = H / 2;
+    FOV = Math.min(W, H) * 1.42;   // radius-1 node stays within ~0.44·min(W,H) of centre at any angle
+  }
+  size();
+  window.addEventListener('resize', size);
 
   let rotX = -0.35, rotY = 0.6, zoom = 1, dragging = false, lastX = 0, lastY = 0, autoRotate = true, hover = -1, byStrength = true;
 
@@ -56,11 +69,10 @@ export function renderEmbedding(root, emb) {
     const cx1 = Math.cos(rotX), sx1 = Math.sin(rotX);
     return [x1, y * cx1 - z1 * sx1, y * sx1 + z1 * cx1];
   }
-  const DIST = 3.4, FOV = CSS * 1.42;   // keeps the radius-1 node within ~0.44·CSS of centre at any angle
-  function project(v) { const r = rot(v); const s = (FOV * zoom) / (DIST - r[2]); return { x: CSS / 2 + r[0] * s, y: CSS / 2 - r[1] * s, depth: r[2] }; }
+  function project(v) { const r = rot(v); const s = (FOV * zoom) / (DIST - r[2]); return { x: CX + r[0] * s, y: CY - r[1] * s, depth: r[2] }; }
 
   function draw() {
-    ctx.clearRect(0, 0, CSS, CSS);
+    ctx.clearRect(0, 0, W, H);
     const pr = P.map((p) => project(p.v));
     for (const [a, b, cos] of edges) {
       const pa = pr[a], pb = pr[b], t = ((pa.depth + pb.depth) / 2 + 1) / 2;
@@ -95,7 +107,7 @@ export function renderEmbedding(root, emb) {
   canvas.onmousemove = (e) => {
     const rect = canvas.getBoundingClientRect();
     if (dragging) { rotY += (e.clientX - lastX) * 0.01; rotX += (e.clientY - lastY) * 0.01; lastX = e.clientX; lastY = e.clientY; return; }
-    const sc = CSS / (rect.width || CSS);
+    const sc = W / (rect.width || W);
     const mx = (e.clientX - rect.left) * sc, my = (e.clientY - rect.top) * sc, pr = canvas.__pr || [];
     let best = -1, bd = 256;
     for (let i = 0; i < pr.length; i++) { const dx = pr[i].x - mx, dy = pr[i].y - my, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = i; } }
