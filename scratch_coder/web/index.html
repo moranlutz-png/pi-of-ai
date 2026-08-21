@@ -191,6 +191,9 @@ async function boot() {
     $('banner').hidden = false;
     $('banner').innerHTML = 'No checkpoint exported yet — this is the default architecture. Run <code>python export_inspect.py</code> to light up the trained and random values.';
     $('viewRandom').disabled = true; $('viewDiff').disabled = true;
+  } else if (model.customLayer) {
+    $('banner').hidden = false;
+    $('banner').textContent = `Custom layer "${model.customLayer.mlp}" — arch_map cannot describe it, so the shapes here are taken from the checkpoint itself.`;
   }
 
   $('viewTrained').onclick = () => setView('trained');

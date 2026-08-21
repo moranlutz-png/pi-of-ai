@@ -8,6 +8,7 @@ Educational: this is *how an LLM actually works* under the hood.
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -18,13 +19,15 @@ class GPTConfig:
     """Hyperparameters that define the model's size and shape."""
 
     def __init__(self, vocab_size: int, block_size: int = 128, n_layer: int = 4,
-                 n_head: int = 4, n_embd: int = 128, dropout: float = 0.0):
+                 n_head: int = 4, n_embd: int = 128, dropout: float = 0.0,
+                 mlp: str = "default"):
         self.vocab_size = vocab_size    # number of distinct characters
         self.block_size = block_size    # context length (chars the model can see)
         self.n_layer = n_layer          # transformer blocks stacked
         self.n_head = n_head            # attention heads
         self.n_embd = n_embd            # embedding width
         self.dropout = dropout
+        self.mlp = mlp                  # which block MLP to build (see MLP_REGISTRY)
 
 
 class CausalSelfAttention(nn.Module):
@@ -68,6 +71,21 @@ class MLP(nn.Module):
         return self.c_proj(self.act(self.c_fc(x)))
 
 
+# The one extension seam. The Block asks this registry for its MLP by name. Not a
+# plugin framework — a dict and a name in the config. Drop a file in layers/ that
+# calls @register_mlp("yourname"), set config.mlp to it, and the Knob Matrix redraws
+# with your tensors. Kept to the MLP alone so the architecture has exactly one seam.
+MLP_REGISTRY: dict[str, type] = {"default": MLP}
+
+
+def register_mlp(name: str):
+    """Decorator: register a block-MLP class under `name` (used from layers/)."""
+    def deco(cls):
+        MLP_REGISTRY[name] = cls
+        return cls
+    return deco
+
+
 class Block(nn.Module):
     """One transformer block: attention + MLP, each with a residual connection."""
 
@@ -76,7 +94,7 @@ class Block(nn.Module):
         self.ln1 = nn.LayerNorm(cfg.n_embd)
         self.attn = CausalSelfAttention(cfg)
         self.ln2 = nn.LayerNorm(cfg.n_embd)
-        self.mlp = MLP(cfg)
+        self.mlp = MLP_REGISTRY[getattr(cfg, "mlp", "default")](cfg)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x + self.attn(self.ln1(x))
@@ -123,3 +141,27 @@ class GPT(nn.Module):
             nxt = torch.multinomial(probs, num_samples=1)
             idx = torch.cat((idx, nxt), dim=1)
         return idx
+
+
+def _load_custom_layers() -> None:
+    """Import every module in ./layers so its @register_mlp calls take effect,
+    making a dropped-in layer available by name. Defensive on purpose: a broken
+    layer file prints a note and is skipped — it must never take down the whole
+    model import, which train.py, the exporter and everything else depend on."""
+    import importlib.util
+
+    d = Path(__file__).resolve().parent / "layers"
+    if not d.is_dir():
+        return
+    for f in sorted(d.glob("*.py")):
+        if f.name.startswith("_"):
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location(f"scratch_layers.{f.stem}", f)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+        except Exception as e:   # noqa: BLE001 — one bad layer must not break the model
+            print(f"[model] skipped custom layer {f.name}: {e}")
+
+
+_load_custom_layers()

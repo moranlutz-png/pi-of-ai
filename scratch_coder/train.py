@@ -7,6 +7,7 @@ Python is this loop. Runs on CPU (slow but works) or GPU if available.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import pickle
 import time
@@ -31,6 +32,11 @@ GRAD_CLIP = DEFAULT_CLIP
 device = "cuda" if torch.cuda.is_available() else "cpu"
 torch.manual_seed(1337)
 
+ap = argparse.ArgumentParser(description="Train the from-scratch coder from random noise.")
+ap.add_argument("--mlp", default="default",
+                help="block MLP from the registry in layers/ (default: the built-in MLP)")
+args = ap.parse_args()
+
 meta = pickle.load(open(D / "meta.pkl", "rb"))
 itos, stoi = meta["itos"], meta["stoi"]
 train_ids = np.fromfile(D / "train.bin", dtype=np.uint16)
@@ -45,7 +51,7 @@ def get_batch(split: str):
     return x.to(device), y.to(device)
 
 
-cfg = GPTConfig(vocab_size=meta["vocab_size"], block_size=BLOCK, n_layer=4, n_head=4, n_embd=128)
+cfg = GPTConfig(vocab_size=meta["vocab_size"], block_size=BLOCK, n_layer=4, n_head=4, n_embd=128, mlp=args.mlp)
 model = GPT(cfg).to(device)
 n_params = sum(p.numel() for p in model.parameters())
 print(f"device: {device} | params: {n_params/1e6:.2f}M | vocab: {cfg.vocab_size}")

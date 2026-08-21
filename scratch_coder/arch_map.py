@@ -37,14 +37,24 @@ DEFAULTS = dict(vocab_size=100, block_size=160, n_layer=5, n_head=6, n_embd=192)
 
 
 def tensor_map(vocab_size: int, block_size: int, n_layer: int, n_head: int,
-               n_embd: int) -> dict:
+               n_embd: int, mlp: str = "default") -> dict:
     """Every parameter tensor in the model, in forward-pass order.
 
     Mirrors model.py exactly. `kind` is a hint for the UI's colour grouping;
     `role` is the one-line human explanation shown on hover.
+
+    This hardcodes the DEFAULT block's tensor list, which is all it can do without
+    a checkpoint. A custom MLP (see scratch_coder/layers/) has tensors this map
+    cannot know, and drawing the default's tensors against a custom layer would be
+    a quiet lie about the shape. So it refuses, and the caller reads the real
+    shapes from the checkpoint instead.
     """
     if n_embd % n_head != 0:
         raise ValueError(f"n_embd ({n_embd}) must divide by n_head ({n_head})")
+    if mlp != "default":
+        raise ValueError(
+            f"arch_map cannot describe the custom MLP {mlp!r} — its tensors are not "
+            f"known from the architecture alone; read them from a checkpoint instead")
 
     groups = []
 

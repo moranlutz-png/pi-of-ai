@@ -113,6 +113,43 @@ def read_loss_log(path: Path) -> list:
     return rows
 
 
+def arch_from_state_dict(sd: dict, cfg: dict) -> dict:
+    """Build the tensor map from an actual checkpoint — for a custom layer that
+    arch_map cannot describe. Real tensor names and shapes, grouped the same way
+    (embedding, each block, output) so the Knob Matrix draws exactly what is there."""
+    import re
+
+    emb = {"name": "embedding", "kind": "embedding", "tensors": []}
+    out = {"name": "output", "kind": "output", "tensors": []}
+    blocks: dict = {}
+    for name, t in sd.items():
+        entry = {"name": name, "shape": list(t.shape), "params": int(t.numel()), "role": "custom layer tensor"}
+        m = re.match(r"blocks\.(\d+)\.", name)
+        if m:
+            i = int(m.group(1))
+            blocks.setdefault(i, {"name": f"block.{i}", "kind": "block", "index": i, "tensors": []})
+            blocks[i]["tensors"].append(entry)
+        elif name.startswith(("tok_emb", "pos_emb")):
+            emb["tensors"].append(entry)
+        else:
+            out["tensors"].append(entry)
+    groups = [emb] + [blocks[i] for i in sorted(blocks)] + [out]
+    total = 0
+    for g in groups:
+        g["params"] = sum(e["params"] for e in g["tensors"])
+        total += g["params"]
+    return {
+        "config": {"vocab_size": cfg["vocab_size"], "block_size": cfg["block_size"],
+                   "n_layer": cfg["n_layer"], "n_head": cfg["n_head"], "n_embd": cfg["n_embd"],
+                   "head_dim": cfg["n_embd"] // cfg["n_head"]},
+        "total_params": total, "groups": groups,
+        "buffers": [{"name": "blocks.*.attn.mask",
+                     "shape": [1, 1, cfg["block_size"], cfg["block_size"]],
+                     "per_block_elements": cfg["block_size"] ** 2,
+                     "role": "lower-triangular causal mask — a fixed buffer, not learned"}],
+    }
+
+
 def write_weights(sd: dict, names: list[str]) -> dict:
     """fp32 little-endian, tensors concatenated in arch_map order. The manifest
     (offsets in floats) plus a crc32 go into inspect.json so gpt.js can refuse a
@@ -194,7 +231,14 @@ def main() -> int:
         print(f"  {len(probe['ids'])} tokens · logits drift patched-vs-real: {probe['logitsDrift']:.2e}")
         return 0
 
-    amap = tensor_map(cfg["vocab_size"], cfg["block_size"], cfg["n_layer"], cfg["n_head"], cfg["n_embd"])
+    mlp = cfg.get("mlp", "default")
+    if mlp == "default":
+        amap = tensor_map(cfg["vocab_size"], cfg["block_size"], cfg["n_layer"], cfg["n_head"], cfg["n_embd"])
+        custom = None
+    else:
+        # arch_map cannot describe a custom MLP; take the real tensors from the ckpt.
+        amap = arch_from_state_dict(sd, cfg)
+        custom = {"mlp": mlp, "note": f"arch_map cannot describe the custom MLP {mlp!r}; shapes taken from the checkpoint"}
     names = [t["name"] for g in amap["groups"] for t in g["tensors"]]
 
     trained = stats_for(sd, names)
@@ -212,6 +256,7 @@ def main() -> int:
         "version": 1,
         "config": amap["config"],
         "totalParams": amap["total_params"],
+        "customLayer": custom,
         "checkpoint": {
             # null, not 0 — train.py saves neither, and a fabricated "iter 0, val
             # 0.000" reads as a perfectly-trained model. The page omits nulls.
