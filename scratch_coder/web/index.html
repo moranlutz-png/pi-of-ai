@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Scratch-Coder — Model Inspector</title>
 <style>
-  :root { --bg:#1c1c1f; --panel:#26262a; --edge:#37373d; --edge2:#45454d;
+  :root { --bg:#262626; --panel:#303030; --edge:#37373d; --edge2:#45454d;
     --ink:#e9e9e9; --dim:#9a9a9a; --dimmer:#6b6b6b; --ok:#3fb950; --bad:#ef5350;
     --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
   * { box-sizing:border-box; }
@@ -74,9 +74,12 @@
   /* Solid, elevated surface (lighter than the box behind it) so the values stay
      readable over the graph. Explicit fallbacks: this page has no --panel2/--edge2. */
   .nbrpanel { position:absolute; top:18px; right:clamp(14px,3vw,40px); z-index:3;
-    min-width:232px; background:var(--panel2, #2f2f37); border:1px solid var(--edge2, #43434b);
+    min-width:232px; background:var(--panel2, #3a3a3a); border:1px solid var(--edge2, #43434b);
     border-radius:10px; padding:12px 14px; font:13px var(--mono);
     box-shadow:0 12px 36px rgba(0,0,0,.5); }
+  /* A model-now neighbour that also appears in the ideal list is one the model got
+     right — its character and value go green. */
+  .nbrrow.match .nbrch, .nbrrow.match .nbrcos { color:var(--ok); }
   .nbrhead { color:var(--dim); margin-bottom:9px; font-size:12px; line-height:1.45; }
   .nbrrow { display:flex; justify-content:space-between; gap:14px; padding:3px 0; }
   .nbrch { color:var(--ink); }
@@ -147,7 +150,7 @@
       </div>
       <div class="nbrpanel" id="embedNeighbours"></div>
     </div>
-    <p class="viewhint" style="margin-top:10px">Two lists sit side by side. <b>Model now</b> is the characters nearest the hovered one in the embedding the model has learned so far, by <b>cosine similarity</b> (−1 opposite … 1 identical). <b>If perfect</b> is what a fully trained model should recover — the characters the training text actually uses in the same contexts, measured straight from the corpus. Early on the two barely agree; that gap is how far it still has to go. (The two sets are scored differently, so the ideal numbers run higher — compare which characters appear, not the exact values.) Whitespace has no glyph, so: <code>␠</code> space · <code>↵</code> newline · <code>⇥</code> tab · <code>␍</code> carriage return.</p>
+    <p class="viewhint" style="margin-top:10px">Two lists sit side by side. <b>Model now</b> is the characters nearest the hovered one in the embedding the model has learned so far, by <b>cosine similarity</b> (−1 opposite … 1 identical). <b>Ideal</b> is what a fully trained model should recover — the characters the training text actually uses in the same contexts, measured straight from the corpus. A model-now character that also appears in the ideal list is one the model already gets right, so it turns <b style="color:var(--ok)">green</b>. Early on few match; that gap is how far it still has to go. (The two sets are scored differently, so the ideal numbers run higher — compare which characters appear, not the exact values.) Whitespace has no glyph, so: <code>␠</code> space · <code>↵</code> newline · <code>⇥</code> tab · <code>␍</code> carriage return.</p>
   </section>
 
   <section id="attnSection" hidden>

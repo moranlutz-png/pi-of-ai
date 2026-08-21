@@ -109,20 +109,27 @@ export function renderEmbedding(root, emb) {
   // Two columns: what the model has learned so far, and what a perfectly trained
   // model should recover — the corpus's own context structure, exported alongside.
   function showNeighbours(ch) {
+    // The ideal set for this character — the neighbours a perfect model should find.
+    // A model-now neighbour that is also in this set is one the model already got
+    // right, so its character and value turn green (correctness, not decoration).
+    const idealList = ideal[ch] || [];
+    const idealChars = new Set(idealList.map((n) => n.char));
     // Fade each row by its strength within its own column — brightest is the closest
     // neighbour, dimming down the list — the same brighter-is-stronger cue as the lines.
-    const rows = (list) => {
+    // A correct match overrides the fade to full strength so it stands out.
+    const rows = (list, matchSet) => {
       const arr = list || [], cs = arr.map((n) => Number(n.cos));
       const lo = Math.min(...cs), rng = (Math.max(...cs) - lo) || 1;
       return arr.map((n) => {
-        const op = (0.4 + 0.6 * ((Number(n.cos) - lo) / rng)).toFixed(3);
-        return `<div class="nbrrow" style="opacity:${op}"><span class="nbrch">${esc(glyph(n.char))}</span><span class="nbrcos">${Number(n.cos).toFixed(3)}</span></div>`;
+        const hit = matchSet && matchSet.has(n.char);
+        const op = hit ? '1' : (0.4 + 0.6 * ((Number(n.cos) - lo) / rng)).toFixed(3);
+        return `<div class="nbrrow${hit ? ' match' : ''}" style="opacity:${op}"><span class="nbrch">${esc(glyph(n.char))}</span><span class="nbrcos">${Number(n.cos).toFixed(3)}</span></div>`;
       }).join('');
     };
     nbrEl.innerHTML = `<div class="nbrhead">nearest to <b>${esc(glyph(ch))}</b> · cosine, full space</div>`
       + `<div class="nbrcompare">`
-      +   `<div class="nbrcol"><div class="nbrcolhead">model now</div>${rows(nbrs[ch])}</div>`
-      +   `<div class="nbrcol ideal"><div class="nbrcolhead">if perfect</div>${rows(ideal[ch])}</div>`
+      +   `<div class="nbrcol"><div class="nbrcolhead">model now</div>${rows(nbrs[ch], idealChars)}</div>`
+      +   `<div class="nbrcol ideal"><div class="nbrcolhead">ideal</div>${rows(idealList)}</div>`
       + `</div>`;
   }
   const seed = P.find((p) => p.char === 'e') || P[0];
