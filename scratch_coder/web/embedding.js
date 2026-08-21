@@ -30,17 +30,21 @@ export function renderEmbedding(root, emb) {
   for (const p of P) for (const n of (nbrs[p.char] || [])) {
     const j = idxOf[n.char]; if (j == null) continue;
     const a = Math.min(idxOf[p.char], j), b = Math.max(idxOf[p.char], j), k = a + '-' + b;
-    if (!seen.has(k)) { seen.add(k); edges.push([a, b]); }
+    if (!seen.has(k)) { seen.add(k); edges.push([a, b, Number(n.cos)]); }   // cosine is symmetric
   }
+  let cosMin = Infinity, cosMax = -Infinity;
+  for (const e of edges) { cosMin = Math.min(cosMin, e[2]); cosMax = Math.max(cosMax, e[2]); }
+  const cosRange = (cosMax - cosMin) || 1;
 
   varEl.textContent = `these three directions carry ${emb.varianceExplainedPct}% of the variation — drag to orbit, scroll to zoom`;
 
-  const dpr = Math.min(window.devicePixelRatio || 1, 2), CSS = 480;
-  canvas.style.width = CSS + 'px'; canvas.style.height = CSS + 'px';
+  // Fixed internal resolution; CSS controls the on-screen size (fills the column,
+  // up to 720px), so it scales with the page while staying crisp.
+  const dpr = Math.min(window.devicePixelRatio || 1, 2), CSS = 640;
   canvas.width = CSS * dpr; canvas.height = CSS * dpr;
   const ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr);
 
-  let rotX = -0.35, rotY = 0.6, zoom = 1, dragging = false, lastX = 0, lastY = 0, autoRotate = true, hover = -1;
+  let rotX = -0.35, rotY = 0.6, zoom = 1, dragging = false, lastX = 0, lastY = 0, autoRotate = true, hover = -1, byStrength = false;
 
   function rot([x, y, z]) {
     const cy1 = Math.cos(rotY), sy1 = Math.sin(rotY);
@@ -54,11 +58,14 @@ export function renderEmbedding(root, emb) {
   function draw() {
     ctx.clearRect(0, 0, CSS, CSS);
     const pr = P.map((p) => project(p.v));
-    for (const [a, b] of edges) {
+    for (const [a, b, cos] of edges) {
       const pa = pr[a], pb = pr[b], t = ((pa.depth + pb.depth) / 2 + 1) / 2;
       const hot = hover === a || hover === b;
-      ctx.strokeStyle = hot ? 'rgba(120,180,255,.6)' : `rgba(200,210,230,${0.05 + 0.14 * t})`;
-      ctx.lineWidth = hot ? 1.4 : 0.6;
+      let alpha, w;
+      if (byStrength) { const nc = (cos - cosMin) / cosRange; alpha = (0.03 + 0.55 * nc) * (0.45 + 0.55 * t); w = 0.5 + 1.3 * nc; }
+      else { alpha = 0.05 + 0.14 * t; w = 0.6; }
+      ctx.strokeStyle = hot ? 'rgba(120,180,255,.6)' : `rgba(200,210,230,${alpha})`;
+      ctx.lineWidth = hot ? 1.4 : w;
       ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke();
     }
     const order = P.map((_, i) => i).sort((i, j) => pr[i].depth - pr[j].depth);
@@ -74,20 +81,26 @@ export function renderEmbedding(root, emb) {
     canvas.__pr = pr;
   }
 
-  function loop() { if (autoRotate && !dragging) rotY += 0.0016; draw(); root.__embRaf = requestAnimationFrame(loop); }
+  // Idle spin: a touch faster, and tumbling across two axes (Y faster than X) so
+  // you see the graph from every side rather than just spinning on the spot.
+  function loop() { if (autoRotate && !dragging) { rotY += 0.0034; rotX += 0.0013; } draw(); root.__embRaf = requestAnimationFrame(loop); }
   cancelAnimationFrame(root.__embRaf); loop();
 
   canvas.onmousedown = (e) => { dragging = true; autoRotate = false; lastX = e.clientX; lastY = e.clientY; };
   window.addEventListener('mouseup', () => { dragging = false; });
   canvas.onmousemove = (e) => {
     const rect = canvas.getBoundingClientRect();
-    if (dragging) { rotY += (e.clientX - lastX) * 0.01; rotX = Math.max(-1.4, Math.min(1.4, rotX + (e.clientY - lastY) * 0.01)); lastX = e.clientX; lastY = e.clientY; return; }
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top, pr = canvas.__pr || [];
+    if (dragging) { rotY += (e.clientX - lastX) * 0.01; rotX += (e.clientY - lastY) * 0.01; lastX = e.clientX; lastY = e.clientY; return; }
+    const sc = CSS / (rect.width || CSS);
+    const mx = (e.clientX - rect.left) * sc, my = (e.clientY - rect.top) * sc, pr = canvas.__pr || [];
     let best = -1, bd = 256;
     for (let i = 0; i < pr.length; i++) { const dx = pr[i].x - mx, dy = pr[i].y - my, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = i; } }
     if (best !== hover) { hover = best; if (best >= 0) showNeighbours(P[best].char); }
   };
   canvas.onwheel = (e) => { e.preventDefault(); zoom = Math.max(0.4, Math.min(4, zoom * (e.deltaY < 0 ? 1.1 : 0.9))); };
+
+  const strengthToggle = document.getElementById('embByStrength');
+  if (strengthToggle) { byStrength = strengthToggle.checked; strengthToggle.onchange = () => { byStrength = strengthToggle.checked; }; }
 
   function showNeighbours(ch) {
     const list = nbrs[ch] || [];

@@ -61,9 +61,12 @@
   /* ---- Embedding neighbourhoods ---- */
   #embedSection[hidden] { display:none; }
   .embed-wrap { display:flex; gap:22px; flex-wrap:wrap; align-items:flex-start; margin-top:6px; }
-  #embed { width:480px; max-width:100%; background:#141417; border:1px solid var(--edge);
-    border-radius:10px; cursor:grab; touch-action:none; display:block; }
+  #embed { width:100%; max-width:720px; aspect-ratio:1 / 1; background:#141417;
+    border:1px solid var(--edge); border-radius:10px; cursor:grab; touch-action:none; display:block; }
+  .embed-wrap > div:first-child { flex:1 1 460px; min-width:0; }
   #embed:active { cursor:grabbing; }
+  .embtoggle { display:flex; align-items:center; gap:8px; color:var(--dim); font-size:12.5px; cursor:pointer; margin-top:8px; }
+  .embtoggle input { accent-color:#8ab4ff; width:15px; height:15px; }
   .nbrpanel { min-width:176px; background:var(--panel); border:1px solid var(--edge);
     border-radius:10px; padding:12px 14px; font:13px var(--mono); }
   .nbrhead { color:var(--dim); margin-bottom:9px; font-size:12px; line-height:1.45; }
@@ -125,6 +128,7 @@
       <div>
         <canvas id="embed" role="img" aria-label="3D character embedding graph — drag to orbit, scroll to zoom"></canvas>
         <p class="viewhint" id="embedVar"></p>
+        <label class="embtoggle"><input type="checkbox" id="embByStrength" /> Fade lines by connection strength (brighter = closer neighbours)</label>
       </div>
       <div class="nbrpanel" id="embedNeighbours"></div>
     </div>
