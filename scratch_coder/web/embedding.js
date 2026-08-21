@@ -20,9 +20,13 @@ export function renderEmbedding(root, emb) {
 
   // Centre the cloud on the origin and scale it to radius ~1.
   const cx = avg(pts.map((p) => p.x)), cy = avg(pts.map((p) => p.y)), cz = avg(pts.map((p) => p.z ?? 0));
-  let maxr = 1e-6;
-  const P = pts.map((p) => { const v = [p.x - cx, p.y - cy, (p.z ?? 0) - cz]; maxr = Math.max(maxr, Math.hypot(...v)); return { char: p.char, v }; });
-  P.forEach((p) => { p.v = p.v.map((c) => c / maxr); });
+  const P = pts.map((p) => ({ char: p.char, v: [p.x - cx, p.y - cy, (p.z ?? 0) - cz] }));
+  // Normalise by a high percentile of the radii, not the single max: the bulk of the
+  // cloud then fills the card, and the few outliers reach or spill past the edge —
+  // which is where outliers belong. (Max-normalising cramped everything into the middle.)
+  const radii = P.map((p) => Math.hypot(...p.v)).sort((a, b) => a - b);
+  const norm = radii[Math.floor(0.82 * radii.length)] || 1;
+  P.forEach((p) => { p.v = p.v.map((c) => c / norm); });
   const idxOf = {}; P.forEach((p, i) => { idxOf[p.char] = i; });
 
   // Edges: each character to each of its neighbours, deduped.
@@ -52,7 +56,7 @@ export function renderEmbedding(root, emb) {
     const cx1 = Math.cos(rotX), sx1 = Math.sin(rotX);
     return [x1, y * cx1 - z1 * sx1, y * sx1 + z1 * cx1];
   }
-  const DIST = 3.2, FOV = CSS * 0.9;
+  const DIST = 3.4, FOV = CSS * 1.2;
   function project(v) { const r = rot(v); const s = (FOV * zoom) / (DIST - r[2]); return { x: CSS / 2 + r[0] * s, y: CSS / 2 - r[1] * s, depth: r[2] }; }
 
   function draw() {
