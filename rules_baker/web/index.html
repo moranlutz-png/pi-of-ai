@@ -26,6 +26,9 @@
        is. Nothing about the layout stops growing on its own, so a fullscreen
        window on a large display stretched every row to fill it. */
     --content:1200px;
+    /* Terminal drawer width — shared by the drawer itself and the reactive shift
+       of .main, so the page makes exactly the right amount of room when it opens. */
+    --term-w:min(480px,92vw);
   }
   * { box-sizing:border-box; }
   html,body { height:100%; }
@@ -272,7 +275,12 @@
      Measured before this rule, at a 2560px viewport: a body paragraph ran
      2302px — around 300 characters a line, where prose is readable to about
      75 — and the four stat columns sat 572px apart. */
-  .main { flex:1; overflow-y:auto; padding:16px clamp(14px, 1.6vw, 26px) 60px; }
+  .main { flex:1; overflow-y:auto; padding:16px clamp(14px, 1.6vw, 26px) 60px;
+    transition:margin-right .24s cubic-bezier(.4,0,.2,1); }
+  /* When the terminal drawer opens, the page reacts: the main column shrinks by the
+     drawer's width so its content reflows into the space left, rather than hiding
+     under the drawer. */
+  body.term-open .main { margin-right:var(--term-w); }
   .main > * { max-width:var(--content); margin-inline:auto; }
   .crumb { display:flex; align-items:center; gap:8px; color:var(--ink); font-size:13px; font-weight:600; margin-bottom:16px; }
   .crumb svg { width:15px; height:15px; }
@@ -506,18 +514,22 @@
   /* ---- Terminal presented as a right-side drawer (opened from the sidebar) ----
      Keeps the richer terminal wiring intact; only its presentation changes: the
      section is fixed off-screen until opened, so it never sits in the main scroll. */
-  #termOverlay { position:fixed; inset:0; background:rgba(0,0,0,.42);
-    -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px);
+  /* A transparent scrim: no dim, no blur — it only catches an outside click to
+     close. The page reacting (its content sliding over) is what signals the state. */
+  #termOverlay { position:fixed; inset:0; background:transparent;
     z-index:110; opacity:0; transition:opacity .22s; }
   #termOverlay.show { opacity:1; }
   #termOverlay[hidden] { display:none; }
-  #terminal { position:fixed; top:0; right:0; height:100%; width:min(560px,94vw);
-    z-index:120; margin:0; padding:16px 18px 18px; background:var(--bg);
+  /* The drawer IS the terminal: its own dark surface, no inner card, no padding —
+     #term fills it edge to edge. */
+  #terminal { position:fixed; top:0; right:0; height:100%; width:var(--term-w);
+    z-index:120; margin:0; padding:0; background:#1c1c1c;
     border-left:1px solid var(--edge2); box-shadow:-24px 0 60px rgba(0,0,0,.5);
     display:flex; flex-direction:column;
     transform:translateX(100%); transition:transform .24s cubic-bezier(.4,0,.2,1); }
   #terminal.open { transform:translateX(0); }
-  #terminal > #term { max-height:none; flex:1; }
+  #terminal > #term { max-height:none; flex:1; border:0; border-radius:0;
+    background:transparent; padding:16px 18px 18px; }
   #termClose { position:absolute; top:13px; right:15px; background:none; border:0;
     color:var(--dim); font-size:23px; line-height:1; cursor:pointer; padding:1px 7px; border-radius:6px; }
   #termClose:hover { color:var(--ink); background:var(--panel2); }
@@ -958,8 +970,6 @@
     <div id="termOverlay" hidden></div>
     <div class="sec" id="terminal">
       <button id="termClose" title="Close">&times;</button>
-      <h2>Terminal</h2>
-      <p class="sub" style="margin:0 0 12px">Drive the model with commands instead of the form above.</p>
       <div id="term">
         <div id="termOut"></div>
         <!-- Command picker. Sits above the input, like a shell completion menu,
@@ -4618,11 +4628,12 @@ const termDrawerEl = document.getElementById('terminal');
 const termOverlayEl = document.getElementById('termOverlay');
 function openTermDrawer() {
   termOverlayEl.hidden = false;
-  requestAnimationFrame(() => { termOverlayEl.classList.add('show'); termDrawerEl.classList.add('open'); });
+  // term-open drives the reactive shift of .main, so the page makes room for the drawer.
+  requestAnimationFrame(() => { termOverlayEl.classList.add('show'); termDrawerEl.classList.add('open'); document.body.classList.add('term-open'); });
   setTimeout(() => termIn.focus(), 80);
 }
 function closeTermDrawer() {
-  termDrawerEl.classList.remove('open'); termOverlayEl.classList.remove('show');
+  termDrawerEl.classList.remove('open'); termOverlayEl.classList.remove('show'); document.body.classList.remove('term-open');
   setTimeout(() => { termOverlayEl.hidden = true; }, 240);
 }
 if (termDrawerNav) termDrawerNav.onclick = openTermDrawer;
