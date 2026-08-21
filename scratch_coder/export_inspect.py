@@ -57,15 +57,16 @@ def stats_for(state_dict: dict, names: list[str]) -> dict:
     return {n: tensor_stats(state_dict[n].detach().cpu().numpy()) for n in names}
 
 
-def pca_2d(mat: np.ndarray, iters: int = 300):
-    """Project rows to 2D. Power iteration on the covariance, top-2 by deflation —
-    about fifteen lines and one fewer dependency than sklearn."""
+def pca_3d(mat: np.ndarray, iters: int = 300):
+    """Project rows to 3D for the orbitable graph. Power iteration on the covariance,
+    top-3 components by deflation — about fifteen lines and one fewer dependency than
+    sklearn. Returns the points and the percent of total variance the 3 axes carry."""
     x = mat - mat.mean(axis=0, keepdims=True)
     cov = (x.T @ x) / x.shape[0]
     total_var = float(np.trace(cov))
     rng = np.random.default_rng(0)
     comps, evals, c = [], [], cov.copy()
-    for _ in range(2):
+    for _ in range(3):
         v = rng.standard_normal(c.shape[0]); v /= np.linalg.norm(v)
         for _ in range(iters):
             v = c @ v
@@ -247,8 +248,9 @@ def main() -> int:
 
     itos_list = [itos[i] for i in range(cfg["vocab_size"])]
     emb = sd["tok_emb.weight"].detach().cpu().numpy()
-    pts, var_pct = pca_2d(emb)
-    points = [{"char": itos_list[i], "x": round(float(pts[i, 0]), 4), "y": round(float(pts[i, 1]), 4)}
+    pts, var_pct = pca_3d(emb)
+    points = [{"char": itos_list[i], "x": round(float(pts[i, 0]), 4),
+               "y": round(float(pts[i, 1]), 4), "z": round(float(pts[i, 2]), 4)}
               for i in range(len(itos_list))]
 
     out = {

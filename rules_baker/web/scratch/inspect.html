@@ -61,11 +61,9 @@
   /* ---- Embedding neighbourhoods ---- */
   #embedSection[hidden] { display:none; }
   .embed-wrap { display:flex; gap:22px; flex-wrap:wrap; align-items:flex-start; margin-top:6px; }
-  #embed { width:460px; max-width:100%; height:auto; background:var(--panel);
-    border:1px solid var(--edge); border-radius:10px; }
-  .glyph { font:12.5px var(--mono); fill:var(--dim); cursor:pointer;
-    text-anchor:middle; dominant-baseline:middle; }
-  .glyph:hover, .glyph.sel { fill:var(--ink); font-weight:700; }
+  #embed { width:480px; max-width:100%; background:#141417; border:1px solid var(--edge);
+    border-radius:10px; cursor:grab; touch-action:none; display:block; }
+  #embed:active { cursor:grabbing; }
   .nbrpanel { min-width:176px; background:var(--panel); border:1px solid var(--edge);
     border-radius:10px; padding:12px 14px; font:13px var(--mono); }
   .nbrhead { color:var(--dim); margin-bottom:9px; font-size:12px; line-height:1.45; }
@@ -122,10 +120,10 @@
 
   <section id="embedSection" hidden>
     <h1 style="font-size:18px; margin:36px 0 4px">Embedding neighbourhoods</h1>
-    <p class="lead">Each character placed where its learned embedding lands, projected to 2D — drawn as the character itself. Hover or click a glyph to see its nearest characters in the full 128-dimensional space, which is the check on the flat picture. A lightly-trained model may not have separated digits from letters from whitespace yet; mixed neighbours are the honest state of the model, not a rendering bug.</p>
+    <p class="lead">Each character is a node placed where its learned embedding lands, projected to 3D, with lines to its nearest neighbours in the full 128-dimensional space — the connections the model has learned between characters. <b>Drag to orbit, scroll to zoom</b>, hover a character to read its neighbour list. A lightly-trained model may not have separated digits from letters from whitespace yet; tangled connections are the honest state of the model, not a bug.</p>
     <div class="embed-wrap">
       <div>
-        <svg id="embed" role="img" aria-label="character embedding scatter"></svg>
+        <canvas id="embed" role="img" aria-label="3D character embedding graph — drag to orbit, scroll to zoom"></canvas>
         <p class="viewhint" id="embedVar"></p>
       </div>
       <div class="nbrpanel" id="embedNeighbours"></div>

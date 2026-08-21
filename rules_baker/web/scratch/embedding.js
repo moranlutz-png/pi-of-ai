@@ -1,60 +1,99 @@
-// embedding.js — the token embedding projected to 2D, drawn as the characters
-// themselves. The lesson is *which characters cluster*, so the glyphs go where the
-// dots would (a legend mapping 101 dots to 101 characters is a worse version of
-// that). The neighbour list is computed in the FULL space, not the projection, so
-// it is the check on the picture: when the plot and the list disagree, the list is
-// right, and that disagreement is worth showing rather than hiding.
+// embedding.js — the token embedding as a 3D graph you can orbit. Each character is
+// a node placed where its learned embedding lands (projected to 3D), and lines join
+// each character to its nearest neighbours in the FULL space — the connections the
+// model has learned between characters. Drag to look around, scroll to zoom.
+//
+// Hand-rolled on <canvas>, no three.js: this build has no dependencies and must run
+// offline on a locked-down Chromebook, and a from-scratch project drawing its own 3D
+// is rather the point. 101 nodes and a few hundred edges is nothing for a canvas.
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
   .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-
-// Whitespace has no visible glyph; show a stand-in so a cluster of spaces/newlines
-// (which is exactly what a code model learns first) is legible.
-function glyphLabel(ch) {
-  return { ' ': '␠', '\n': '↵', '\t': '⇥', '\r': '␍' }[ch] ?? ch;
-}
+const glyph = (c) => ({ ' ': '␠', '\n': '↵', '\t': '⇥', '\r': '␍' }[c] ?? c);
+const avg = (a) => a.reduce((s, v) => s + v, 0) / a.length;
 
 export function renderEmbedding(root, emb) {
-  const svg = root.querySelector('#embed');
+  const canvas = root.querySelector('#embed');
   const varEl = root.querySelector('#embedVar');
   const nbrEl = root.querySelector('#embedNeighbours');
   const pts = emb.points, nbrs = emb.neighbours || {};
 
-  const W = 460, H = 460, pad = 26;
-  const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
-  const xmin = Math.min(...xs), xmax = Math.max(...xs);
-  const ymin = Math.min(...ys), ymax = Math.max(...ys);
-  const sx = (v) => pad + (xmax > xmin ? (v - xmin) / (xmax - xmin) : 0.5) * (W - 2 * pad);
-  const sy = (v) => pad + (ymax > ymin ? (v - ymin) / (ymax - ymin) : 0.5) * (H - 2 * pad);
+  // Centre the cloud on the origin and scale it to radius ~1.
+  const cx = avg(pts.map((p) => p.x)), cy = avg(pts.map((p) => p.y)), cz = avg(pts.map((p) => p.z ?? 0));
+  let maxr = 1e-6;
+  const P = pts.map((p) => { const v = [p.x - cx, p.y - cy, (p.z ?? 0) - cz]; maxr = Math.max(maxr, Math.hypot(...v)); return { char: p.char, v }; });
+  P.forEach((p) => { p.v = p.v.map((c) => c / maxr); });
+  const idxOf = {}; P.forEach((p, i) => { idxOf[p.char] = i; });
 
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  svg.innerHTML = pts.map((p) => {
-    const nb = (nbrs[p.char] || []).map((n) => glyphLabel(n.char)).join(' ');
-    return `<text x="${sx(p.x).toFixed(1)}" y="${sy(p.y).toFixed(1)}" class="glyph"`
-      + ` data-char="${esc(p.char)}" data-neighbours="${esc(nb)}">${esc(glyphLabel(p.char))}</text>`;
-  }).join('');
+  // Edges: each character to each of its neighbours, deduped.
+  const seen = new Set(), edges = [];
+  for (const p of P) for (const n of (nbrs[p.char] || [])) {
+    const j = idxOf[n.char]; if (j == null) continue;
+    const a = Math.min(idxOf[p.char], j), b = Math.max(idxOf[p.char], j), k = a + '-' + b;
+    if (!seen.has(k)) { seen.add(k); edges.push([a, b]); }
+  }
 
-  varEl.textContent = `these two directions carry ${emb.varianceExplainedPct}% of the variation`
-    + ' — two components of a 128-dimensional space, so most of it is not in this picture.';
+  varEl.textContent = `these three directions carry ${emb.varianceExplainedPct}% of the variation — drag to orbit, scroll to zoom`;
+
+  const dpr = Math.min(window.devicePixelRatio || 1, 2), CSS = 480;
+  canvas.style.width = CSS + 'px'; canvas.style.height = CSS + 'px';
+  canvas.width = CSS * dpr; canvas.height = CSS * dpr;
+  const ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr);
+
+  let rotX = -0.35, rotY = 0.6, zoom = 1, dragging = false, lastX = 0, lastY = 0, autoRotate = true, hover = -1;
+
+  function rot([x, y, z]) {
+    const cy1 = Math.cos(rotY), sy1 = Math.sin(rotY);
+    const x1 = x * cy1 + z * sy1, z1 = -x * sy1 + z * cy1;
+    const cx1 = Math.cos(rotX), sx1 = Math.sin(rotX);
+    return [x1, y * cx1 - z1 * sx1, y * sx1 + z1 * cx1];
+  }
+  const DIST = 3.2, FOV = CSS * 0.9;
+  function project(v) { const r = rot(v); const s = (FOV * zoom) / (DIST - r[2]); return { x: CSS / 2 + r[0] * s, y: CSS / 2 - r[1] * s, depth: r[2] }; }
+
+  function draw() {
+    ctx.clearRect(0, 0, CSS, CSS);
+    const pr = P.map((p) => project(p.v));
+    for (const [a, b] of edges) {
+      const pa = pr[a], pb = pr[b], t = ((pa.depth + pb.depth) / 2 + 1) / 2;
+      const hot = hover === a || hover === b;
+      ctx.strokeStyle = hot ? 'rgba(120,180,255,.6)' : `rgba(200,210,230,${0.05 + 0.14 * t})`;
+      ctx.lineWidth = hot ? 1.4 : 0.6;
+      ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke();
+    }
+    const order = P.map((_, i) => i).sort((i, j) => pr[i].depth - pr[j].depth);
+    for (const i of order) {
+      const p = pr[i], t = (p.depth + 1) / 2, hot = hover === i;
+      ctx.globalAlpha = hot ? 1 : 0.32 + 0.6 * t;
+      ctx.fillStyle = hot ? '#cfe4ff' : '#e9e9e9';
+      ctx.font = `${hot ? 700 : 500} ${8 + 8 * t}px ui-monospace, monospace`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(glyph(P[i].char), p.x, p.y);
+      ctx.globalAlpha = 1;
+    }
+    canvas.__pr = pr;
+  }
+
+  function loop() { if (autoRotate && !dragging) rotY += 0.0016; draw(); root.__embRaf = requestAnimationFrame(loop); }
+  cancelAnimationFrame(root.__embRaf); loop();
+
+  canvas.onmousedown = (e) => { dragging = true; autoRotate = false; lastX = e.clientX; lastY = e.clientY; };
+  window.addEventListener('mouseup', () => { dragging = false; });
+  canvas.onmousemove = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    if (dragging) { rotY += (e.clientX - lastX) * 0.01; rotX = Math.max(-1.4, Math.min(1.4, rotX + (e.clientY - lastY) * 0.01)); lastX = e.clientX; lastY = e.clientY; return; }
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top, pr = canvas.__pr || [];
+    let best = -1, bd = 256;
+    for (let i = 0; i < pr.length; i++) { const dx = pr[i].x - mx, dy = pr[i].y - my, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = i; } }
+    if (best !== hover) { hover = best; if (best >= 0) showNeighbours(P[best].char); }
+  };
+  canvas.onwheel = (e) => { e.preventDefault(); zoom = Math.max(0.4, Math.min(4, zoom * (e.deltaY < 0 ? 1.1 : 0.9))); };
 
   function showNeighbours(ch) {
     const list = nbrs[ch] || [];
-    nbrEl.innerHTML = `<div class="nbrhead">nearest to <b>${esc(glyphLabel(ch))}</b><br>(cosine, full space)</div>`
-      + list.map((n) => `<div class="nbrrow"><span class="nbrch">${esc(glyphLabel(n.char))}</span>`
-        + `<span class="nbrcos">${Number(n.cos).toFixed(3)}</span></div>`).join('');
+    nbrEl.innerHTML = `<div class="nbrhead">nearest to <b>${esc(glyph(ch))}</b><br>(cosine, full space)</div>`
+      + list.map((n) => `<div class="nbrrow"><span class="nbrch">${esc(glyph(n.char))}</span><span class="nbrcos">${Number(n.cos).toFixed(3)}</span></div>`).join('');
   }
-
-  svg.querySelectorAll('.glyph').forEach((g) => {
-    const pick = () => {
-      svg.querySelectorAll('.glyph').forEach((x) => x.classList.remove('sel'));
-      g.classList.add('sel');
-      showNeighbours(g.dataset.char);
-    };
-    g.addEventListener('mouseenter', () => showNeighbours(g.dataset.char));
-    g.addEventListener('click', pick);
-  });
-
-  // Open on a letter if present, so the panel is never empty.
-  const seed = pts.find((p) => p.char === 'e') || pts[0];
+  const seed = P.find((p) => p.char === 'e') || P[0];
   if (seed) showNeighbours(seed.char);
 }
