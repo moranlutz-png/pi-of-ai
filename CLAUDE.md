@@ -33,6 +33,8 @@ cd rules_baker/web && python3 serve.py 8123     # default port is 8123
 # rules_baker — generate training data against a LOCAL teacher endpoint
 cd rules_baker
 python data_gen/generate_dataset.py --config configs/qwen_coder_0_5b_chromebook.yaml
+python data_gen/documents_to_seeds.py --config configs/qwen_coder_0_5b_chromebook.yaml \
+       --docs ~/handbook                         # optional: seeds from your own documents
 python eval/eval_rules.py                        # score rule compliance
 python export/export_gguf.py                     # merge + convert for the browser
 
@@ -123,11 +125,19 @@ after it returns.
 
 `data_gen/generate_dataset.py` (teacher writes compliant output, rules stripped from the stored
 prompt) → `train/train_lora.py` (QLoRA) → `export/export_gguf.py` (merge + convert) →
-the browser loads the GGUF. Config lives in `configs/*.yaml`; `qwen_coder_0_5b_chromebook.yaml` is
-the small/default path, `qwen_coder_7b.yaml` the capable one.
+the browser loads the GGUF. `data_gen/documents_to_seeds.py` feeds the front of that pipeline from
+a folder of the user's own documents; it emits **seeds**, never tokens, and gates out any candidate
+that names the house style — a seed that mentions the rules puts them back in the student's prompt
+and undoes the asymmetry the whole project rests on. Config lives in `configs/*.yaml`;
+`qwen_coder_0_5b_chromebook.yaml` is the small/default path, `qwen_coder_7b.yaml` the capable one.
 
 The browser needs a **merged** GGUF: wllama exposes no LoRA/adapter surface, so shipping a small
-adapter is not an option for the browser path (it remains viable for Ollama).
+adapter is not an option for the browser path. It *is* the better option for Ollama, which applies
+an adapter to a stock base at load time — `export/export_adapter.py` produces that file (~50MB
+against ~500MB merged) and writes a filled-in Modelfile beside it. Ollama does not check that the
+adapter matches the base in `FROM`: a mismatch builds cleanly and then kills the model server on
+the first generation, so any change to `export.ollama_base_model` needs one real generation to
+verify.
 
 ## Working in this repo
 

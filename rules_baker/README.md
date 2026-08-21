@@ -80,9 +80,77 @@ Every drop is counted and printed at the end (keep-rate + reasons) — nothing i
 |-------|--------|---------|--------|
 | 1. Generate data | `data_gen/generate_dataset.py` | CPU (anywhere) | `datasets/rules_sft.jsonl` |
 | 2. Train QLoRA | `train/train_lora.py` | CUDA GPU (16–24GB) | LoRA adapter |
-| 3. Export | `export/export_gguf.py` | CUDA GPU | quantized GGUF |
-| 4. Serve | `export/Modelfile` (Ollama) | CPU/GPU edge | local `/v1` API |
+| 3a. Export merged | `export/export_gguf.py` | CUDA GPU | quantized GGUF (~500MB) |
+| 3b. Export adapter | `export/export_adapter.py` | CPU (anywhere) | GGUF adapter (~50MB) |
+| 4. Serve | `export/Modelfile` / `Modelfile.adapter` | CPU/GPU edge | local `/v1` API |
 | ✅ Eval | `eval/eval_rules.py` | CPU (anywhere) | compliance % (before/after) |
+
+### Two ways to ship the same bake
+
+Training produces an **adapter** — a delta against the base model, not a model.
+What you do with it depends on who is running it:
+
+| | Merged GGUF | Adapter |
+|---|---|---|
+| Size | ~500MB (whole model) | ~50MB (the change only) |
+| Browser (wllama) | **required** | cannot load it |
+| Ollama | works | works, and is the better deal |
+| Ten sets of rules | ten whole models | one base + ten deltas |
+
+The browser has no choice: wllama exposes no adapter API, so the LoRA has to be
+folded into the weights and the whole thing shipped. Ollama applies an adapter on
+top of a stock base at load time, so an Ollama user downloads a tenth as much —
+and the base stays shared across every set of rules you ever bake.
+
+One sharp edge, worth knowing before you hand it to a class: an adapter is only
+meaningful against the exact weights it was trained on, and **Ollama does not
+check**. `ollama create` accepts a mismatched adapter and reports success; the
+failure arrives the first time you generate, as the model server exiting
+(observed on Ollama 0.32.13). So generate once before you trust a build, and
+leave `export.ollama_base_model` in the config alone unless you also changed
+`student.base_model`.
+
+## Seeds from your own documents
+
+The seed list is the other half of what shapes a bake: the rules say *how* to
+write, the seeds say *what to write about*. `data_gen/seeds/task_seeds.txt` ships
+68 generic coding tasks. If you would rather the student practised on the shape
+of work your team actually does, point the ingester at a folder of your own
+documents:
+
+```bash
+python data_gen/documents_to_seeds.py --config configs/qwen_coder_0_5b_chromebook.yaml \
+                                      --docs ~/handbook
+```
+
+It cleans the markup and the code out, splits what is left into blocks, and asks
+the same local teacher to turn each block into concrete coding tasks. Output is
+**seeds** — the teacher still writes every training pair downstream. It is
+deliberately not tokens: tokenisation happens at training time from text, and a
+folder of tokens is a dataset with the labels thrown away.
+
+**Seeds must not mention style.** This is the one thing to understand before
+using it. The whole bake works because the student never sees a rule — so a seed
+like "write a logger that follows our naming convention" puts the rule back into
+the prompt, and the model learns to look for the mention instead of applying the
+style to everything. The teacher is instructed not to write such tasks and the
+output is gated again afterwards, and those drops are counted as
+`seed_mentions_style`.
+
+**Where the keep rate falls.** Every drop is counted by reason into a
+`from_documents.ingestsheet.json` beside the seeds, for the same reason the
+datasheet reports its own. Observed on this repo's own `docs/` folder: with
+`--no-teacher`, which uses cleaned excerpts as candidate seeds unchanged, the
+keep rate is **0%** — prose describes work, it is not phrased as work, and every
+candidate is dropped as `seed_not_a_task`, `seed_quotes_code` or
+`seed_is_a_fragment`. With the teacher it is high, because the messiness has
+already been absorbed upstream. Downstream, in `generate_dataset.py` against a
+`qwen2.5-coder:1.5b` teacher, 15 document-derived seeds kept **87.9%** against
+**100%** for 15 curated ones — a real drop, but a small sample, and the honest
+signal mostly shows up in the ingest sheet rather than the datasheet.
+
+Read the seed file before you bake on it. The gates can tell a task from a
+sentence; they cannot tell a good task from a dull one.
 
 ## What you tinker with (the "Tinker Factor")
 
@@ -118,11 +186,19 @@ pip install unsloth
 python train/train_lora.py --config configs/qwen_coder_0_5b_chromebook.yaml
 ```
 
-**4. Export + serve:**
+**4. Export + serve.** Merged, for the browser or for Ollama:
 
 ```bash
 python export/export_gguf.py --config configs/qwen_coder_7b.yaml
 ollama create qwen-coder-housestyle -f export/Modelfile
+```
+
+Or just the adapter, if you are serving through Ollama — a tenth of the size, and
+no GPU needed for this step:
+
+```bash
+python export/export_adapter.py --config configs/qwen_coder_7b.yaml
+ollama create qwen-coder-housestyle-adapter -f outputs/qwen_coder_7b_rules/adapter/Modelfile
 ```
 
 **5. Post-bake eval — compare against the baseline:**
@@ -144,6 +220,6 @@ rules_baker/
 │   └── generate_dataset.py
 ├── train/train_lora.py # Unsloth QLoRA
 ├── eval/eval_rules.py  # objective rule-compliance scorer
-├── export/             # GGUF export + Ollama Modelfile
+├── export/             # merged GGUF, adapter GGUF, and both Ollama Modelfiles
 └── datasets/           # generated SFT data lands here
 ```

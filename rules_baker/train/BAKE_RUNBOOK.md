@@ -18,6 +18,9 @@ Baking a **0.5B** is tiny: minutes on a free Colab T4, and it fits on any 6GB+ G
 5. python export/export_gguf.py --config configs/qwen_coder_0_5b_chromebook.yaml
 6. Download outputs/qwen_coder_0_5b_rules/gguf/*.gguf
 7. Drag it into http://localhost:8123  →  ask a coding task  →  watch the rules apply.
+
+   (Serving through Ollama instead? Add step 5b — export/export_adapter.py —
+    and download the ~50MB adapter rather than the ~500MB merged model.)
 ```
 
 > **Smoke-bake first.** You already have a 45-example mock `datasets/rules_sft.jsonl`
@@ -69,6 +72,15 @@ up = files.upload()                      # pick rules_baker.zip
 !python export/export_gguf.py --config configs/qwen_coder_0_5b_chromebook.yaml
 ```
 
+**5b. Optional — export the adapter for Ollama** (Colab cell). A tenth of the
+size, because Ollama can apply the LoRA to a base model you already have. Skip
+this if you are only using the browser, which cannot load an adapter at all:
+
+```python
+# Colab cell
+!python export/export_adapter.py --config configs/qwen_coder_0_5b_chromebook.yaml
+```
+
 **6. Download the `.gguf`** (Colab cell):
 
 ```python
@@ -98,7 +110,19 @@ python train/train_lora.py  --config configs/qwen_coder_0_5b_chromebook.yaml
 python export/export_gguf.py --config configs/qwen_coder_0_5b_chromebook.yaml
 
 ls -lh outputs/qwen_coder_0_5b_rules/gguf/*.gguf   # your baked model
+
+# Optional, and no GPU needed for this one: the small Ollama adapter.
+python export/export_adapter.py --config configs/qwen_coder_0_5b_chromebook.yaml
+ollama create housestyle -f outputs/qwen_coder_0_5b_rules/adapter/Modelfile
 ```
+
+`export_adapter.py` clones llama.cpp on first use, for its `convert_lora_to_gguf.py`
+— the same checkout the merged export already needs. It runs anywhere Python and
+`torch` do; the GPU was only ever needed for the training.
+
+**Check an adapter build before you trust it.** Ollama does not verify that the
+adapter matches the base named in `FROM`: a mismatch builds successfully and then
+kills the model server the first time you generate. One generation is the test.
 
 The `.gguf` is already on your Windows drive (via `/mnt/c`), so `web/index.html`
 can load it directly.

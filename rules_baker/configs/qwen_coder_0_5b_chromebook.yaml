@@ -34,6 +34,19 @@ quality:
   dedup: true
   max_retries: 2
 
+# --- Documents -> seeds (optional; data_gen/documents_to_seeds.py) ----------
+#  Point --docs at a folder of your own handbooks/notes and these gates decide
+#  what survives. Expect a LOW keep rate on real documents: most prose is not a
+#  coding task, and the drops are counted in the ingest sheet rather than hidden.
+documents:
+  extensions: [".md", ".txt", ".rst", ".markdown"]
+  excerpt_min_words: 6        # a heading on its own is not enough to work from
+  excerpt_max_words: 120      # a whole section asks the teacher for a project
+  seed_min_words: 4
+  seed_max_words: 30
+  tasks_per_excerpt: 3
+  max_seeds: 200              # a stop, so a big folder cannot run all afternoon
+
 # --- Student: the tiny model we bake rules into ----------------------------
 #  0.5B @ 4-bit -> ~0.4GB GGUF -> loads in a browser tab on a 4GB Chromebook.
 #  Swap to Qwen2.5-Coder-1.5B for the "modern laptop" tier (edit these 2 lines).
@@ -64,6 +77,12 @@ train:
 export:
   gguf_quant: q4_k_m
   ollama_model_name: qwen-coder-housestyle-mini
+  # For export_adapter.py: the Ollama library tag of the SAME weights trained
+  # above. Ollama can stack the LoRA on a stock base (~50MB instead of ~400MB),
+  # but only if the base matches — and it does not check, so this line is the
+  # only thing standing between a student and a model that builds fine and
+  # dies on first use.
+  ollama_base_model: "qwen2.5-coder:0.5b-instruct"
   # Browser runtime target (informational; used by the Stage-6 web page):
   browser_runtime: wllama                 # llama.cpp compiled to WASM, CPU-only
   webgpu_accel_when_available: true

@@ -12,3 +12,11 @@ pyyaml>=6.0
 # transformers>=4.44
 # peft>=0.12
 # bitsandbytes>=0.43
+
+# --- Adapter export for Ollama (export/export_adapter.py) -------------------
+# No GPU, but it shells out to llama.cpp's convert_lora_to_gguf.py, which reads
+# the adapter's tensors with torch and fetches the base model's tensor index over
+# HTTP. A CPU torch is enough. Already present on any training box and on Colab,
+# which is why these are commented out here too rather than pulled in for
+# everyone who only wants to generate data.
+#   pip install torch safetensors requests
