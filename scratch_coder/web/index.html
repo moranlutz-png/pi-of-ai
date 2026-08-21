@@ -33,6 +33,27 @@
   .knob:hover { transform:scale(1.09); }
   .knob.buffer { background:repeating-linear-gradient(45deg,#2a2a2e,#2a2a2e 4px,#232327 4px,#232327 8px) !important;
     border:1px dashed var(--edge2) !important; }
+
+  /* ---- Flow / timeline: the model as the route data takes through it ---- */
+  #knobs { display:block; }
+  .flowinput { display:flex; align-items:center; gap:10px; margin:2px 0 14px; }
+  .flowinput label { color:var(--dim); font-size:12.5px; }
+  #flowInput { background:var(--panel); border:1px solid var(--edge2); color:var(--ink);
+    border-radius:8px; padding:7px 11px; font:13px var(--mono); width:220px; max-width:60vw; }
+  .flow { display:flex; align-items:stretch; overflow-x:auto; padding:4px 2px 12px; }
+  .station { flex:0 0 auto; width:154px; background:var(--panel); border:1px solid var(--edge);
+    border-top:3px solid var(--edge2); border-radius:10px; padding:11px 12px;
+    display:flex; flex-direction:column; gap:6px; }
+  .st-title { font-weight:700; font-size:13px; }
+  .st-blurb { font-size:11px; color:var(--dim); line-height:1.42; flex:1; }
+  .st-knobs { display:flex; flex-wrap:wrap; gap:4px; align-items:flex-end; margin-top:5px; }
+  .st-meta { font:10px var(--mono); color:var(--dimmer); margin-top:2px; }
+  .st-toks { display:flex; flex-wrap:wrap; gap:3px; }
+  .tok { font:12px var(--mono); background:rgba(255,255,255,.06); border:1px solid var(--edge);
+    border-radius:4px; padding:1px 5px; color:var(--ink); }
+  .tok.pred { border-style:dashed; color:var(--dim); }
+  .flow-arrow { flex:0 0 auto; align-self:center; color:var(--dimmer); padding:0 7px; font-size:15px; }
+  .buffer-note { margin-top:12px; color:var(--dim); font-size:12px; }
   .legend { margin-top:26px; color:var(--dim); font-size:12.5px; max-width:78ch; line-height:1.65; }
   .legend b { color:var(--ink); }
   code { font:12px var(--mono); background:var(--panel); padding:1px 5px; border-radius:4px; }
@@ -82,9 +103,11 @@
 </head>
 <body>
   <h1>Scratch-Coder · Model Inspector</h1>
-  <p class="lead">Every weight tensor in the from-scratch GPT, drawn from the architecture — one cell per tensor, sized by how many parameters it holds. This is a model small enough to see all the way through. It will never be a useful coder; that is the point.</p>
+  <p class="lead">Follow a piece of text left to right through the model — from raw characters, through embedding and each transformer block, to a guess at the next character. Each station shows what it does and the weights it's built from. It's small enough to see all the way through; it will never be a useful coder, and that's the point.</p>
   <div class="cfg" id="cfg">loading…</div>
   <div class="banner" id="banner" hidden></div>
+
+  <div class="flowinput"><label for="flowInput">Trace this text</label><input id="flowInput" type="text" value="def hello(" spellcheck="false" autocomplete="off" /></div>
 
   <div class="toggle" id="toggle">
     <button id="viewTrained" class="active">Trained</button>
@@ -95,7 +118,7 @@
 
   <div id="knobs"></div>
 
-  <p class="legend">Cell <b>size</b> is parameter count (√-scaled, or <code>head.weight</code> would drown every LayerNorm). Cell <b>brightness</b> is the tensor's weight spread (std) in the selected view. <b>Difference</b> is trained minus random — what training actually changed, which at four layers is <b>less than you would guess, and not evenly</b>. The striped cell is the causal mask: a fixed buffer, in the stack but never trained.</p>
+  <p class="legend">Each station's little squares are its <b>weight tensors</b> — the numbers that make up that step — sized by how many it holds. Brightness is how spread-out those numbers are; switch to <b>Difference</b> to see what training changed at each stage (at four layers, <b>less than you'd guess, and not evenly</b>). The route never changes: text in on the left, a next-character guess on the right.</p>
 
   <section id="embedSection" hidden>
     <h1 style="font-size:18px; margin:36px 0 4px">Embedding neighbourhoods</h1>
@@ -139,7 +162,7 @@ import { renderAttention } from './attention.js';
 import { renderCurves } from './curves.js';
 
 const $ = (id) => document.getElementById(id);
-let model = null, hasValues = false, gpt = null;
+let model = null, hasValues = false, gpt = null, curView = 'trained';
 
 const HINTS = {
   trained: 'The trained model — brightness is each tensor’s weight spread.',
@@ -149,6 +172,7 @@ const HINTS = {
 
 function setView(v) {
   if (!hasValues && v !== 'trained') return;
+  curView = v;
   ['Trained', 'Random', 'Diff'].forEach((k) => {
     const id = 'view' + k;
     $(id).classList.toggle('active', id.toLowerCase().includes(v));
@@ -200,6 +224,13 @@ async function boot() {
   $('viewRandom').onclick = () => setView('random');
   $('viewDiff').onclick = () => setView('diff');
   setView('trained');
+
+  // The input drives the flow's Input/Prediction stations, and mirrors into the
+  // attention panel below so one piece of text runs through the whole page.
+  $('flowInput').addEventListener('input', () => {
+    renderKnobs($('knobs'), model, curView);
+    const ap = $('attnPrompt'); if (ap) ap.value = $('flowInput').value;
+  });
 
   // Rung 2 — embedding neighbourhoods (only when a checkpoint's values exist).
   if (hasValues && model.embedding && Array.isArray(model.embedding.points)) {
