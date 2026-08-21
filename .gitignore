@@ -24,6 +24,10 @@ scratch_coder/data/
 scratch_coder/data_big/
 rules_baker/outputs/
 
+# Per-checkpoint inspector export (regenerate with scratch_coder/export_inspect.py);
+# arch.json is committed as the no-checkpoint structural fallback.
+scratch_coder/web/inspect.json
+
 # ---- Generated dataset (regenerate with data_gen/generate_dataset.py) ----
 rules_baker/datasets/*.jsonl
 rules_baker/datasets/*.progress.txt
