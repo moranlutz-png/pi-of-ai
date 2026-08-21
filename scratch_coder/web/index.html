@@ -67,12 +67,19 @@
   #embed:active { cursor:grabbing; }
   .embtoggle { display:flex; align-items:center; gap:8px; color:var(--dim); font-size:12.5px; cursor:pointer; margin-top:8px; }
   .embtoggle input { accent-color:#8ab4ff; width:15px; height:15px; }
-  .nbrpanel { min-width:176px; background:var(--panel); border:1px solid var(--edge);
+  .nbrpanel { min-width:232px; background:var(--panel); border:1px solid var(--edge);
     border-radius:10px; padding:12px 14px; font:13px var(--mono); }
   .nbrhead { color:var(--dim); margin-bottom:9px; font-size:12px; line-height:1.45; }
   .nbrrow { display:flex; justify-content:space-between; gap:14px; padding:3px 0; }
   .nbrch { color:var(--ink); }
   .nbrcos { color:var(--dimmer); }
+  /* Two lists side by side: what the model has learned so far, and what a perfectly
+     trained model should recover (the corpus's own context structure). */
+  .nbrcompare { display:flex; gap:16px; }
+  .nbrcol { flex:1; min-width:92px; }
+  .nbrcolhead { color:var(--dimmer); font-size:9.5px; letter-spacing:.06em; text-transform:uppercase;
+    margin-bottom:6px; padding-bottom:5px; border-bottom:1px solid var(--edge); }
+  .nbrcol.ideal .nbrcolhead { color:#8ab4ff; }
 
   /* ---- Live attention ---- */
   #attnSection[hidden] { display:none; }
@@ -132,7 +139,7 @@
       </div>
       <div class="nbrpanel" id="embedNeighbours"></div>
     </div>
-    <p class="viewhint" style="margin-top:10px">Each row is a character and its <b>cosine similarity</b> to the hovered one — from −1 (opposite) to 1 (identical direction); higher means the model treats them more alike. Whitespace characters have no glyph, so they're drawn as stand-ins: <code>␠</code> space · <code>↵</code> newline · <code>⇥</code> tab · <code>␍</code> carriage return.</p>
+    <p class="viewhint" style="margin-top:10px">Two lists sit side by side. <b>Model now</b> is the characters nearest the hovered one in the embedding the model has learned so far, by <b>cosine similarity</b> (−1 opposite … 1 identical). <b>If perfect</b> is what a fully trained model should recover — the characters the training text actually uses in the same contexts, measured straight from the corpus. Early on the two barely agree; that gap is how far it still has to go. (The two sets are scored differently, so the ideal numbers run higher — compare which characters appear, not the exact values.) Whitespace has no glyph, so: <code>␠</code> space · <code>↵</code> newline · <code>⇥</code> tab · <code>␍</code> carriage return.</p>
   </section>
 
   <section id="attnSection" hidden>

@@ -95,6 +95,32 @@ def neighbours(emb: np.ndarray, itos: list[str], k: int = 6) -> dict:
     return out
 
 
+def ideal_neighbours(itos: list[str], corpus: Path, k: int = 6) -> dict:
+    """What the neighbours WOULD be for a perfectly trained model — read from the data,
+    not the weights. A char model is trained only to predict the next character, so it
+    is pushed to place characters that appear in the same contexts near each other. We
+    take that target straight from the corpus: each character's profile is how often
+    every other character sits immediately before and immediately after it, and the
+    cosine between two profiles is how interchangeably the text uses them. That
+    distribution is the ideal the embedding is climbing toward, so these are the
+    neighbours a fully trained model should recover — shown beside what it has so far."""
+    ids = np.fromfile(corpus, dtype=np.uint16).astype(np.int64)
+    V = len(itos)
+    left = np.zeros((V, V)); right = np.zeros((V, V))
+    a, b = ids[:-1], ids[1:]
+    np.add.at(right, (a, b), 1.0)   # b follows a
+    np.add.at(left,  (b, a), 1.0)   # a precedes b
+    profile = np.concatenate([left, right], axis=1)          # each char: [who precedes | who follows]
+    norm = profile / (np.linalg.norm(profile, axis=1, keepdims=True) + 1e-8)
+    sim = norm @ norm.T
+    np.fill_diagonal(sim, -np.inf)
+    out = {}
+    for i in range(V):
+        idx = np.argsort(-sim[i])[:k]
+        out[itos[i]] = [{"char": itos[int(j)], "cos": round(float(sim[i, j]), 3)} for j in idx]
+    return out
+
+
 def read_loss_log(path: Path) -> list:
     """The loss + per-layer gradient-norm history the trainers append (loss.jsonl).
     Rides along in inspect.json because the page is served from web/ only and cannot
@@ -271,6 +297,7 @@ def main() -> int:
         "trained": trained,
         "random": random_stats,
         "embedding": {"points": points, "neighbours": neighbours(emb, itos_list),
+                      "idealNeighbours": ideal_neighbours(itos_list, args.ckpt.parent / "train.bin"),
                       "varianceExplainedPct": round(var_pct, 1)},
         "training": read_loss_log(args.ckpt.parent / "loss.jsonl"),
         "unverifiable": [

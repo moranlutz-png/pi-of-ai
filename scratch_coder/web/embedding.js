@@ -16,7 +16,7 @@ export function renderEmbedding(root, emb) {
   const canvas = root.querySelector('#embed');
   const varEl = root.querySelector('#embedVar');
   const nbrEl = root.querySelector('#embedNeighbours');
-  const pts = emb.points, nbrs = emb.neighbours || {};
+  const pts = emb.points, nbrs = emb.neighbours || {}, ideal = emb.idealNeighbours || {};
 
   // Centre the cloud on the origin and scale it to radius ~1.
   const cx = avg(pts.map((p) => p.x)), cy = avg(pts.map((p) => p.y)), cz = avg(pts.map((p) => p.z ?? 0));
@@ -106,10 +106,16 @@ export function renderEmbedding(root, emb) {
   const strengthToggle = document.getElementById('embByStrength');
   if (strengthToggle) { byStrength = strengthToggle.checked; strengthToggle.onchange = () => { byStrength = strengthToggle.checked; }; }
 
+  // Two columns: what the model has learned so far, and what a perfectly trained
+  // model should recover — the corpus's own context structure, exported alongside.
   function showNeighbours(ch) {
-    const list = nbrs[ch] || [];
-    nbrEl.innerHTML = `<div class="nbrhead">nearest to <b>${esc(glyph(ch))}</b><br>(cosine, full space)</div>`
-      + list.map((n) => `<div class="nbrrow"><span class="nbrch">${esc(glyph(n.char))}</span><span class="nbrcos">${Number(n.cos).toFixed(3)}</span></div>`).join('');
+    const rows = (list) => (list || []).map((n) =>
+      `<div class="nbrrow"><span class="nbrch">${esc(glyph(n.char))}</span><span class="nbrcos">${Number(n.cos).toFixed(3)}</span></div>`).join('');
+    nbrEl.innerHTML = `<div class="nbrhead">nearest to <b>${esc(glyph(ch))}</b> · cosine, full space</div>`
+      + `<div class="nbrcompare">`
+      +   `<div class="nbrcol"><div class="nbrcolhead">model now</div>${rows(nbrs[ch])}</div>`
+      +   `<div class="nbrcol ideal"><div class="nbrcolhead">if perfect</div>${rows(ideal[ch])}</div>`
+      + `</div>`;
   }
   const seed = P.find((p) => p.char === 'e') || P[0];
   if (seed) showNeighbours(seed.char);
