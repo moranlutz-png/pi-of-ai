@@ -56,7 +56,10 @@ export function renderEmbedding(root, emb) {
     canvas.width = W * dpr; canvas.height = H * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     CX = W / 2; CY = H / 2;
-    FOV = Math.min(W, H) * 1.42;   // radius-1 node stays within ~0.44·min(W,H) of centre at any angle
+    // Fill the box: scale so the outermost node's orbit reaches ~1px from the nearer
+    // edge. A radius-1 node's peak projected offset over all rotations is 0.3078·FOV
+    // (the max of √(1−z²)/(DIST−z) at z=1/DIST), so this puts that peak at min/2 − 1.
+    FOV = (Math.min(W, H) / 2 - 1) / 0.3078;
   }
   size();
   window.addEventListener('resize', size);
