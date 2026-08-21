@@ -593,10 +593,12 @@
     border:1px solid var(--edge2); border-radius:6px; padding:3px 9px; font-weight:600; }
   .act:hover:not(:disabled) { background:#43434b; }
   .act svg { width:15px; height:15px; opacity:.9; }
-  .split { position:relative; display:inline-flex; }
-  .split .act { border-radius:0; }
-  .split-main { border-radius:6px 0 0 6px; border-right:0; }
-  .split-dd { border-radius:0 6px 6px 0; padding:3px 6px; }
+  .split { position:relative; display:inline-flex; gap:4px; }
+  /* Load model is its own fully-rounded pill, matching Generate; the chevron sits
+     beside it as a separate rounded button rather than fused to its right edge. */
+  .split .act { border-radius:6px; }
+  .split-main { border-radius:6px; }
+  .split-dd { border-radius:6px; padding:3px 6px; }
   .split-dd svg { width:13px; height:13px; }
   .split .dd-menu { min-width:206px; }
   button.ghost:hover { background:var(--panel2); }
@@ -806,7 +808,6 @@
 
     <div class="navlink active" data-scroll="top"><span data-ic="dashboard"></span>Dashboard</div>
     <div class="navlink" id="termDrawerNav"><span data-ic="terminal"></span>Terminal</div>
-    <div class="navlink" data-scroll="playground"><span data-ic="zap"></span>Playground</div>
     <div class="navlink" id="scratchNav"><span data-ic="cpu"></span>Scratch-Coder</div>
 
     <div class="seclabel">Models</div>
@@ -1202,6 +1203,15 @@
           <div class="set-pane" data-pane="runtime" hidden>
             <h3>Runtime</h3>
             <p class="lead">How the model runs in your browser.</p>
+            <!-- A second copy of the top-bar runtime toggle. The switch wiring targets
+                 every .rt-pill, so this stays in sync with the top one automatically. -->
+            <span class="rt-top" style="margin:2px 0 16px">
+              <span class="rt-label">Runtime</span>
+              <span class="rt-seg">
+                <button type="button" class="rt-pill active" data-rt="wasm">In-browser</button>
+                <button type="button" class="rt-pill" data-rt="ollama">Ollama</button>
+              </span>
+            </span>
             <div class="set-rows" id="setRuntime"></div>
             <p class="note" id="storageNote" style="line-height:1.7; margin-top:12px"></p>
           </div>
