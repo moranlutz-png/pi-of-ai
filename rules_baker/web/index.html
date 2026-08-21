@@ -503,6 +503,25 @@
   #termIn { flex:1; min-width:0; background:transparent; border:0; outline:none;
     color:var(--ink); font:inherit; padding:0; }
 
+  /* ---- Terminal presented as a right-side drawer (opened from the sidebar) ----
+     Keeps the richer terminal wiring intact; only its presentation changes: the
+     section is fixed off-screen until opened, so it never sits in the main scroll. */
+  #termOverlay { position:fixed; inset:0; background:rgba(0,0,0,.42);
+    -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px);
+    z-index:110; opacity:0; transition:opacity .22s; }
+  #termOverlay.show { opacity:1; }
+  #termOverlay[hidden] { display:none; }
+  #terminal { position:fixed; top:0; right:0; height:100%; width:min(560px,94vw);
+    z-index:120; margin:0; padding:16px 18px 18px; background:var(--bg);
+    border-left:1px solid var(--edge2); box-shadow:-24px 0 60px rgba(0,0,0,.5);
+    display:flex; flex-direction:column;
+    transform:translateX(100%); transition:transform .24s cubic-bezier(.4,0,.2,1); }
+  #terminal.open { transform:translateX(0); }
+  #terminal > #term { max-height:none; flex:1; }
+  #termClose { position:absolute; top:13px; right:15px; background:none; border:0;
+    color:var(--dim); font-size:23px; line-height:1; cursor:pointer; padding:1px 7px; border-radius:6px; }
+  #termClose:hover { color:var(--ink); background:var(--panel2); }
+
   /* ---- Composer: one bounded surface holding the field and its controls ---- */
   .composer { margin-top:10px; background:var(--panel); border:1px solid var(--edge2);
     border-radius:16px; padding:12px 14px 10px;
@@ -776,7 +795,7 @@
     <div class="status" id="netStatus"></div>
 
     <div class="navlink active" data-scroll="top"><span data-ic="dashboard"></span>Dashboard</div>
-    <div class="navlink" data-scroll="terminal"><span data-ic="terminal"></span>Terminal</div>
+    <div class="navlink" id="termDrawerNav"><span data-ic="terminal"></span>Terminal</div>
     <div class="navlink" data-scroll="playground"><span data-ic="zap"></span>Playground</div>
 
     <div class="seclabel">Models</div>
@@ -926,7 +945,9 @@
          statement after it silently never ran. These three ids are the whole
          contract: #term (click focuses the input), #termOut (lines are
          appended), #termIn (the prompt). -->
+    <div id="termOverlay" hidden></div>
     <div class="sec" id="terminal">
+      <button id="termClose" title="Close">&times;</button>
       <h2>Terminal</h2>
       <p class="sub" style="margin:0 0 12px">Drive the model with commands instead of the form above.</p>
       <div id="term">
@@ -4553,6 +4574,25 @@ const termHistory = []; let histIdx = 0; let termBusy = false;
 
 function tp(text, cls) { const d = document.createElement('div'); if (cls) d.className = cls; d.textContent = text; termOut.appendChild(d); termEl.scrollTop = termEl.scrollHeight; return d; }
 termEl.addEventListener('click', (e) => { if (e.target.tagName !== 'INPUT') termIn.focus(); });
+
+// The Terminal is presented as a right-side drawer: its section is fixed off-screen
+// until opened, so it stays out of the main scroll while keeping all its wiring.
+const termDrawerNav = document.getElementById('termDrawerNav');
+const termDrawerEl = document.getElementById('terminal');
+const termOverlayEl = document.getElementById('termOverlay');
+function openTermDrawer() {
+  termOverlayEl.hidden = false;
+  requestAnimationFrame(() => { termOverlayEl.classList.add('show'); termDrawerEl.classList.add('open'); });
+  setTimeout(() => termIn.focus(), 80);
+}
+function closeTermDrawer() {
+  termDrawerEl.classList.remove('open'); termOverlayEl.classList.remove('show');
+  setTimeout(() => { termOverlayEl.hidden = true; }, 240);
+}
+if (termDrawerNav) termDrawerNav.onclick = openTermDrawer;
+document.getElementById('termClose')?.addEventListener('click', closeTermDrawer);
+termOverlayEl.addEventListener('click', closeTermDrawer);
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && termDrawerEl.classList.contains('open')) closeTermDrawer(); });
 
 // One registry, so the / menu and /help can never drift apart — they used to be
 // two hand-maintained lists, which is how a command ends up documented but
