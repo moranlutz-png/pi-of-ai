@@ -444,7 +444,7 @@ async function runGen() {
   if (!gpt || genBusy) return;
   const prompt = $('genPrompt').value || 'def ';
   const temp = parseFloat($('genTemp').value);
-  const MAX_NEW = 200, block = gpt.cfg.block_size;
+  const MAX_NEW = 1000, block = gpt.cfg.block_size;   // press Stop to end early
   genStop = false; genBusy = true;
   $('genRun').disabled = true; $('genStop').disabled = false;
   $('genStatus').textContent = 'generating…';

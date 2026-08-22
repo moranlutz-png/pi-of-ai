@@ -3629,7 +3629,7 @@ async function scratchComplete(messages, nPredict, onText) {
   const g = await loadScratch();
   const seed = [...messages].reverse().find((m) => m.role === 'user')?.content || 'def ';
   const s = currentSampling();
-  const block = g.cfg.block_size, maxNew = Math.min(nPredict || 200, 512);
+  const block = g.cfg.block_size, maxNew = Math.min(nPredict || 400, 1000);
   const ids = g.encode(seed);
   const t0 = performance.now();
   const WS = new Set([' ', '\n', '\t', '\r']);
