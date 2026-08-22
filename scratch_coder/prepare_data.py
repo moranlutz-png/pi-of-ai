@@ -23,16 +23,16 @@ if not (LIB / "os.py").exists():
     # Fallback: ask the interpreter where its stdlib lives (portable across OSes).
     LIB = Path(sysconfig.get_path("stdlib"))
 
-MAX_BYTES = 8_000_000   # up to ~8 MB — more data so a bigger model has room to learn
-                        # without just memorising (the 2 MB corpus overfit at ~1.2M params)
+MAX_BYTES = 32_000_000   # up to ~32 MB — the whole standard library, so even a bigger
+                         # model has far more real Python than it can memorise
 
 texts, total = [], 0
-# Recursive now (rglob), so subpackages like json/, email/, importlib/ count too. Skip
-# test files (noisier, less canonical) and site-packages (that's installed third-party
-# code, not the standard library we want to teach).
+# Recursive (rglob), so subpackages (json/, email/, importlib/, unittest/, ...) and the
+# stdlib's own test suites all count — it's all real, idiomatic Python. Only site-packages
+# is skipped: that's installed third-party code (numpy, torch, vendored/generated files),
+# not the standard library we want to teach.
 for path in sorted(LIB.rglob("*.py")):
-    p = str(path).lower()
-    if "test" in p or "site-packages" in p:
+    if "site-packages" in str(path).lower():
         continue
     try:
         t = path.read_text(encoding="utf-8", errors="ignore")
@@ -44,6 +44,11 @@ for path in sorted(LIB.rglob("*.py")):
         break
 
 data = "\n\n".join(texts)[:MAX_BYTES]
+# Keep it ASCII. The stdlib's Unicode test data drags in hundreds of rare characters
+# (accents, symbols, whole other scripts) that a tiny char model would only ever see a
+# handful of times — bloating the vocab and wasting capacity. Python source is ASCII
+# anyway; keep printable ASCII plus newline and tab, drop the rest.
+data = "".join(c for c in data if c == "\n" or c == "\t" or 32 <= ord(c) <= 126)
 print(f"source dir : {LIB}")
 print(f"corpus     : {len(data):,} characters from {len(texts)} files")
 

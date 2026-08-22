@@ -249,14 +249,21 @@ def source_files() -> list:
     return out
 
 
+CORPUS_PREVIEW = 4_000_000   # cap what the browser loads; a full 30 MB textarea would freeze the tab
+
+
 def write_corpus(train_bin: Path, itos: dict, web_dir: Path) -> dict:
     """Decode the training split back to text and drop it beside the page (corpus.txt),
-    so the training-data view can show the exact characters the model learned from. It
-    is regenerable and large (~1.8 MB), so it is gitignored, like weights.bin."""
+    so the training-data view can show the characters the model learned from. The full
+    corpus can be tens of MB, which is too much for a browser textarea, so only the first
+    CORPUS_PREVIEW characters are written — the true total is reported for the caption.
+    Regenerable and large, so gitignored like weights.bin."""
     ids = np.fromfile(train_bin, dtype=np.uint16)
-    text = "".join(itos[int(i)] for i in ids)
+    total = len(ids)
+    shown = min(total, CORPUS_PREVIEW)
+    text = "".join(itos[int(i)] for i in ids[:shown])
     (web_dir / "corpus.txt").write_text(text, encoding="utf-8", newline="")
-    return {"file": "corpus.txt", "chars": len(text)}
+    return {"file": "corpus.txt", "chars": int(total), "shownChars": int(shown)}
 
 
 def main() -> int:

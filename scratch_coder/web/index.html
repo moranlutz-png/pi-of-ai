@@ -420,7 +420,10 @@ async function loadCorpus(corpus) {
   try {
     const text = await (await fetch(corpus.file, { cache: 'no-store' })).text();
     ta.value = text;
-    stats.textContent = `${text.length.toLocaleString()} characters of Python from the standard library — the exact training split, nothing else`;
+    const total = corpus.chars || text.length, shown = corpus.shownChars || text.length;
+    stats.textContent = total > shown
+      ? `Showing the first ${shown.toLocaleString()} of ${total.toLocaleString()} characters — the training split is real Python from the standard library; it's capped here so the browser stays responsive.`
+      : `${total.toLocaleString()} characters of Python from the standard library — the exact training split, nothing else`;
   } catch (e) {
     stats.textContent = 'could not load ' + corpus.file + ': ' + e.message;
   }
