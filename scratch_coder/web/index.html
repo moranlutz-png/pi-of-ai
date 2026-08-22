@@ -24,12 +24,20 @@
   .tierbar { display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin:10px 0 12px; }
   .tierbar[hidden] { display:none; }
   .tierlbl { color:var(--dimmer); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; margin-right:4px; }
-  .tierbtn { display:inline-flex; align-items:baseline; gap:7px; background:var(--panel2); color:var(--dim);
-    border:1px solid var(--edge2); border-radius:6px; padding:6px 12px; font:inherit; font-size:13px; font-weight:600; cursor:pointer; }
-  .tierbtn:hover { background:#43434b; color:var(--ink); }
-  .tierbtn.active { background:var(--ink); color:#1f1f1f; border-color:var(--ink); }
-  .tierparams { font:11px var(--mono); color:var(--dimmer); }
-  .tierbtn.active .tierparams { color:#555; }
+  /* Frosted dropdown, matching the dashboard's native selects. */
+  .tierselect { appearance:none; -webkit-appearance:none; color:var(--ink); font:inherit; font-size:12.5px;
+    cursor:pointer; padding:6px 28px 6px 11px; border-radius:8px;
+    background-color:rgba(58,58,60,.55); border:1px solid rgba(255,255,255,.13);
+    backdrop-filter:blur(20px) saturate(180%); -webkit-backdrop-filter:blur(20px) saturate(180%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.10);
+    background-image:linear-gradient(45deg,transparent 50%,var(--dim) 50%),
+                     linear-gradient(135deg,var(--dim) 50%,transparent 50%);
+    background-position:calc(100% - 14px) 52%, calc(100% - 9px) 52%;
+    background-size:5px 5px, 5px 5px; background-repeat:no-repeat;
+    transition:background-color .13s ease, border-color .13s ease; }
+  .tierselect:hover { background-color:rgba(255,255,255,.14); border-color:rgba(255,255,255,.20); }
+  .tierselect:focus-visible { outline:2px solid rgba(255,255,255,.30); outline-offset:1px; }
+  .tierselect option { background:#2c2c2e; color:var(--ink); }
   .lead { color:var(--dim); margin:0; font-size:13.5px; max-width:74ch; }
   .cfg { color:var(--dimmer); font:12px var(--mono); margin:12px 0 16px; }
   .banner { background:rgba(212,162,75,.09); border:1px solid rgba(212,162,75,.3);
@@ -349,14 +357,16 @@ function buildTierSwitcher(tiers) {
   const bar = $('tierBar');
   if (!tiers || !tiers.length) { bar.hidden = true; return; }
   bar.hidden = false;
-  bar.innerHTML = '<span class="tierlbl">Model size</span>' + tiers.map((t) =>
-    `<button class="tierbtn" data-dir="tiers/${t.id}">${t.label}<span class="tierparams">${(t.params / 1e6).toFixed(2)}M</span></button>`).join('');
-  bar.querySelectorAll('.tierbtn').forEach((b) => { b.onclick = () => loadTier(b.dataset.dir); });
+  bar.innerHTML = '<span class="tierlbl">Model size</span>'
+    + '<select id="tierSelect" class="tierselect" aria-label="Model size">'
+    + tiers.map((t) => `<option value="tiers/${t.id}">${t.label} · ${(t.params / 1e6).toFixed(2)}M params</option>`).join('')
+    + '</select>';
+  $('tierSelect').onchange = (e) => loadTier(e.target.value);
 }
 
 // Load one tier (or the default model at '.') and (re)render every section from it.
 async function loadTier(dir) {
-  $('tierBar').querySelectorAll('.tierbtn').forEach((x) => x.classList.toggle('active', x.dataset.dir === dir));
+  const sel = $('tierSelect'); if (sel && sel.value !== dir) sel.value = dir;   // keep the dropdown in sync
   let ok = false;
   try {
     const r = await fetch(`${dir}/inspect.json`, { cache: 'no-store' });
