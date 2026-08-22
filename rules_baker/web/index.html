@@ -530,7 +530,9 @@
   #terminal.open { transform:translateX(0); }
   #terminal > #term { max-height:none; flex:1; border:0; border-radius:0;
     background:transparent; padding:16px 18px 18px; }
-  #termClose { position:absolute; top:13px; right:15px; background:none; border:0;
+  /* z-index keeps the close button above #term, which now fills the drawer (it is
+     position:relative and comes later in the DOM, so without this it covers the X). */
+  #termClose { position:absolute; top:13px; right:15px; z-index:3; background:none; border:0;
     color:var(--dim); font-size:23px; line-height:1; cursor:pointer; padding:1px 7px; border-radius:6px; }
   #termClose:hover { color:var(--ink); background:var(--panel2); }
 
@@ -1468,12 +1470,14 @@ document.querySelectorAll('.navlink[data-scroll]').forEach(n => n.onclick = () =
 });
 
 // Scratch-Coder is its own page: swap the whole main view rather than scroll to it.
-document.getElementById('scratchNav')?.addEventListener('click', () => {
+// A function so the Library card can open it too, not just the sidebar item.
+function openScratch() {
   document.body.classList.add('view-scratch');
   document.querySelectorAll('.navlink').forEach(x => x.classList.remove('active'));
-  document.getElementById('scratchNav').classList.add('active');
+  document.getElementById('scratchNav')?.classList.add('active');
   document.querySelector('.main')?.scrollTo({ top: 0 });
-});
+}
+document.getElementById('scratchNav')?.addEventListener('click', openScratch);
 
 // ---- Sidebar model tree, built from models.json ----
 // The list used to be hardcoded here AND in models.json, so the two drifted.
@@ -4330,6 +4334,22 @@ async function renderLibrary() {
     // synchronous, so the later run simply replaces the earlier one.
     const stored = await listModels();
     grid.innerHTML = '';
+
+    // The Scratch-Coder is a model you can use here too — not a GGUF you download,
+    // but its own from-scratch model that runs its tiny forward pass on its own page.
+    // First in the grid, so the Library reads as "every model", not just downloadable ones.
+    {
+      const card = document.createElement('div'); card.className = 'libcard';
+      card.innerHTML = `<div class="h">${ICONS.cpu || ICONS.laptop}<span class="nm">Scratch-Coder</span><span class="sz">0.84M</span></div>`
+        + `<div class="tags"><span class="rectag">${ICONS.check} Runs in this tab</span></div>`
+        + `<div class="d">A character-level model trained from scratch on Python source. Generate with it, and inspect its weights, attention, and embeddings.</div>`
+        + `<span class="cardgo">Open ${ICONS.chevronright}</span>`;
+      card.tabIndex = 0; card.setAttribute('role', 'button');
+      card.onclick = openScratch;
+      card.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openScratch(); } };
+      grid.appendChild(card);
+    }
+
     models.forEach((m) => {
       const card = document.createElement('div'); card.className = 'libcard';
       const badge = m.verified ? `<span class="verified" title="Verified — this GGUF has been checked and is safe">${ICONS.verified}</span>` : '';

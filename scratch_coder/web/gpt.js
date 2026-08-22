@@ -106,4 +106,22 @@ export class ScratchGPT {
     const xf = layernorm(x[T - 1], W['ln_f.weight'], W['ln_f.bias']);
     return { logits: linear(xf, W['head.weight'], null, C, V), attn };
   }
+
+  decode(ids) { return ids.map((i) => this.vocab[i]).join(''); }
+
+  // Draw one next-token id from the final logits — the browser twin of sample_big.py:
+  // optional top-k, then temperature-softened softmax, then a weighted random draw.
+  // exp((l−max)/t) is softmax(l/t) with the max subtracted for numerical stability.
+  sampleNext(logits, temperature = 0.8, topK = 0) {
+    const V = logits.length, t = Math.max(1e-6, temperature);
+    const pool = (topK > 0 && topK < V)
+      ? Array.from({ length: V }, (_, i) => i).sort((a, b) => logits[b] - logits[a]).slice(0, topK)
+      : Array.from({ length: V }, (_, i) => i);
+    let mx = -Infinity; for (const i of pool) if (logits[i] > mx) mx = logits[i];
+    let sum = 0; const ps = new Float64Array(pool.length);
+    for (let k = 0; k < pool.length; k++) { const e = Math.exp((logits[pool[k]] - mx) / t); ps[k] = e; sum += e; }
+    let r = Math.random() * sum;
+    for (let k = 0; k < pool.length; k++) { r -= ps[k]; if (r <= 0) return pool[k]; }
+    return pool[pool.length - 1];
+  }
 }

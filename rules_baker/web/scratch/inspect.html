@@ -92,6 +92,24 @@
     margin-bottom:6px; padding-bottom:5px; border-bottom:1px solid var(--edge); }
   .nbrcol.ideal .nbrcolhead { color:#8ab4ff; }
 
+  /* ---- Generate (run the model in the browser) ---- */
+  #genSection[hidden] { display:none; }
+  .geninput { display:flex; gap:10px; align-items:center; margin:8px 0 12px; flex-wrap:wrap; }
+  #genPrompt { flex:1; min-width:200px; background:var(--panel); border:1px solid var(--edge2); color:var(--ink);
+    border-radius:8px; padding:8px 11px; font:13px var(--mono); }
+  #genTemp { background:var(--panel); border:1px solid var(--edge2); color:var(--ink);
+    border-radius:8px; padding:8px 9px; font:12.5px var(--mono); }
+  #genRun { background:#ececec; color:#1a1a1a; border:0; border-radius:8px; padding:8px 15px;
+    font:inherit; font-size:13px; font-weight:600; cursor:pointer; }
+  #genRun:hover:not(:disabled) { background:#fff; }
+  #genStop { background:var(--panel); color:var(--ink); border:1px solid var(--edge2); border-radius:8px;
+    padding:8px 14px; font:inherit; font-size:13px; font-weight:600; cursor:pointer; }
+  #genRun:disabled, #genStop:disabled { opacity:.4; cursor:not-allowed; }
+  .genout { white-space:pre-wrap; word-break:break-word; background:var(--panel); border:1px solid var(--edge);
+    border-radius:10px; padding:14px 16px; min-height:130px; margin:0; font:13px/1.65 var(--mono); color:var(--ink); }
+  .genout .seed { color:var(--dim); }
+  .genout .cursor { color:var(--dimmer); }
+
   /* ---- Live attention ---- */
   #attnSection[hidden] { display:none; }
   .attninput { display:flex; gap:10px; align-items:center; margin:8px 0 4px; }
@@ -138,6 +156,24 @@
   <div id="knobs"></div>
 
   <p class="legend">Each station's little squares are its <b>weight tensors</b> — the numbers that make up that step — sized by how many it holds. Brightness is how spread-out those numbers are; switch to <b>Difference</b> to see what training changed at each stage (at four layers, <b>less than you'd guess, and not evenly</b>). The route never changes: text in on the left, a next-character guess on the right.</p>
+
+  <section id="genSection" hidden>
+    <h1 style="font-size:18px; margin:36px 0 4px">Generate</h1>
+    <p class="lead">Give it a few characters and it continues them — one character at a time, the whole forward pass running here in the browser with no server. It only ever saw Python source, so expect Python-flavoured shapes: indentation, <code>def</code>, brackets, names. At 0.84M parameters trained from scratch it will not write working code; seeing what structure it <i>did</i> pick up is the point.</p>
+    <div class="geninput">
+      <input id="genPrompt" type="text" value="def " spellcheck="false" autocomplete="off" aria-label="Prompt" />
+      <select id="genTemp" aria-label="Temperature">
+        <option value="0.5">Temp · 0.5</option>
+        <option value="0.8" selected>Temp · 0.8</option>
+        <option value="1">Temp · 1.0</option>
+        <option value="1.2">Temp · 1.2</option>
+      </select>
+      <button id="genRun">Generate</button>
+      <button id="genStop" disabled>Stop</button>
+    </div>
+    <pre id="genOut" class="genout"></pre>
+    <p class="viewhint" id="genStatus"></p>
+  </section>
 
   <section id="embedSection" hidden>
     <h1 style="font-size:18px; margin:36px 0 4px">Embedding neighbourhoods</h1>
@@ -264,7 +300,15 @@ async function boot() {
     $('attnSection').hidden = false;
     $('attnRun').onclick = runAttn;
     $('attnPrompt').addEventListener('keydown', (e) => { if (e.key === 'Enter') runAttn(); });
-    try { gpt = await ScratchGPT.load('.'); await runAttn(); }
+    try {
+      gpt = await ScratchGPT.load('.');
+      await runAttn();
+      // Rung 3b — actually run the model: the Generate panel uses the same loaded gpt.
+      $('genSection').hidden = false;
+      $('genRun').onclick = runGen;
+      $('genStop').onclick = () => { genStop = true; };
+      $('genPrompt').addEventListener('keydown', (e) => { if (e.key === 'Enter') runGen(); });
+    }
     catch (e) { $('attnStatus').textContent = 'attention unavailable: ' + e.message; $('attnRun').disabled = true; }
   } else if (hasValues) {
     // Values are here but no weights.bin — show how to get it, don't regress the rest.
@@ -279,6 +323,40 @@ async function boot() {
     renderCurves($('curvesSection'), model.training);
   }
 }
+
+let genStop = false, genBusy = false;
+async function runGen() {
+  if (!gpt || genBusy) return;
+  const prompt = $('genPrompt').value || 'def ';
+  const temp = parseFloat($('genTemp').value);
+  const MAX_NEW = 200, block = gpt.cfg.block_size;
+  genStop = false; genBusy = true;
+  $('genRun').disabled = true; $('genStop').disabled = false;
+  $('genStatus').textContent = 'generating…';
+  const ids = gpt.encode(prompt);
+  const out = $('genOut');
+  // The prompt is dimmed so the model's own output stands apart from what you typed.
+  const seedText = gpt.decode(ids);
+  let genText = '';
+  const paint = () => { out.innerHTML = `<span class="seed">${esc(seedText)}</span>${esc(genText)}<span class="cursor">▍</span>`; };
+  paint();
+  const t0 = performance.now();
+  let n = 0;
+  for (; n < MAX_NEW && !genStop; n++) {
+    const { logits } = gpt.forward(ids.slice(-block));   // crop to the context window, like sample_big.py
+    const next = gpt.sampleNext(logits, temp, 40);
+    ids.push(next);
+    genText += gpt.vocab[next];
+    paint();
+    await new Promise((r) => setTimeout(r, 0));           // yield so the character actually paints
+  }
+  out.innerHTML = `<span class="seed">${esc(seedText)}</span>${esc(genText)}`;
+  const cps = (n / ((performance.now() - t0) / 1000)).toFixed(0);
+  $('genStatus').textContent = `${n} characters · ${cps}/s · forward pass in this browser tab`;
+  $('genRun').disabled = false; $('genStop').disabled = true; genBusy = false;
+}
+
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
 async function runAttn() {
   if (!gpt) return;
