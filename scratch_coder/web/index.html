@@ -443,10 +443,14 @@ async function runGen() {
   const paint = () => { out.innerHTML = `<span class="seed">${esc(seedText)}</span>${esc(genText)}<span class="cursor">▍</span>`; };
   paint();
   const t0 = performance.now();
+  const WS = new Set([' ', '\n', '\t', '\r']);
   let n = 0;
   for (; n < MAX_NEW && !genStop; n++) {
     const { logits } = gpt.forward(ids.slice(-block));   // crop to the context window, like sample_big.py
-    const next = gpt.sampleNext(logits, temp, 40);
+    // Nucleus + a mild repetition penalty over recent NON-whitespace characters, so it
+    // stops looping at low temperature without ever discouraging indentation/newlines.
+    const recent = ids.slice(-40).filter((id) => !WS.has(gpt.vocab[id]));
+    const next = gpt.sampleNext(logits, temp, 40, { topP: 0.95, repeatPenalty: 1.15, recent });
     ids.push(next);
     genText += gpt.vocab[next];
     paint();

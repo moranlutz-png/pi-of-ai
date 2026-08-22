@@ -3626,10 +3626,13 @@ async function scratchComplete(messages, nPredict, onText) {
   const block = g.cfg.block_size, maxNew = Math.min(nPredict || 200, 512);
   const ids = g.encode(seed);
   const t0 = performance.now();
+  const WS = new Set([' ', '\n', '\t', '\r']);
   let full = '';
   for (let n = 0; n < maxNew && !abort; n++) {
     const { logits } = g.forward(ids.slice(-block));
-    const next = g.sampleNext(logits, s.temperature, Math.min(s.topK || 40, g.cfg.vocab_size));
+    // Nucleus + mild repetition penalty over recent non-whitespace chars (keeps indentation).
+    const recent = ids.slice(-40).filter((id) => !WS.has(g.vocab[id]));
+    const next = g.sampleNext(logits, s.temperature, Math.min(s.topK || 40, g.cfg.vocab_size), { topP: 0.95, repeatPenalty: 1.15, recent });
     ids.push(next);
     full += g.vocab[next];
     if (onText) onText(full);

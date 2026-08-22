@@ -109,18 +109,39 @@ export class ScratchGPT {
 
   decode(ids) { return ids.map((i) => this.vocab[i]).join(''); }
 
-  // Draw one next-token id from the final logits — the browser twin of sample_big.py:
-  // optional top-k, then temperature-softened softmax, then a weighted random draw.
+  // Draw one next-token id from the final logits — the browser twin of sample_big.py,
+  // with a few standard quality knobs on top of temperature:
+  //   topK          — only consider the K most likely characters
+  //   topP           — nucleus: keep the smallest set of characters covering P of the
+  //                    probability mass (cuts the long tail without a hard K)
+  //   repeatPenalty  — divide the logit of any character in `recent`, to discourage the
+  //                    low-temperature loops; pass `recent` already stripped of
+  //                    whitespace so indentation and newlines are never penalised.
   // exp((l−max)/t) is softmax(l/t) with the max subtracted for numerical stability.
-  sampleNext(logits, temperature = 0.8, topK = 0) {
+  sampleNext(logits, temperature = 0.8, topK = 0, { topP = 1, repeatPenalty = 1, recent = null } = {}) {
     const V = logits.length, t = Math.max(1e-6, temperature);
+    const L = Float32Array.from(logits);              // copy — never mutate the caller's logits
+    if (repeatPenalty !== 1 && recent) {
+      for (const id of new Set(recent)) L[id] = L[id] > 0 ? L[id] / repeatPenalty : L[id] * repeatPenalty;
+    }
     const pool = (topK > 0 && topK < V)
-      ? Array.from({ length: V }, (_, i) => i).sort((a, b) => logits[b] - logits[a]).slice(0, topK)
+      ? Array.from({ length: V }, (_, i) => i).sort((a, b) => L[b] - L[a]).slice(0, topK)
       : Array.from({ length: V }, (_, i) => i);
-    let mx = -Infinity; for (const i of pool) if (logits[i] > mx) mx = logits[i];
+    let mx = -Infinity; for (const i of pool) if (L[i] > mx) mx = L[i];
     let sum = 0; const ps = new Float64Array(pool.length);
-    for (let k = 0; k < pool.length; k++) { const e = Math.exp((logits[pool[k]] - mx) / t); ps[k] = e; sum += e; }
-    let r = Math.random() * sum;
+    for (let k = 0; k < pool.length; k++) { const e = Math.exp((L[pool[k]] - mx) / t); ps[k] = e; sum += e; }
+    for (let k = 0; k < ps.length; k++) ps[k] /= sum;
+    if (topP < 1) {                                   // nucleus filter over the pool
+      const ord = Array.from({ length: pool.length }, (_, k) => k).sort((a, b) => ps[b] - ps[a]);
+      let cum = 0, n = ord.length;
+      for (let k = 0; k < ord.length; k++) { cum += ps[ord[k]]; if (cum >= topP) { n = k + 1; break; } }
+      const keep = ord.slice(0, n);
+      let ks = 0; for (const k of keep) ks += ps[k];
+      let r = Math.random() * ks;
+      for (const k of keep) { r -= ps[k]; if (r <= 0) return pool[k]; }
+      return pool[keep[keep.length - 1]];
+    }
+    let r = Math.random();
     for (let k = 0; k < pool.length; k++) { r -= ps[k]; if (r <= 0) return pool[k]; }
     return pool[pool.length - 1];
   }
