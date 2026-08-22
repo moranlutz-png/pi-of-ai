@@ -1271,6 +1271,7 @@ import { runBenchmark, saveRun, BENCH_PROMPT } from './bench.js';
 import { runChain } from './chain.js';
 import { applySampling, SAMPLING_DEFAULTS } from './sampling.js';
 import { BAKE_TARGETS, getTarget, buildNotebook, notebookName, bakeBasename } from './bake.js';
+import { ScratchGPT } from './scratch/gpt.js';   // the from-scratch char model, usable here too
 import { parseTrainingLog, lossPath } from './training-log.js';
 import { looksDegenerate } from './repetition.js';
 
@@ -3076,6 +3077,10 @@ async function withLoad(label, loadFn) {
     wllama = new Wllama(CONFIG);
     await loadFn();
     modelLabel = label; prog.style.width = '100%';
+    if (activeRuntime === 'scratch') {   // a real GGUF just loaded — it runs on wasm, not the scratch model
+      activeRuntime = 'wasm';
+      document.querySelectorAll('.rt-pill').forEach((p) => p.classList.toggle('active', p.dataset.rt === 'wasm'));
+    }
     pushRecent(loadedUrl);        // only on success — a failed load isn't "recent"
     noteActivity();               // getting a model loaded is a day's work of its own
     // A catalogue entry carries provenance; a dropped file carries almost none,
@@ -3525,6 +3530,7 @@ let activeRuntime = 'wasm';
 let ollamaModel = null;
 
 function runtimeReady() {
+  if (activeRuntime === 'scratch') return !!scratchGpt;
   return activeRuntime === 'ollama' ? !!ollamaModel : !!wllama;
 }
 
@@ -3601,9 +3607,59 @@ async function complete(messages, nPredict, onText) {
   // entry that never happened on that run. No run has stopped for any reason
   // yet, for either runtime, until proven otherwise below.
   lastStopReason = null;
+  if (activeRuntime === 'scratch') return scratchComplete(messages, nPredict, onText);
   if (activeRuntime === 'ollama') return ollamaComplete(messages, nPredict, onText);
   return wasmComplete(messages, nPredict, onText);
 }
+
+// ---- Scratch-Coder as a usable model ----
+// The from-scratch char model runs its own forward pass here, so it plugs into the
+// one generation path like any other model. It continues the last user message one
+// character at a time (it only knows Python, so Python prompts fare best).
+let scratchGpt = null;
+async function loadScratch() { if (!scratchGpt) scratchGpt = await ScratchGPT.load('./scratch'); return scratchGpt; }
+
+async function scratchComplete(messages, nPredict, onText) {
+  const g = await loadScratch();
+  const seed = [...messages].reverse().find((m) => m.role === 'user')?.content || 'def ';
+  const s = currentSampling();
+  const block = g.cfg.block_size, maxNew = Math.min(nPredict || 200, 512);
+  const ids = g.encode(seed);
+  const t0 = performance.now();
+  let full = '';
+  for (let n = 0; n < maxNew && !abort; n++) {
+    const { logits } = g.forward(ids.slice(-block));
+    const next = g.sampleNext(logits, s.temperature, Math.min(s.topK || 40, g.cfg.vocab_size));
+    ids.push(next);
+    full += g.vocab[next];
+    if (onText) onText(full);
+    const secs = (performance.now() - t0) / 1000;
+    $('runStats').textContent = `${n + 1} chars · ${secs.toFixed(1)}s · ${((n + 1) / secs).toFixed(0)} ch/s · Scratch-Coder · working…`;
+    await new Promise((r) => setTimeout(r, 0));   // yield so it streams and Stop can land
+  }
+  return full;
+}
+
+// Make the Scratch-Coder the active dashboard model, load it, and go generate.
+async function useScratch() {
+  document.body.classList.remove('view-scratch');
+  document.querySelectorAll('.navlink').forEach((x) => x.classList.remove('active'));
+  document.querySelector('.navlink[data-scroll="top"]')?.classList.add('active');
+  activeRuntime = 'scratch';
+  document.querySelectorAll('.rt-pill').forEach((p) => p.classList.remove('active'));  // neither wasm nor ollama
+  modelLabel = 'Scratch-Coder';
+  if (window.__setModelBtn) window.__setModelBtn('Scratch-Coder');
+  document.querySelector('.main')?.scrollTo({ top: 0 });
+  status.innerHTML = 'Loading Scratch-Coder…';
+  try {
+    await loadScratch();
+    runBtn.disabled = false;
+    status.innerHTML = '<span style="color:var(--ok)">✓ Scratch-Coder ready — a 0.84M-parameter character model running in this tab. Type some Python and press Generate.</span>';
+  } catch (e) {
+    status.innerHTML = `<span style="color:var(--bad)">✗ Scratch-Coder failed to load: ${esc(e.message)}</span>`;
+  }
+}
+window.useScratch = useScratch;
 
 async function wasmComplete(messages, nPredict, onText) {
   const t0 = performance.now(); let nTok = 0, full = ''; let degenerate = null;
@@ -4342,11 +4398,11 @@ async function renderLibrary() {
       const card = document.createElement('div'); card.className = 'libcard';
       card.innerHTML = `<div class="h">${ICONS.cpu || ICONS.laptop}<span class="nm">Scratch-Coder</span><span class="sz">0.84M</span></div>`
         + `<div class="tags"><span class="rectag">${ICONS.check} Runs in this tab</span></div>`
-        + `<div class="d">A character-level model trained from scratch on Python source. Generate with it, and inspect its weights, attention, and embeddings.</div>`
-        + `<span class="cardgo">Open ${ICONS.chevronright}</span>`;
+        + `<div class="d">A character-level model trained from scratch on Python source. Selects it as the active model so you can generate with it here, like any other. Inspect its weights, attention, and embeddings from the sidebar.</div>`
+        + `<span class="cardgo">Use ${ICONS.chevronright}</span>`;
       card.tabIndex = 0; card.setAttribute('role', 'button');
-      card.onclick = openScratch;
-      card.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openScratch(); } };
+      card.onclick = useScratch;
+      card.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); useScratch(); } };
       grid.appendChild(card);
     }
 
