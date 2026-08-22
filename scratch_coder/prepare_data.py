@@ -23,10 +23,17 @@ if not (LIB / "os.py").exists():
     # Fallback: ask the interpreter where its stdlib lives (portable across OSes).
     LIB = Path(sysconfig.get_path("stdlib"))
 
-MAX_BYTES = 2_000_000   # ~2 MB of Python is plenty for a tiny char model
+MAX_BYTES = 8_000_000   # up to ~8 MB — more data so a bigger model has room to learn
+                        # without just memorising (the 2 MB corpus overfit at ~1.2M params)
 
 texts, total = [], 0
-for path in sorted(LIB.glob("*.py")):
+# Recursive now (rglob), so subpackages like json/, email/, importlib/ count too. Skip
+# test files (noisier, less canonical) and site-packages (that's installed third-party
+# code, not the standard library we want to teach).
+for path in sorted(LIB.rglob("*.py")):
+    p = str(path).lower()
+    if "test" in p or "site-packages" in p:
+        continue
     try:
         t = path.read_text(encoding="utf-8", errors="ignore")
     except OSError:
