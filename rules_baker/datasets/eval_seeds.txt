@@ -1,0 +1,18 @@
+# Held-out eval seeds — NOT used in training. Auto-generated.
+Write a function that counts word frequencies in a text.
+Parse a CSV file and return a list of typed records.
+Write a function that merges two sorted lists into one.
+Implement a small in-memory LRU cache class.
+Run a list of callables with a thread pool and collect the results.
+Implement binary search over a sorted list.
+Compute the mean and standard deviation of a list of numbers.
+Implement a function that safely reads a JSON config file with defaults.
+Implement a function that deletes a record by id and returns whether it existed.
+Convert a nested config dict into a flat, dotted-key dict.
+Create a function that batch-inserts a list of records in a single transaction.
+Parse a query string into a dictionary of parameters.
+Remove duplicates from a list while preserving order.
+Write a function that clamps a value between a min and max.
+Implement an event emitter with subscribe and emit.
+Write a handler that validates a JSON body and returns 400 on error.
+Write a function that fetches a user record by id from the database.
