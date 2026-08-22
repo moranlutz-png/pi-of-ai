@@ -46,9 +46,11 @@ ap.add_argument("--block", type=int, default=BLOCK, help="context length in char
 ap.add_argument("--tag", default="", help="suffix for checkpoint/loss files so tiers don't clash")
 ap.add_argument("--data", default="data", help="data directory (train.bin/val.bin/meta.pkl) to train on")
 ap.add_argument("--batch", type=int, default=BATCH, help="batch size (lower it to fit a bigger model in VRAM)")
+ap.add_argument("--lr", type=float, default=LR, help="learning rate (lower it for bigger models, e.g. 1e-3)")
 args = ap.parse_args()
 BLOCK = args.block   # get_batch reads these module globals, so set them before that runs
 BATCH = args.batch
+LR = args.lr
 D = Path(__file__).resolve().parent / args.data
 # Per-tier files when --tag is given, so several sizes can be trained side by side.
 CKPT = D / (f"ckpt_{args.tag}.pt" if args.tag else "ckpt.pt")
