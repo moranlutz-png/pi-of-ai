@@ -43,8 +43,16 @@ ap.add_argument("--n-layer", type=int, default=4, help="transformer blocks (deep
 ap.add_argument("--n-head", type=int, default=4, help="attention heads (must divide n-embd)")
 ap.add_argument("--n-embd", type=int, default=128, help="embedding width")
 ap.add_argument("--block", type=int, default=BLOCK, help="context length in characters")
+ap.add_argument("--tag", default="", help="suffix for checkpoint/loss files so tiers don't clash")
+ap.add_argument("--data", default="data", help="data directory (train.bin/val.bin/meta.pkl) to train on")
+ap.add_argument("--batch", type=int, default=BATCH, help="batch size (lower it to fit a bigger model in VRAM)")
 args = ap.parse_args()
-BLOCK = args.block   # get_batch reads this module global, so set it before that runs
+BLOCK = args.block   # get_batch reads these module globals, so set them before that runs
+BATCH = args.batch
+D = Path(__file__).resolve().parent / args.data
+# Per-tier files when --tag is given, so several sizes can be trained side by side.
+CKPT = D / (f"ckpt_{args.tag}.pt" if args.tag else "ckpt.pt")
+LOSS_LOG = D / (f"loss_{args.tag}.jsonl" if args.tag else "loss.jsonl")
 
 meta = pickle.load(open(D / "meta.pkl", "rb"))
 itos, stoi = meta["itos"], meta["stoi"]
@@ -69,7 +77,6 @@ print(f"device: {device} | params: {n_params/1e6:.2f}M | vocab: {cfg.vocab_size}
 opt = torch.optim.AdamW(model.parameters(), lr=LR)
 
 # --- resume (keep teaching the same model) — opt-in; default is still from random --
-CKPT = D / "ckpt.pt"
 start_iter, best = 0, 1e9
 if args.resume and CKPT.exists():
     ck = torch.load(CKPT, map_location=device, weights_only=False)
@@ -104,7 +111,6 @@ t0 = time.time()
 # Loss and per-layer gradient norms, one JSON object per eval — the data source
 # the web UI's loss/gradient curves read (train_forever.py writes the same shape).
 # A fresh run starts a clean file; a resume appends so the curve continues.
-LOSS_LOG = D / "loss.jsonl"
 if not (args.resume and CKPT.exists()):
     LOSS_LOG.write_text("", encoding="utf-8")
 

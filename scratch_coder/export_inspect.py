@@ -272,7 +272,14 @@ def main() -> int:
     ap.add_argument("--weights", action="store_true", help="also write web/weights.bin")
     ap.add_argument("--attn-probe", metavar="TEXT", help="write an attention reference for a prompt, then exit")
     ap.add_argument("--out", type=Path, help="output path for --attn-probe (default web/probe.json)")
+    ap.add_argument("--out-dir", type=Path, help="directory for inspect.json/weights.bin (default web/); a tier uses web/tiers/<id>")
+    ap.add_argument("--label", help="tier label recorded in inspect.json (e.g. Chromebook)")
     args = ap.parse_args()
+    if args.out_dir:   # a tier export — redirect the output files to its own folder
+        args.out_dir = args.out_dir.resolve()
+        args.out_dir.mkdir(parents=True, exist_ok=True)
+        globals()["OUT"] = args.out_dir / "inspect.json"
+        globals()["WEIGHTS"] = args.out_dir / "weights.bin"
 
     if not args.ckpt.exists():
         raise SystemExit(f"no checkpoint at {args.ckpt} — train one first (python train.py)")
@@ -325,13 +332,16 @@ def main() -> int:
             "valLoss": (float(ck["best"]) if "best" in ck else None),
             "sizeBytes": int(args.ckpt.stat().st_size),
         },
+        "tier": args.label,
         "arch": amap,
         "trained": trained,
         "random": random_stats,
         "embedding": {"points": points, "neighbours": neighbours(emb, itos_list),
                       "idealNeighbours": ideal_neighbours(itos_list, args.ckpt.parent / "train.bin"),
                       "varianceExplainedPct": round(var_pct, 1)},
-        "training": read_loss_log(args.ckpt.parent / "loss.jsonl"),
+        # A tier's checkpoint is ckpt_<tag>.pt with its own loss_<tag>.jsonl beside it.
+        "training": read_loss_log(args.ckpt.parent / (
+            f"loss_{args.ckpt.stem[5:]}.jsonl" if args.ckpt.stem.startswith("ckpt_") else "loss.jsonl")),
         "source": source_files(),
         "corpus": write_corpus(args.ckpt.parent / "train.bin", itos, OUT.parent),
         "unverifiable": [
@@ -354,9 +364,12 @@ def main() -> int:
     # its sidebar). Mirror the generated files there so it stays in sync. The user
     # chose to merge the two builds; this keeps that copy honest without a second
     # export command to remember.
-    mirror = HERE.parent / "rules_baker" / "web" / "scratch"
-    if mirror.is_dir():
+    scratch_root = HERE.parent / "rules_baker" / "web" / "scratch"
+    if scratch_root.is_dir():
         import shutil
+        rel = OUT.parent.relative_to(HERE / "web")     # "." for the default, "tiers/<id>" for a tier
+        mirror = scratch_root / rel
+        mirror.mkdir(parents=True, exist_ok=True)
         shutil.copy2(OUT, mirror / "inspect.json")
         if args.weights and WEIGHTS.exists():
             shutil.copy2(WEIGHTS, mirror / "weights.bin")

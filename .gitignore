@@ -34,6 +34,11 @@ scratch_coder/web/corpus.txt
 # data is mirrored there and is likewise regenerable, not source.
 rules_baker/web/scratch/inspect.json
 rules_baker/web/scratch/corpus.txt
+# Per-tier generated model files (manifest.json IS committed — it's the tier list).
+scratch_coder/web/tiers/*/inspect.json
+scratch_coder/web/tiers/*/corpus.txt
+rules_baker/web/scratch/tiers/*/inspect.json
+rules_baker/web/scratch/tiers/*/corpus.txt
 # weights.bin (the attention rung's sidecar) is caught by the *.bin rule above.
 
 # ---- Generated dataset (regenerate with data_gen/generate_dataset.py) ----

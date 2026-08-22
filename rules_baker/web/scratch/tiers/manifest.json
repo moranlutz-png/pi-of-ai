@@ -1,0 +1,5 @@
+[
+  { "id": "featherweight", "label": "Featherweight", "params": 478272, "note": "Tiniest — the fastest, runs on anything." },
+  { "id": "chromebook", "label": "Chromebook", "params": 1230848, "note": "The sweet spot — the school-Chromebook target." },
+  { "id": "laptop", "label": "Laptop", "params": 1907200, "note": "Bigger — the sharpest of the small tiers." }
+]

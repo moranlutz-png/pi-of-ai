@@ -3616,8 +3616,14 @@ async function complete(messages, nPredict, onText) {
 // The from-scratch char model runs its own forward pass here, so it plugs into the
 // one generation path like any other model. It continues the last user message one
 // character at a time (it only knows Python, so Python prompts fare best).
-let scratchGpt = null;
-async function loadScratch() { if (!scratchGpt) scratchGpt = await ScratchGPT.load('./scratch'); return scratchGpt; }
+// One of the from-scratch tiers can be the active model; scratchDir points at whichever
+// (the inspector's default at ./scratch, or a tier under ./scratch/tiers/<id>).
+let scratchGpt = null, scratchDir = './scratch', scratchLabel = 'Scratch-Coder';
+async function loadScratch(dir) {
+  if (dir && dir !== scratchDir) { scratchGpt = null; scratchDir = dir; }   // switching tiers reloads
+  if (!scratchGpt) scratchGpt = await ScratchGPT.load(scratchDir);
+  return scratchGpt;
+}
 
 async function scratchComplete(messages, nPredict, onText) {
   const g = await loadScratch();
@@ -3637,29 +3643,30 @@ async function scratchComplete(messages, nPredict, onText) {
     full += g.vocab[next];
     if (onText) onText(full);
     const secs = (performance.now() - t0) / 1000;
-    $('runStats').textContent = `${n + 1} chars · ${secs.toFixed(1)}s · ${((n + 1) / secs).toFixed(0)} ch/s · Scratch-Coder · working…`;
+    $('runStats').textContent = `${n + 1} chars · ${secs.toFixed(1)}s · ${((n + 1) / secs).toFixed(0)} ch/s · ${esc(scratchLabel)} · working…`;
     await new Promise((r) => setTimeout(r, 0));   // yield so it streams and Stop can land
   }
   return full;
 }
 
-// Make the Scratch-Coder the active dashboard model, load it, and go generate.
-async function useScratch() {
+// Make a Scratch-Coder tier the active dashboard model, load it, and go generate.
+async function useScratch(dir, label) {
+  scratchLabel = label || 'Scratch-Coder';
   document.body.classList.remove('view-scratch');
   document.querySelectorAll('.navlink').forEach((x) => x.classList.remove('active'));
   document.querySelector('.navlink[data-scroll="top"]')?.classList.add('active');
   activeRuntime = 'scratch';
   document.querySelectorAll('.rt-pill').forEach((p) => p.classList.remove('active'));  // neither wasm nor ollama
-  modelLabel = 'Scratch-Coder';
-  if (window.__setModelBtn) window.__setModelBtn('Scratch-Coder');
+  modelLabel = scratchLabel;
+  if (window.__setModelBtn) window.__setModelBtn(scratchLabel);
   document.querySelector('.main')?.scrollTo({ top: 0 });
-  status.innerHTML = 'Loading Scratch-Coder…';
+  status.innerHTML = `Loading ${esc(scratchLabel)}…`;
   try {
-    await loadScratch();
+    await loadScratch(dir || './scratch');
     runBtn.disabled = false;
-    status.innerHTML = '<span style="color:var(--ok)">✓ Scratch-Coder ready — a 0.84M-parameter character model running in this tab. Type some Python and press Generate.</span>';
+    status.innerHTML = `<span style="color:var(--ok)">✓ ${esc(scratchLabel)} ready — a from-scratch character model running in this tab. Type some Python and press Generate.</span>`;
   } catch (e) {
-    status.innerHTML = `<span style="color:var(--bad)">✗ Scratch-Coder failed to load: ${esc(e.message)}</span>`;
+    status.innerHTML = `<span style="color:var(--bad)">✗ ${esc(scratchLabel)} failed to load: ${esc(e.message)}</span>`;
   }
 }
 window.useScratch = useScratch;
@@ -4371,7 +4378,7 @@ document.querySelectorAll('.rt-pill').forEach(pill => {
 //
 // Fetched once and cached: this now re-renders whenever the stored list changes,
 // and re-reading the catalogue on every save would be wasted work.
-let libCatalogue = null;
+let libCatalogue = null, scratchTiers = null;
 
 async function renderLibrary() {
   const grid = document.getElementById('libGrid');
@@ -4392,21 +4399,39 @@ async function renderLibrary() {
     // stored model showed up twice. Awaiting first makes the whole write
     // synchronous, so the later run simply replaces the earlier one.
     const stored = await listModels();
+    // Fetch the tier list BEFORE clearing the grid — every await between the clear and
+    // the appends lets an overlapping render double every card (see the note above).
+    if (!scratchTiers) {
+      try { scratchTiers = await (await fetch('scratch/tiers/manifest.json', { cache: 'no-store' })).json(); }
+      catch (e) { scratchTiers = []; }
+    }
     grid.innerHTML = '';
 
-    // The Scratch-Coder is a model you can use here too — not a GGUF you download,
-    // but its own from-scratch model that runs its tiny forward pass on its own page.
-    // First in the grid, so the Library reads as "every model", not just downloadable ones.
-    {
+    // The Scratch-Coder tiers — the same from-scratch model at different sizes
+    // (Featherweight / Chromebook / Laptop), like the base-model tiers below but all
+    // built here from noise. Not GGUFs you download; each runs its own forward pass in
+    // this tab. First in the grid, so the Library reads as "every model".
+    const scratchCard = (label, note, sizeStr, onUse) => {
       const card = document.createElement('div'); card.className = 'libcard';
-      card.innerHTML = `<div class="h">${ICONS.cpu || ICONS.laptop}<span class="nm">Scratch-Coder</span><span class="sz">0.84M</span></div>`
+      card.innerHTML = `<div class="h">${ICONS.cpu || ICONS.laptop}<span class="nm">${esc(label)}</span><span class="sz">${esc(sizeStr || '')}</span></div>`
         + `<div class="tags"><span class="rectag">${ICONS.check} Runs in this tab</span></div>`
-        + `<div class="d">A character-level model trained from scratch on Python source. Selects it as the active model so you can generate with it here, like any other. Inspect its weights, attention, and embeddings from the sidebar.</div>`
+        + `<div class="d">${esc(note)}</div>`
         + `<span class="cardgo">Use ${ICONS.chevronright}</span>`;
       card.tabIndex = 0; card.setAttribute('role', 'button');
-      card.onclick = useScratch;
-      card.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); useScratch(); } };
+      card.onclick = onUse;
+      card.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onUse(); } };
       grid.appendChild(card);
+    };
+    if (scratchTiers && scratchTiers.length) {
+      scratchTiers.forEach((t) => {
+        const label = `Scratch-Coder · ${t.label}`;
+        scratchCard(label, `${t.note || ''} From-scratch character model trained on Python. Selects it as the active model so you can generate here; inspect it from the sidebar.`,
+          t.params ? `${(t.params / 1e6).toFixed(2)}M` : '',
+          () => useScratch('./scratch/tiers/' + t.id, label));
+      });
+    } else {
+      // Tiers not exported yet — one card for the default model still works.
+      scratchCard('Scratch-Coder', 'A character-level model trained from scratch on Python source. Use it here, or inspect it from the sidebar.', '', () => useScratch());
     }
 
     models.forEach((m) => {
