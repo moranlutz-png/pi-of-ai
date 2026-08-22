@@ -1,16 +1,39 @@
 // attention.js — every head's attention, no sampling. One small heatmap per
-// (layer, head), all on one screen, drawn to <canvas> (a 4×4 grid of T×T heatmaps
-// is thousands of cells — that many SVG rects locks the tab).
+// (layer, head), drawn to <canvas> (a 4×4 grid of T×T heatmaps is thousands of
+// cells — that many SVG rects locks the tab).
 //
-// To make them readable rather than cryptic, each heatmap now carries the actual
-// characters along both axes, and pointing at any square reads it out in plain
-// words. A cell (row i, column j) is how much the character at position i looked at
-// the character at position j while the model was processing it. The matrix is
-// lower-triangular — a character can only look at itself and what came before it.
+// Each layer is a row of heatmaps with an info panel to its right: a one-line
+// description of what every head in that row tends to do, and — when you point at
+// any square — a plain-English reading of that exact square. A cell (row i, column
+// j) is how much the character at position i looked at the character at position j
+// while being processed. The matrix is lower-triangular: a character can only look
+// at itself and what came before it.
 
 const glyph = (c) => ({ ' ': '␠', '\n': '↵', '\t': '⇥', '\r': '␍' }[c] ?? c);
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const gl = (c) => esc(glyph(c));
+
+// Characterise a head from its attention matrix: does it mostly look at the current
+// character, the previous one, the first one, or spread its attention out? Averaged
+// over every query position (skipping position 0, which can only see itself).
+function describeHead(m, T) {
+  if (T < 2) return 'only one character — nothing to compare yet';
+  let self = 0, prev = 0, first = 0, dist = 0, n = 0;
+  for (let i = 1; i < T; i++) {
+    self += m[i][i]; prev += m[i][i - 1]; first += m[i][0];
+    let d = 0; for (let j = 0; j <= i; j++) d += (i - j) * m[i][j];
+    dist += d; n++;
+  }
+  self /= n; prev /= n; first /= n; dist /= n;
+  const cands = [
+    { k: 'the current character', v: self },
+    { k: 'the previous character', v: prev },
+    { k: 'the first character', v: first },
+  ].sort((a, b) => b.v - a.v);
+  const top = cands[0];
+  if (top.v < 0.34) return `spread out · looks ~${dist.toFixed(1)} characters back on average`;
+  return `mostly ${top.k} (${Math.round(top.v * 100)}%)`;
+}
 
 export function renderAttention(root, attn, chars) {
   root.innerHTML = '';
@@ -19,17 +42,23 @@ export function renderAttention(root, attn, chars) {
   const cell = Math.max(11, Math.min(30, Math.floor(300 / T)));
   const PAD = Math.round(cell * 0.72) + 3;   // room for the character tick labels
 
-  // A shared caption that reads out whatever square you point at, in plain words.
-  const cap = document.createElement('div'); cap.className = 'attncap';
-  cap.innerHTML = 'Point at any square below to read it in plain English.';
-  root.appendChild(cap);
-
   for (let l = 0; l < L; l++) {
     const row = document.createElement('div'); row.className = 'attnrow';
+    const heads = document.createElement('div'); heads.className = 'attnheads';
+
+    // Info panel to the RIGHT of this layer's row of heads.
+    const info = document.createElement('div'); info.className = 'attninfo';
+    let infoHtml = `<div class="attninfo-h">Layer ${l} · ${H} heads</div>`;
+    for (let h = 0; h < H; h++) infoHtml += `<div class="attnhead-line"><b>head ${h}</b> — ${esc(describeHead(attn[l][h], T))}</div>`;
+    info.innerHTML = infoHtml;
+    const read = document.createElement('div'); read.className = 'attnread';
+    read.innerHTML = 'Hover a square to read it in plain English.';
+    info.appendChild(read);
+
     for (let h = 0; h < H; h++) {
       const wrap = document.createElement('div'); wrap.className = 'attncell';
       const lbl = document.createElement('div'); lbl.className = 'attnlbl';
-      lbl.textContent = `layer ${l} · head ${h}`;
+      lbl.textContent = `head ${h}`;
       const cv = document.createElement('canvas');
       cv.width = PAD + T * cell; cv.height = PAD + T * cell;
       const ctx = cv.getContext('2d');
@@ -67,16 +96,17 @@ export function renderAttention(root, attn, chars) {
         if (i >= 0 && i < T && j >= 0 && j <= i) {
           const w = m[i][j];
           draw(i, j);
-          cap.innerHTML = `In <b>layer ${l}, head ${h}</b>: while processing <b>“${gl(chars[i])}”</b> `
-            + `(position ${i}), the model put <b>${(w * 100).toFixed(0)}%</b> of this head's attention on `
+          read.innerHTML = `While processing <b>“${gl(chars[i])}”</b> (position ${i}), `
+            + `<b>head ${h}</b> put <b>${(w * 100).toFixed(0)}%</b> of its attention on `
             + `<b>“${gl(chars[j])}”</b> (position ${j})${i === j ? ' — itself' : ''}.`;
         }
       };
-      cv.onmouseleave = () => { draw(); cap.innerHTML = 'Point at any square below to read it in plain English.'; };
+      cv.onmouseleave = () => { draw(); read.innerHTML = 'Hover a square to read it in plain English.'; };
 
       wrap.appendChild(lbl); wrap.appendChild(cv);
-      row.appendChild(wrap);
+      heads.appendChild(wrap);
     }
+    row.appendChild(heads); row.appendChild(info);
     root.appendChild(row);
   }
 }
