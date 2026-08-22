@@ -38,7 +38,13 @@ ap.add_argument("--mlp", default="default",
 ap.add_argument("--resume", action="store_true",
                 help="continue from data/ckpt.pt (keep teaching) instead of starting from random")
 ap.add_argument("--iters", type=int, default=ITERS, help="iterations to run this invocation")
+# Capacity knobs — defaults keep the fast ~0.84M teaching model; bump for a bigger one.
+ap.add_argument("--n-layer", type=int, default=4, help="transformer blocks (deeper = more capacity)")
+ap.add_argument("--n-head", type=int, default=4, help="attention heads (must divide n-embd)")
+ap.add_argument("--n-embd", type=int, default=128, help="embedding width")
+ap.add_argument("--block", type=int, default=BLOCK, help="context length in characters")
 args = ap.parse_args()
+BLOCK = args.block   # get_batch reads this module global, so set it before that runs
 
 meta = pickle.load(open(D / "meta.pkl", "rb"))
 itos, stoi = meta["itos"], meta["stoi"]
@@ -54,7 +60,8 @@ def get_batch(split: str):
     return x.to(device), y.to(device)
 
 
-cfg = GPTConfig(vocab_size=meta["vocab_size"], block_size=BLOCK, n_layer=4, n_head=4, n_embd=128, mlp=args.mlp)
+cfg = GPTConfig(vocab_size=meta["vocab_size"], block_size=args.block,
+                n_layer=args.n_layer, n_head=args.n_head, n_embd=args.n_embd, mlp=args.mlp)
 model = GPT(cfg).to(device)
 n_params = sum(p.numel() for p in model.parameters())
 print(f"device: {device} | params: {n_params/1e6:.2f}M | vocab: {cfg.vocab_size}")
