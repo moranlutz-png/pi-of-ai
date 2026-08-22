@@ -17,6 +17,16 @@
   .scratchbrand { display:flex; align-items:center; gap:7px; margin:0 0 16px; color:var(--ink); }
   .scratchbrand svg { width:16px; height:16px; opacity:.85; }
   .scratchbrand b { font-size:14.5px; font-weight:700; letter-spacing:-.01em; }
+  /* Tier switcher — pick which size of the model the whole page inspects. */
+  .tierbar { display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin:10px 0 12px; }
+  .tierbar[hidden] { display:none; }
+  .tierlbl { color:var(--dimmer); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; margin-right:4px; }
+  .tierbtn { display:inline-flex; align-items:baseline; gap:7px; background:var(--panel); color:var(--dim);
+    border:1px solid var(--edge2); border-radius:8px; padding:6px 12px; font:13px system-ui,sans-serif; cursor:pointer; }
+  .tierbtn:hover { color:var(--ink); }
+  .tierbtn.active { background:var(--edge2); color:var(--ink); }
+  .tierparams { font:11px var(--mono); color:var(--dimmer); }
+  .tierbtn.active .tierparams { color:var(--dim); }
   .lead { color:var(--dim); margin:0; font-size:13.5px; max-width:74ch; }
   .cfg { color:var(--dimmer); font:12px var(--mono); margin:12px 0 16px; }
   .banner { background:rgba(212,162,75,.09); border:1px solid rgba(212,162,75,.3);
@@ -177,6 +187,7 @@
 <body>
   <div class="scratchbrand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg><b>Scratch-Coder</b></div>
   <p class="lead">Follow a piece of text left to right through the model — from raw characters, through embedding and each transformer block, to a guess at the next character. Each station shows what it does and the weights it's built from. It's small enough to see all the way through; it will never be a useful coder, and that's the point.</p>
+  <div class="tierbar" id="tierBar" hidden></div>
   <div class="cfg" id="cfg">loading…</div>
   <div class="banner" id="banner" hidden></div>
 
@@ -307,97 +318,96 @@ function setView(v) {
 }
 
 async function boot() {
-  // Prefer the full inspect file; fall back to structure-only arch.json so the
-  // model still draws with no checkpoint at all.
+  // One-time wiring — these handlers read the current `model`/`gpt`, which loadTier
+  // swaps when you change tiers, so they never need re-binding.
+  $('viewTrained').onclick = () => setView('trained');
+  $('viewRandom').onclick = () => setView('random');
+  $('viewDiff').onclick = () => setView('diff');
+  $('flowInput').addEventListener('input', () => {
+    renderKnobs($('knobs'), model, curView);
+    const ap = $('attnPrompt'); if (ap) ap.value = $('flowInput').value;
+  });
+  $('attnRun').onclick = runAttn;
+  $('attnPrompt').addEventListener('keydown', (e) => { if (e.key === 'Enter') runAttn(); });
+  $('genRun').onclick = runGen;
+  $('genStop').onclick = () => { genStop = true; };
+  $('genPrompt').addEventListener('keydown', (e) => { if (e.key === 'Enter') runGen(); });
+
+  // Tier switcher from the manifest; default to the biggest (best output). No manifest
+  // -> just the single default model at '.'.
+  let tiers = [];
+  try { tiers = await (await fetch('tiers/manifest.json', { cache: 'no-store' })).json(); } catch (_) {}
+  buildTierSwitcher(tiers);
+  await loadTier(tiers.length ? 'tiers/' + tiers[tiers.length - 1].id : '.');
+}
+
+function buildTierSwitcher(tiers) {
+  const bar = $('tierBar');
+  if (!tiers || !tiers.length) { bar.hidden = true; return; }
+  bar.hidden = false;
+  bar.innerHTML = '<span class="tierlbl">Model size</span>' + tiers.map((t) =>
+    `<button class="tierbtn" data-dir="tiers/${t.id}">${t.label}<span class="tierparams">${(t.params / 1e6).toFixed(2)}M</span></button>`).join('');
+  bar.querySelectorAll('.tierbtn').forEach((b) => { b.onclick = () => loadTier(b.dataset.dir); });
+}
+
+// Load one tier (or the default model at '.') and (re)render every section from it.
+async function loadTier(dir) {
+  $('tierBar').querySelectorAll('.tierbtn').forEach((x) => x.classList.toggle('active', x.dataset.dir === dir));
+  let ok = false;
   try {
-    const r = await fetch('inspect.json', { cache: 'no-store' });
-    if (!r.ok) throw new Error('no inspect.json');
-    const p = parseInspect(await r.text());
-    if (!p.ok) throw new Error(p.error);
-    model = p.data; hasValues = true;
-  } catch (_) {
-    try {
-      const p = parseArch(await (await fetch('arch.json', { cache: 'no-store' })).text());
-      if (!p.ok) { $('cfg').textContent = 'could not load the model: ' + p.error; return; }
-      model = p.data; hasValues = false;
-    } catch (e2) { $('cfg').textContent = 'could not load the model: ' + e2.message; return; }
+    const r = await fetch(`${dir}/inspect.json`, { cache: 'no-store' });
+    if (r.ok) { const p = parseInspect(await r.text()); if (p.ok) { model = p.data; hasValues = true; ok = true; } }
+  } catch (_) {}
+  if (!ok) {
+    try { const p = parseArch(await (await fetch('arch.json', { cache: 'no-store' })).text()); if (p.ok) { model = p.data; hasValues = false; ok = true; } } catch (_) {}
   }
+  if (!ok) { $('cfg').textContent = 'could not load the model'; return; }
 
   const a = model.arch || model, c = a.config;
   let line = `${a.total_params.toLocaleString()} params · ${c.n_layer} layers · ${c.n_head} heads · n_embd ${c.n_embd} · block ${c.block_size} · vocab ${c.vocab_size}`;
   if (hasValues && model.checkpoint) {
-    const ck = model.checkpoint;
-    const bits = [`from ${ck.path}`];
+    const ck = model.checkpoint, bits = [`from ${ck.path}`];
     if (Number.isFinite(ck.iter)) bits.push(`iter ${ck.iter}`);
     if (Number.isFinite(ck.valLoss)) bits.push(`val ${ck.valLoss.toFixed(3)}`);
     line += '  ·  ' + bits.join(', ');
   }
   $('cfg').textContent = line;
 
+  $('banner').hidden = true;
   if (!hasValues) {
     $('banner').hidden = false;
     $('banner').innerHTML = 'No checkpoint exported yet — this is the default architecture. Run <code>python export_inspect.py</code> to light up the trained and random values.';
     $('viewRandom').disabled = true; $('viewDiff').disabled = true;
-  } else if (model.customLayer) {
-    $('banner').hidden = false;
-    $('banner').textContent = `Custom layer "${model.customLayer.mlp}" — arch_map cannot describe it, so the shapes here are taken from the checkpoint itself.`;
+  } else {
+    $('viewRandom').disabled = false; $('viewDiff').disabled = false;
+    if (model.customLayer) { $('banner').hidden = false; $('banner').textContent = `Custom layer "${model.customLayer.mlp}" — arch_map cannot describe it, so the shapes here are taken from the checkpoint itself.`; }
   }
 
-  $('viewTrained').onclick = () => setView('trained');
-  $('viewRandom').onclick = () => setView('random');
-  $('viewDiff').onclick = () => setView('diff');
-  setView('trained');
+  setView('trained');   // (re)draws the knob flow for this model
 
-  // The input drives the flow's Input/Prediction stations, and mirrors into the
-  // attention panel below so one piece of text runs through the whole page.
-  $('flowInput').addEventListener('input', () => {
-    renderKnobs($('knobs'), model, curView);
-    const ap = $('attnPrompt'); if (ap) ap.value = $('flowInput').value;
-  });
-
-  // Rung 2 — embedding neighbourhoods (only when a checkpoint's values exist).
   if (hasValues && model.embedding && Array.isArray(model.embedding.points)) {
-    $('embedSection').hidden = false;
-    renderEmbedding($('embedSection'), model.embedding);
-  }
+    $('embedSection').hidden = false; renderEmbedding($('embedSection'), model.embedding);
+  } else { $('embedSection').hidden = true; }
 
-  // Rung 3 — live attention. Needs weights.bin (export_inspect.py --weights).
+  gpt = null;
   if (hasValues && model.weights) {
-    $('attnSection').hidden = false;
-    $('attnRun').onclick = runAttn;
-    $('attnPrompt').addEventListener('keydown', (e) => { if (e.key === 'Enter') runAttn(); });
-    try {
-      gpt = await ScratchGPT.load('.');
-      await runAttn();
-      // Rung 3b — actually run the model: the Generate panel uses the same loaded gpt.
-      $('genSection').hidden = false;
-      $('genRun').onclick = runGen;
-      $('genStop').onclick = () => { genStop = true; };
-      $('genPrompt').addEventListener('keydown', (e) => { if (e.key === 'Enter') runGen(); });
-    }
-    catch (e) { $('attnStatus').textContent = 'attention unavailable: ' + e.message; $('attnRun').disabled = true; }
+    $('attnSection').hidden = false; $('genSection').hidden = false; $('attnRun').disabled = false;
+    try { gpt = await ScratchGPT.load(dir); await runAttn(); }
+    catch (e) { $('attnStatus').textContent = 'attention unavailable: ' + e.message; $('attnRun').disabled = true; $('genSection').hidden = true; }
   } else if (hasValues) {
-    // Values are here but no weights.bin — show how to get it, don't regress the rest.
-    $('attnSection').hidden = false;
+    $('attnSection').hidden = false; $('genSection').hidden = true;
     $('attnStatus').innerHTML = 'Re-export with <code>python export_inspect.py --weights</code> to enable the live forward pass.';
     $('attnRun').disabled = true;
-  }
+  } else { $('attnSection').hidden = true; $('genSection').hidden = true; }
 
-  // Rung 4 — training curves (loss + per-layer gradient norms, from loss.jsonl).
   if (hasValues && Array.isArray(model.training) && model.training.length) {
-    $('curvesSection').hidden = false;
-    renderCurves($('curvesSection'), model.training);
-  }
+    $('curvesSection').hidden = false; renderCurves($('curvesSection'), model.training);
+  } else { $('curvesSection').hidden = true; }
 
-  // The source it is written in, and the data it learned from — both exported alongside.
-  if (Array.isArray(model.source) && model.source.length) {
-    $('srcSection').hidden = false;
-    renderSource(model.source);
-  }
-  if (model.corpus && model.corpus.file) {
-    $('dataSection').hidden = false;
-    loadCorpus(model.corpus);
-  }
+  if (Array.isArray(model.source) && model.source.length) { $('srcSection').hidden = false; renderSource(model.source); }
+  else { $('srcSection').hidden = true; }
+  if (model.corpus && model.corpus.file) { $('dataSection').hidden = false; loadCorpus(model.corpus); }
+  else { $('dataSection').hidden = true; }
 }
 
 function renderSource(files) {
