@@ -137,9 +137,17 @@
     font:inherit; font-size:13px; font-weight:600; cursor:pointer; }
   #attnRun:hover { background:#fff; }
   #attnRun:disabled { opacity:.4; cursor:not-allowed; }
+  .attnguide { background:var(--panel); border:1px solid var(--edge); border-radius:10px;
+    padding:12px 16px 12px; margin:6px 0 16px; font-size:12.8px; color:var(--dim); line-height:1.55; max-width:82ch; }
+  .attnguide b { color:var(--ink); }
+  .attnguide ul { margin:8px 0 0; padding-left:18px; }
+  .attnguide li { margin:5px 0; }
+  .attnguide code { background:rgba(255,255,255,.07); border-radius:4px; padding:0 4px; font:12px var(--mono); color:var(--ink); }
+  .attncap { min-height:20px; margin:2px 0 12px; font-size:13px; color:var(--ink); }
+  .attncap b { color:#8ab4ff; }
   .attnrow { display:flex; flex-wrap:wrap; gap:14px; margin-bottom:14px; }
   .attncell { display:flex; flex-direction:column; gap:4px; }
-  .attnlbl { font:10.5px var(--mono); color:var(--dim); }
+  .attnlbl { font:11px var(--mono); color:var(--dim); }
   .attncell canvas { border:1px solid var(--edge); border-radius:4px;
     image-rendering:pixelated; background:var(--panel); }
 
@@ -215,12 +223,22 @@
 
   <section id="attnSection" hidden>
     <h1 style="font-size:18px; margin:36px 0 4px">Live attention</h1>
-    <p class="lead">Type a prompt; every head's attention over it is computed here in the browser — the whole thing, no sampling. Rows are layers, columns are heads; a bright cell (i, j) means position i attended to position j. It is lower-triangular because a token can only see itself and what came before.</p>
+    <p class="lead"><b>Attention</b> is how the model decides which earlier characters matter while it processes each one. Type a prompt and every head computes it here in the browser — no sampling, just the real forward pass.</p>
     <div class="attninput">
       <input id="attnPrompt" type="text" value="def hello(" spellcheck="false" autocomplete="off" />
       <button id="attnRun">Run forward</button>
     </div>
     <p class="viewhint" id="attnStatus"></p>
+    <div class="attnguide">
+      <b>How to read one square (heatmap):</b>
+      <ul>
+        <li>Each little grid is one <b>head</b>. There are several heads per <b>layer</b> (a row of grids), and several layers stacked down the page — each one a separate "reader" that can look at the text differently.</li>
+        <li>The characters run along the <b>top</b> and the <b>left</b> of every grid. To read a square: go to a <b>row</b> (the character being processed) and slide across to a <b>column</b> (a character it looked back at).</li>
+        <li><b>Brighter = more attention.</b> A bright square at row&nbsp;“<code>(</code>”, column&nbsp;“<code>o</code>” means: while processing the <code>(</code>, this head leaned on the earlier <code>o</code>. <span style="color:var(--dim)">Hover any square to read it as a sentence.</span></li>
+        <li>It's a <b>triangle</b>, not a full square, because a character can only see itself and what came <b>before</b> it — never the future.</li>
+        <li>Common shapes: a bright <b>diagonal</b> = "attend to myself"; a bright stripe just below it = "attend to the previous character"; a bright first <b>column</b> = "attend back to the very start".</li>
+      </ul>
+    </div>
     <div id="attn"></div>
   </section>
 
