@@ -49,7 +49,7 @@ export function renderEmbedding(root, emb) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const ctx = canvas.getContext('2d');
   const DIST = 3.4;
-  let W = 640, H = 640, CX = 320, CY = 320, FOV = 909;
+  let W = 640, H = 640, CX = 320, CY = 320, FOV = 909, SPHERE_R = 319;
   function size() {
     const r = canvas.getBoundingClientRect();
     W = Math.max(1, Math.round(r.width)); H = Math.max(1, Math.round(r.height));
@@ -60,6 +60,7 @@ export function renderEmbedding(root, emb) {
     // edge. A radius-1 node's peak projected offset over all rotations is 0.3078·FOV
     // (the max of √(1−z²)/(DIST−z) at z=1/DIST), so this puts that peak at min/2 − 1.
     FOV = (Math.min(W, H) / 2 - 1) / 0.3078;
+    SPHERE_R = 0.3078 * FOV;   // projected radius the graph occupies — the wheel-capture disk
   }
   size();
   window.addEventListener('resize', size);
@@ -116,7 +117,16 @@ export function renderEmbedding(root, emb) {
     for (let i = 0; i < pr.length; i++) { const dx = pr[i].x - mx, dy = pr[i].y - my, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = i; } }
     if (best !== hover) { hover = best; if (best >= 0) showNeighbours(P[best].char); }
   };
-  canvas.onwheel = (e) => { e.preventDefault(); zoom = Math.max(0.4, Math.min(4, zoom * (e.deltaY < 0 ? 1.1 : 0.9))); };
+  canvas.onwheel = (e) => {
+    // Only capture the wheel to zoom when the pointer is over the sphere the graph
+    // occupies; anywhere else in the box (the margins around the disk) the wheel falls
+    // through to the page so it scrolls normally. The radius tracks the graph size.
+    const rect = canvas.getBoundingClientRect(), sc = W / (rect.width || W);
+    const mx = (e.clientX - rect.left) * sc - CX, my = (e.clientY - rect.top) * sc - CY;
+    if (mx * mx + my * my > SPHERE_R * SPHERE_R) return;   // outside the disk → let the page scroll
+    e.preventDefault();
+    zoom = Math.max(0.4, Math.min(4, zoom * (e.deltaY < 0 ? 1.1 : 0.9)));
+  };
 
   const strengthToggle = document.getElementById('embByStrength');
   if (strengthToggle) { byStrength = strengthToggle.checked; strengthToggle.onchange = () => { byStrength = strengthToggle.checked; }; }
