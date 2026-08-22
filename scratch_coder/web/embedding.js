@@ -60,7 +60,7 @@ export function renderEmbedding(root, emb) {
     // edge. A radius-1 node's peak projected offset over all rotations is 0.3078·FOV
     // (the max of √(1−z²)/(DIST−z) at z=1/DIST), so this puts that peak at min/2 − 1.
     FOV = (Math.min(W, H) / 2 - 1) / 0.3078;
-    SPHERE_R = 0.3078 * FOV;   // projected radius the graph occupies — the wheel-capture disk
+    SPHERE_R = 0.3078 * FOV;   // projected radius the graph occupies at zoom 1 (scaled by zoom below)
   }
   size();
   window.addEventListener('resize', size);
@@ -123,7 +123,8 @@ export function renderEmbedding(root, emb) {
     // through to the page so it scrolls normally. The radius tracks the graph size.
     const rect = canvas.getBoundingClientRect(), sc = W / (rect.width || W);
     const mx = (e.clientX - rect.left) * sc - CX, my = (e.clientY - rect.top) * sc - CY;
-    if (mx * mx + my * my > SPHERE_R * SPHERE_R) return;   // outside the disk → let the page scroll
+    const R = SPHERE_R * zoom;   // the disk grows and shrinks with the graph as you zoom
+    if (mx * mx + my * my > R * R) return;   // outside the disk → let the page scroll
     e.preventDefault();
     zoom = Math.max(0.4, Math.min(4, zoom * (e.deltaY < 0 ? 1.1 : 0.9)));
   };
