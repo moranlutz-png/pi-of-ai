@@ -110,6 +110,19 @@
   .genout .seed { color:var(--dim); }
   .genout .cursor { color:var(--dimmer); }
 
+  /* ---- Source & training-data viewers ---- */
+  #srcSection[hidden], #dataSection[hidden] { display:none; }
+  .srctabs { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 10px; }
+  .srctab { background:var(--panel); border:1px solid var(--edge2); color:var(--dim);
+    border-radius:7px; padding:5px 11px; font:12px var(--mono); cursor:pointer; }
+  .srctab:hover { color:var(--ink); }
+  .srctab.active { background:var(--edge2); color:var(--ink); }
+  .srccode { margin:0; background:var(--panel); border:1px solid var(--edge); border-radius:10px;
+    padding:14px 16px; max-height:60vh; overflow:auto; font:12px/1.6 var(--mono); color:var(--ink); white-space:pre; }
+  .datatext { width:100%; box-sizing:border-box; height:60vh; resize:vertical; background:var(--panel);
+    border:1px solid var(--edge); border-radius:10px; padding:14px 16px; color:var(--ink);
+    font:12px/1.6 var(--mono); white-space:pre; }
+
   /* ---- Live attention ---- */
   #attnSection[hidden] { display:none; }
   .attninput { display:flex; gap:10px; align-items:center; margin:8px 0 4px; }
@@ -208,6 +221,20 @@
       <div class="curvebox"><h3>Gradient norm per layer</h3><svg id="gradCurve" role="img" aria-label="per-layer gradient norms over training"></svg><div id="gradLegend"></div></div>
     </div>
     <p id="curvesNote"></p>
+  </section>
+
+  <section id="srcSection" hidden>
+    <h1 style="font-size:18px; margin:36px 0 4px">The code it's built from</h1>
+    <p class="lead">The whole model is plain Python — no framework. This is the actual source it was written and trained in: the from-scratch GPT, the training loop, the corpus builder, and the sampler. Read-only; it is exactly the code that produced the weights above.</p>
+    <div class="srctabs" id="srcTabs"></div>
+    <pre class="srccode" id="srcCode"></pre>
+  </section>
+
+  <section id="dataSection" hidden>
+    <h1 style="font-size:18px; margin:36px 0 4px">Training data</h1>
+    <p class="lead">Everything the model ever saw: real Python from this machine's own standard library, concatenated into one stream of characters. It learned to code by predicting the next character of this and nothing else. The whole training split is below — scroll through it.</p>
+    <p class="viewhint" id="dataStats"></p>
+    <textarea id="dataText" class="datatext" readonly spellcheck="false" aria-label="Training corpus"></textarea>
   </section>
 
 <script type="module">
@@ -321,6 +348,42 @@ async function boot() {
   if (hasValues && Array.isArray(model.training) && model.training.length) {
     $('curvesSection').hidden = false;
     renderCurves($('curvesSection'), model.training);
+  }
+
+  // The source it is written in, and the data it learned from — both exported alongside.
+  if (Array.isArray(model.source) && model.source.length) {
+    $('srcSection').hidden = false;
+    renderSource(model.source);
+  }
+  if (model.corpus && model.corpus.file) {
+    $('dataSection').hidden = false;
+    loadCorpus(model.corpus);
+  }
+}
+
+function renderSource(files) {
+  const tabs = $('srcTabs'), code = $('srcCode');
+  const show = (i) => {
+    [...tabs.children].forEach((t, k) => t.classList.toggle('active', k === i));
+    code.textContent = files[i].code;   // textContent — the browser escapes it, no HTML injection
+  };
+  tabs.innerHTML = '';
+  files.forEach((f, i) => {
+    const b = document.createElement('button'); b.className = 'srctab'; b.textContent = f.name;
+    b.onclick = () => show(i); tabs.appendChild(b);
+  });
+  show(0);
+}
+
+async function loadCorpus(corpus) {
+  const ta = $('dataText'), stats = $('dataStats');
+  stats.textContent = 'loading…';
+  try {
+    const text = await (await fetch(corpus.file, { cache: 'no-store' })).text();
+    ta.value = text;
+    stats.textContent = `${text.length.toLocaleString()} characters of Python from the standard library — the exact training split, nothing else`;
+  } catch (e) {
+    stats.textContent = 'could not load ' + corpus.file + ': ' + e.message;
   }
 }
 

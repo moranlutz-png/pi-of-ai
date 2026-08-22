@@ -28,9 +28,12 @@ rules_baker/outputs/
 # arch.json is committed as the no-checkpoint structural fallback.
 scratch_coder/web/inspect.json
 scratch_coder/web/probe.json
+# The decoded training corpus (~1.8 MB) shown by the training-data view — regenerable.
+scratch_coder/web/corpus.txt
 # The rules_baker app embeds a same-origin copy of the inspector; its generated
 # data is mirrored there and is likewise regenerable, not source.
 rules_baker/web/scratch/inspect.json
+rules_baker/web/scratch/corpus.txt
 # weights.bin (the attention rung's sidecar) is caught by the *.bin rule above.
 
 # ---- Generated dataset (regenerate with data_gen/generate_dataset.py) ----

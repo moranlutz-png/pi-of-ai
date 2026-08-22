@@ -234,6 +234,31 @@ def attn_probe(sd: dict, cfg: dict, itos: dict, prompt: str) -> dict:
             "attn": captured, "logitsDrift": drift}
 
 
+SRC_FILES = ["model.py", "train.py", "prepare_data.py", "sample_big.py"]
+
+
+def source_files() -> list:
+    """The Python the model is actually written and trained in — the from-scratch GPT,
+    the training loop, how the corpus is built, and how it samples. Shipped so the page
+    can show the real implementation next to the weights it produced. Small; embedded."""
+    out = []
+    for name in SRC_FILES:
+        p = HERE / name
+        if p.exists():
+            out.append({"name": name, "code": p.read_text(encoding="utf-8")})
+    return out
+
+
+def write_corpus(train_bin: Path, itos: dict, web_dir: Path) -> dict:
+    """Decode the training split back to text and drop it beside the page (corpus.txt),
+    so the training-data view can show the exact characters the model learned from. It
+    is regenerable and large (~1.8 MB), so it is gitignored, like weights.bin."""
+    ids = np.fromfile(train_bin, dtype=np.uint16)
+    text = "".join(itos[int(i)] for i in ids)
+    (web_dir / "corpus.txt").write_text(text, encoding="utf-8", newline="")
+    return {"file": "corpus.txt", "chars": len(text)}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Export a checkpoint as something a page can read.")
     ap.add_argument("--ckpt", type=Path, default=HERE / "data" / "ckpt.pt")
@@ -300,6 +325,8 @@ def main() -> int:
                       "idealNeighbours": ideal_neighbours(itos_list, args.ckpt.parent / "train.bin"),
                       "varianceExplainedPct": round(var_pct, 1)},
         "training": read_loss_log(args.ckpt.parent / "loss.jsonl"),
+        "source": source_files(),
+        "corpus": write_corpus(args.ckpt.parent / "train.bin", itos, OUT.parent),
         "unverifiable": [
             "whether a 2D projection preserves the neighbourhoods it appears to show",
             "what a weight statistic means for behaviour — these are shapes, not explanations",
@@ -326,6 +353,9 @@ def main() -> int:
         shutil.copy2(OUT, mirror / "inspect.json")
         if args.weights and WEIGHTS.exists():
             shutil.copy2(WEIGHTS, mirror / "weights.bin")
+        corpus_txt = OUT.parent / "corpus.txt"
+        if corpus_txt.exists():
+            shutil.copy2(corpus_txt, mirror / "corpus.txt")
         print(f"  mirrored -> {mirror}")
     return 0
 
