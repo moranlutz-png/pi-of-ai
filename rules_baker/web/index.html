@@ -487,6 +487,7 @@
   #termOut .sysmsg { color:var(--dim); }
   #termOut .errmsg { color:var(--bad); }
   #termOut .okmsg  { color:var(--ok); }
+  #termOut .termtip { color:var(--dimmer); font-style:italic; }
   .termline { display:flex; align-items:center; gap:8px; margin-top:6px; }
   .termcaret { color:var(--ok); flex:none; }
   /* Slash-command picker. Overlays the transcript rather than sitting in flow:
@@ -4846,21 +4847,49 @@ async function termGenerate(prompt) {
     ? [{ role: 'system', content: termState.system }, { role: 'user', content: prompt }]
     : [{ role: 'user', content: prompt }];
   const line = tp('', 'gen');
-  let full = ''; const t0 = performance.now(); let nTok = 0;
+  // A live status line under the stream (Claude-Code style): a pulsing spinner +
+  // "Generating…", with a rotating tip beneath it while the model runs. When it
+  // finishes both collapse to "✓ done · N tokens · …" (or ✗/■ if it didn't).
+  const status = tp('', 'sysmsg');
+  const tipLine = tp('', 'termtip');
+  const SPIN = ['✶', '✳', '✻', '✽', '✻', '✳'];
+  const TIPS = [
+    'type /help to see every command',
+    'Ctrl+C stops a generation',
+    '/tokens <n> sets how many tokens to generate',
+    '/system <text> gives the model a system prompt',
+    '/load <model> switches the active model',
+    '/autofix on sandbox-checks any code it writes',
+    '/chain <goal> runs a small, visible agent loop',
+    'this is a tiny model — expect Python-shaped, not always correct, code',
+  ];
+  let f = 0, tip = Math.floor(Math.random() * TIPS.length);
+  const draw = () => { status.textContent = `${SPIN[f % SPIN.length]} Generating…  (Ctrl+C to interrupt)`; };
+  draw(); tipLine.textContent = '※ Tip: ' + TIPS[tip];
+  const spin = setInterval(() => {
+    f++; draw();
+    if (f % 12 === 0) { tip = (tip + 1) % TIPS.length; tipLine.textContent = '※ Tip: ' + TIPS[tip]; }
+  }, 300);
+  let full = '', ok = true; const t0 = performance.now(); let nTok = 0;
   try {
     // Go through complete() rather than wllama directly, so the terminal works
     // on the Ollama runtime too and shares one streaming implementation.
     full = await complete(messages, termState.tokens, (cur) => {
       nTok++; line.textContent = cur; termEl.scrollTop = termEl.scrollHeight;
     });
-  } catch (e) { tp('[error: ' + e.message + ']', 'errmsg'); }
+  } catch (e) { ok = false; tp('[error: ' + e.message + ']', 'errmsg'); }
+  clearInterval(spin); tipLine.remove();   // the tip is only for the wait
   if (lastStopReason && lastStopReason.kind === 'repetition') {
     // Same wording the Terminal has always shown for this — wasmComplete just
     // records the reason now instead of writing it here itself.
     tp(`[stopped: repeating "${lastStopReason.phrase}" ${lastStopReason.times}× — the model is stuck, not finished]`, 'errmsg');
   }
   const secs = ((performance.now() - t0) / 1000).toFixed(1);
-  tp(`(${nTok} tokens · ${secs}s · ${modelLabel})`, 'sysmsg');
+  const meta = `${nTok} tokens · ${secs}s · ${modelLabel}`;
+  if (!ok) { status.textContent = `✗ failed · ${meta}`; status.className = 'errmsg'; }
+  else if (abort) { status.textContent = `■ stopped · ${meta}`; status.className = 'sysmsg'; }
+  else { status.textContent = `✓ done · ${meta}`; status.className = 'okmsg'; }
+  termEl.scrollTop = termEl.scrollHeight;
   if (termState.autofix) {
     for (const s of segments(full).filter((x) => x.type === 'code')) {
       const rep = await checkPython(s.code, 8000);
