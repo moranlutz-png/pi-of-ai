@@ -17,7 +17,7 @@
   h1 { font-size:20px; font-weight:700; margin:0 0 3px; letter-spacing:-.015em; }
   /* Small corner brand instead of a big page title — matches the dashboard's top-left
      brand (icon + name), since this page is shown full-bleed with no sidebar. */
-  .scratchbrand { display:flex; align-items:center; gap:7px; margin:0 0 16px; color:var(--ink); }
+  .scratchbrand { display:flex; align-items:center; gap:7px; margin:0; color:var(--ink); }
   .scratchbrand svg { width:16px; height:16px; opacity:.85; }
   .scratchbrand b { font-size:14.5px; font-weight:700; letter-spacing:-.01em; }
   /* Tier switcher — pick which size of the model the whole page inspects. */
@@ -142,16 +142,17 @@
   .genout .seed { color:var(--dim); }
   .genout .cursor { color:var(--dimmer); }
 
-  /* ---- Source & training-data: buttons that open the GitHub-style viewer page ---- */
-  #srcSection[hidden], #dataSection[hidden] { display:none; }
-  .filebtn { display:inline-flex; align-items:center; gap:11px; text-decoration:none; color:var(--ink);
-    background:var(--panel); border:1px solid var(--edge2); border-radius:10px; padding:12px 16px;
-    font-size:13.5px; margin-top:8px; transition:background .12s, border-color .12s; }
+  /* ---- Top bar: brand on the left, the file-viewer buttons in the top-right corner ---- */
+  .topbar { display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; margin:0 0 14px; }
+  .topactions { display:flex; gap:8px; flex-wrap:wrap; }
+  .filebtn { display:inline-flex; align-items:center; gap:8px; text-decoration:none; color:var(--ink);
+    background:var(--panel); border:1px solid var(--edge2); border-radius:8px; padding:7px 12px;
+    font-size:12.5px; transition:background .12s, border-color .12s; }
+  .filebtn[hidden] { display:none; }
   .filebtn:hover { background:var(--panel2); border-color:#5a5a63; }
   .filebtn svg { opacity:.7; flex-shrink:0; }
   .filebtn-t { font-weight:600; }
-  .filebtn-meta { color:var(--dimmer); font:11.5px var(--mono); }
-  .filebtn-go { color:var(--dim); margin-left:2px; font-size:15px; }
+  .filebtn-meta { color:var(--dimmer); font:11px var(--mono); }
 
   /* ---- Live attention ---- */
   #attnSection[hidden] { display:none; }
@@ -201,7 +202,13 @@
 </style>
 </head>
 <body>
-  <div class="scratchbrand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg><b>Scratch-Coder</b></div>
+  <div class="topbar">
+    <div class="scratchbrand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg><b>Scratch-Coder</b></div>
+    <div class="topactions">
+      <a class="filebtn" id="srcBtn" href="viewer.html?view=source" hidden><svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6H10.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-2.938-2.938Z"/></svg><span class="filebtn-t">Source code</span><span class="filebtn-meta" id="srcMeta"></span></a>
+      <a class="filebtn" id="dataBtn" href="viewer.html?view=corpus" hidden><svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6H10.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-2.938-2.938Z"/></svg><span class="filebtn-t">Training data</span><span class="filebtn-meta" id="dataMeta"></span></a>
+    </div>
+  </div>
   <p class="lead">Follow a piece of text left to right through the model — from raw characters, through embedding and each transformer block, to a guess at the next character. Each station shows what it does and the weights it's built from. It's small enough to see all the way through; it will never be a useful coder, and that's the point.</p>
   <div class="tierbar" id="tierBar" hidden></div>
   <div class="cfg" id="cfg">loading…</div>
@@ -289,23 +296,6 @@
     <p id="curvesNote"></p>
   </section>
 
-  <section id="srcSection" hidden>
-    <h1 style="font-size:18px; margin:36px 0 4px">The code it's built from</h1>
-    <p class="lead">The whole model is plain Python — no framework. Open the actual source it was written and trained in, laid out like a file on GitHub.</p>
-    <a class="filebtn" id="srcBtn" href="viewer.html?view=source">
-      <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6H10.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-2.938-2.938Z"/></svg>
-      <span class="filebtn-t">Inspect the source code</span><span class="filebtn-meta" id="srcMeta"></span><span class="filebtn-go">→</span>
-    </a>
-  </section>
-
-  <section id="dataSection" hidden>
-    <h1 style="font-size:18px; margin:36px 0 4px">Training data</h1>
-    <p class="lead">Everything the model ever saw: real Python from the standard library, one stream of characters it learned to predict. Open it like a file on GitHub.</p>
-    <a class="filebtn" id="dataBtn" href="viewer.html?view=corpus">
-      <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6H10.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-2.938-2.938Z"/></svg>
-      <span class="filebtn-t">Inspect the training data</span><span class="filebtn-meta" id="dataMeta"></span><span class="filebtn-go">→</span>
-    </a>
-  </section>
 
 <script type="module">
 import { parseInspect, parseArch } from './inspect.js';
@@ -447,13 +437,13 @@ async function loadTier(dir) {
   // Source & training data now open in the GitHub-style viewer page; here we just
   // reveal the buttons and label them with a count.
   if (Array.isArray(model.source) && model.source.length) {
-    $('srcSection').hidden = false;
+    $('srcBtn').hidden = false;
     $('srcMeta').textContent = `${model.source.length} files`;
-  } else { $('srcSection').hidden = true; }
+  } else { $('srcBtn').hidden = true; }
   if (model.corpus && model.corpus.file) {
-    $('dataSection').hidden = false;
+    $('dataBtn').hidden = false;
     $('dataMeta').textContent = model.corpus.chars ? `${(model.corpus.chars / 1e6).toFixed(1)}M chars` : '';
-  } else { $('dataSection').hidden = true; }
+  } else { $('dataBtn').hidden = true; }
 }
 
 let genStop = false, genBusy = false;
