@@ -516,7 +516,10 @@
      section is fixed off-screen until opened, so it never sits in the main scroll. */
   /* A transparent scrim: no dim, no blur — it only catches an outside click to
      close. The page reacting (its content sliding over) is what signals the state. */
-  #termOverlay { position:fixed; inset:0; background:transparent;
+  /* Non-blocking: the drawer pushes the page aside rather than covering it, so the
+     overlay must NOT intercept clicks — you can use the rest of the page with the
+     terminal open. Close it with the X, Esc, or the Terminal nav item. */
+  #termOverlay { position:fixed; inset:0; background:transparent; pointer-events:none;
     z-index:110; opacity:0; transition:opacity .22s; }
   #termOverlay.show { opacity:1; }
   #termOverlay[hidden] { display:none; }
@@ -4744,7 +4747,8 @@ function closeTermDrawer() {
 }
 if (termDrawerNav) termDrawerNav.onclick = openTermDrawer;
 document.getElementById('termClose')?.addEventListener('click', closeTermDrawer);
-termOverlayEl.addEventListener('click', closeTermDrawer);
+// No click-outside-to-close: the terminal is non-modal now, so clicking the page just
+// interacts with the page. Close it with the X, Esc, or the Terminal nav item.
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && termDrawerEl.classList.contains('open')) closeTermDrawer(); });
 
 // One registry, so the / menu and /help can never drift apart — they used to be
