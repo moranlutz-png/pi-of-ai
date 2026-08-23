@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pickle
 import time
 from pathlib import Path
@@ -119,8 +120,13 @@ if not (args.resume and CKPT.exists()):
 
 def save():
     # iter/best/opt so a later --resume picks up exactly where this left off.
+    # Atomic: write a temp file then rename over CKPT, so a process killed mid-save
+    # (e.g. a session ending) can never truncate the good checkpoint — the worst case
+    # is the previous eval's checkpoint survives intact, and --resume continues from it.
+    tmp = CKPT.with_name(CKPT.name + ".tmp")
     torch.save({"model": model.state_dict(), "opt": opt.state_dict(),
-                "cfg": cfg.__dict__, "iter": it, "best": best}, CKPT)
+                "cfg": cfg.__dict__, "iter": it, "best": best}, tmp)
+    os.replace(tmp, CKPT)
 
 
 end_iter = start_iter + args.iters
