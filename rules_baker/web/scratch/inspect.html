@@ -342,12 +342,17 @@ async function boot() {
   $('genStop').onclick = () => { genStop = true; };
   $('genPrompt').addEventListener('keydown', (e) => { if (e.key === 'Enter') runGen(); });
 
-  // Tier switcher from the manifest; default to the biggest (best output). No manifest
-  // -> just the single default model at '.'.
+  // Tier switcher from the manifest. Default to a light tier the page can load
+  // and run instantly — the "Chromebook" sweet spot (or the smallest available),
+  // NOT the biggest: Ultra is 57MB of weights and a 14.3M-param forward pass in
+  // JS, which makes the page crawl on open. Big tiers are opt-in from the dropdown.
+  // No manifest -> just the single default model at '.'.
   let tiers = [];
   try { tiers = await (await fetch('tiers/manifest.json', { cache: 'no-store' })).json(); } catch (_) {}
   buildTierSwitcher(tiers);
-  await loadTier(tiers.length ? 'tiers/' + tiers[tiers.length - 1].id : '.');
+  const bySize = [...tiers].sort((a, b) => (a.params || 0) - (b.params || 0));
+  const dflt = tiers.find((t) => t.id === 'chromebook') || bySize[0];
+  await loadTier(dflt ? 'tiers/' + dflt.id : '.');
 }
 
 const TIER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>';
