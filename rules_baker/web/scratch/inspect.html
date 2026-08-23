@@ -24,20 +24,26 @@
   .tierbar { display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin:10px 0 12px; }
   .tierbar[hidden] { display:none; }
   .tierlbl { color:var(--dimmer); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; margin-right:4px; }
-  /* Frosted dropdown, matching the dashboard's native selects. */
-  .tierselect { appearance:none; -webkit-appearance:none; color:var(--ink); font:inherit; font-size:12.5px;
-    cursor:pointer; padding:6px 28px 6px 11px; border-radius:8px;
-    background-color:rgba(58,58,60,.55); border:1px solid rgba(255,255,255,.13);
-    backdrop-filter:blur(20px) saturate(180%); -webkit-backdrop-filter:blur(20px) saturate(180%);
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.10);
-    background-image:linear-gradient(45deg,transparent 50%,var(--dim) 50%),
-                     linear-gradient(135deg,var(--dim) 50%,transparent 50%);
-    background-position:calc(100% - 14px) 52%, calc(100% - 9px) 52%;
-    background-size:5px 5px, 5px 5px; background-repeat:no-repeat;
-    transition:background-color .13s ease, border-color .13s ease; }
-  .tierselect:hover { background-color:rgba(255,255,255,.14); border-color:rgba(255,255,255,.20); }
-  .tierselect:focus-visible { outline:2px solid rgba(255,255,255,.30); outline-offset:1px; }
-  .tierselect option { background:#2c2c2e; color:var(--ink); }
+  /* Model-picker dropdown, matching the dashboard's .dd-btn + frosted .dd-menu. */
+  .dd { position:relative; display:inline-block; }
+  .dd-btn { display:inline-flex; align-items:center; gap:8px; background:var(--panel); border:1px solid var(--edge);
+    border-radius:20px; padding:7px 13px 7px 12px; font:inherit; font-size:12.5px; font-weight:600; color:var(--ink); cursor:pointer; }
+  .dd-btn:hover { background:var(--panel2); }
+  .dd-btn svg { width:14px; height:14px; opacity:.85; flex-shrink:0; }
+  .dd-btn .dd-cd { width:11px; opacity:.55; }
+  .dd-btn .dd-sz { font:10.5px var(--mono); color:var(--dimmer); }
+  .dd-menu { position:absolute; top:calc(100% + 6px); left:0; z-index:30; min-width:240px;
+    background:rgba(58,58,60,.72); border:1px solid rgba(255,255,255,.13); border-radius:13px; padding:5px;
+    backdrop-filter:blur(38px) saturate(190%); -webkit-backdrop-filter:blur(38px) saturate(190%);
+    box-shadow:0 18px 44px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.12); }
+  .dd-menu[hidden] { display:none; }
+  .dd-head { padding:7px 10px 4px; font-size:9.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--dimmer); }
+  .dd-item { display:flex; align-items:center; gap:11px; padding:8px 10px; border-radius:7px; font-size:13px; color:var(--ink); cursor:pointer; }
+  .dd-item:hover { background:rgba(255,255,255,.14); }
+  .dd-item svg { width:16px; height:16px; opacity:.85; flex-shrink:0; }
+  .dd-item .lbl { flex:1; }
+  .dd-item .dd-sz { font:10.5px var(--mono); color:var(--dimmer); }
+  .dd-item .chk { width:14px; text-align:center; color:#8ab4ff; font-size:12px; }
   .lead { color:var(--dim); margin:0; font-size:13.5px; max-width:74ch; }
   .cfg { color:var(--dimmer); font:12px var(--mono); margin:12px 0 16px; }
   .banner { background:rgba(212,162,75,.09); border:1px solid rgba(212,162,75,.3);
@@ -353,20 +359,38 @@ async function boot() {
   await loadTier(tiers.length ? 'tiers/' + tiers[tiers.length - 1].id : '.');
 }
 
+const TIER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>';
+const TIER_CHEV = '<svg class="dd-cd" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+
 function buildTierSwitcher(tiers) {
   const bar = $('tierBar');
   if (!tiers || !tiers.length) { bar.hidden = true; return; }
   bar.hidden = false;
-  bar.innerHTML = '<span class="tierlbl">Model size</span>'
-    + '<select id="tierSelect" class="tierselect" aria-label="Model size">'
-    + tiers.map((t) => `<option value="tiers/${t.id}">${t.label} · ${(t.params / 1e6).toFixed(2)}M params</option>`).join('')
-    + '</select>';
-  $('tierSelect').onchange = (e) => loadTier(e.target.value);
+  bar.innerHTML = '<div class="dd" id="tierDD">'
+    + '<button class="dd-btn" id="tierBtn" aria-haspopup="listbox" aria-expanded="false"></button>'
+    + '<div class="dd-menu" id="tierMenu" hidden role="listbox">'
+    +   '<div class="dd-head">Model size · Scratch-Coder</div>'
+    +   tiers.map((t) => `<div class="dd-item" role="option" data-dir="tiers/${t.id}">${TIER_ICON}<span class="lbl">${t.label}</span><span class="dd-sz">${(t.params / 1e6).toFixed(2)}M</span><span class="chk"></span></div>`).join('')
+    + '</div></div>';
+  const btn = $('tierBtn'), menu = $('tierMenu');
+  btn.onclick = (e) => { e.stopPropagation(); const show = menu.hidden; menu.hidden = !show; btn.setAttribute('aria-expanded', String(show)); };
+  menu.querySelectorAll('.dd-item').forEach((it) => { it.onclick = () => { menu.hidden = true; loadTier(it.dataset.dir); }; });
+  document.addEventListener('click', () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); });
 }
 
 // Load one tier (or the default model at '.') and (re)render every section from it.
 async function loadTier(dir) {
-  const sel = $('tierSelect'); if (sel && sel.value !== dir) sel.value = dir;   // keep the dropdown in sync
+  // Sync the dropdown button label + the active row's checkmark.
+  const menu = $('tierMenu'), btn = $('tierBtn');
+  if (menu && btn) {
+    let label = 'Scratch-Coder', sz = '';
+    menu.querySelectorAll('.dd-item').forEach((it) => {
+      const on = it.dataset.dir === dir;
+      it.querySelector('.chk').textContent = on ? '✓' : '';
+      if (on) { label = it.querySelector('.lbl').textContent; sz = it.querySelector('.dd-sz').textContent; }
+    });
+    btn.innerHTML = `${TIER_ICON}<span>${label}</span><span class="dd-sz">${sz}</span>${TIER_CHEV}`;
+  }
   let ok = false;
   try {
     const r = await fetch(`${dir}/inspect.json`, { cache: 'no-store' });
