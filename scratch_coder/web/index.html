@@ -190,6 +190,25 @@
   .fork-hint { color:var(--dim); font-size:11.5px; line-height:1.55; margin:10px 0 0; }
   .fork-hint code { font:10.5px var(--mono); color:var(--ink); }
 
+  /* ---- Weight surgery: edit the in-memory weights and watch the forward pass react ---- */
+  .toolrow { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .surg-select { flex:1; background:var(--bg); color:var(--ink); border:1px solid var(--edge2);
+    border-radius:7px; padding:7px 10px; font:12.5px var(--mono); }
+  .surg-op { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .surg-op input[type=range] { flex:1; accent-color:#7fb0ff; min-width:80px; }
+  .surg-apply { cursor:pointer; background:var(--panel2); color:var(--ink); border:1px solid var(--edge2);
+    border-radius:7px; padding:6px 12px; font-size:12.5px; font-weight:600; min-width:108px; }
+  .surg-apply:hover { border-color:#5a5a63; }
+  .surg-danger { color:#ffb4a8; }
+  .surg-val { color:var(--dim); font:11.5px var(--mono); min-width:54px; text-align:right; }
+  .surg-foot { display:flex; align-items:center; gap:12px; margin-top:14px; padding-top:12px; border-top:1px solid var(--edge); }
+  .surg-restore { cursor:pointer; background:var(--panel); color:var(--ink); border:1px solid var(--edge2);
+    border-radius:7px; padding:7px 14px; font-size:12.5px; font-weight:600; }
+  .surg-restore:hover { border-color:#5a5a63; }
+  .surg-badge { font-size:10.5px; font-weight:600; color:#ffb4a8; border:1px solid #6b4a45;
+    background:#3a2b28; border-radius:5px; padding:1px 6px; margin-left:6px; vertical-align:middle; }
+  .surg-badge[hidden] { display:none; }
+
   /* ---- Live attention ---- */
   #attnSection[hidden] { display:none; }
   .attninput { display:flex; gap:10px; align-items:center; margin:8px 0 4px; }
@@ -250,10 +269,39 @@
   <div class="cfg" id="cfg">loading…</div>
   <div class="banner" id="banner" hidden></div>
 
-  <button class="forkbtn" id="forkBtn" hidden>
-    <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor"><path d="M5 5.372v.878c0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75v-.878a2.25 2.25 0 1 1 1.5 0v.878a2.25 2.25 0 0 1-2.25 2.25h-1.5v2.128a2.251 2.251 0 1 1-1.5 0V8.5h-1.5A2.25 2.25 0 0 1 3.5 6.25v-.878a2.25 2.25 0 1 1 1.5 0ZM4.25 4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM8 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm3.75-9a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z"/></svg>
-    Fork this tier
-  </button>
+  <div class="toolrow">
+    <button class="forkbtn" id="forkBtn" hidden>
+      <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor"><path d="M5 5.372v.878c0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75v-.878a2.25 2.25 0 1 1 1.5 0v.878a2.25 2.25 0 0 1-2.25 2.25h-1.5v2.128a2.251 2.251 0 1 1-1.5 0V8.5h-1.5A2.25 2.25 0 0 1 3.5 6.25v-.878a2.25 2.25 0 1 1 1.5 0ZM4.25 4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM8 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm3.75-9a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z"/></svg>
+      Fork this tier
+    </button>
+    <button class="forkbtn" id="surgeryBtn" hidden>
+      <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor"><path d="M13.94 1.06a1.5 1.5 0 0 1 0 2.12l-1.3 1.3-2.12-2.12 1.3-1.3a1.5 1.5 0 0 1 2.12 0ZM9.36 3.36 2.9 9.82a1.5 1.5 0 0 0-.4.72l-.5 2.3a.5.5 0 0 0 .6.6l2.3-.5a1.5 1.5 0 0 0 .72-.4l6.46-6.46-2.12-2.12Z"/></svg>
+      Weight surgery
+    </button>
+  </div>
+  <div class="forkpanel" id="surgeryPanel" hidden>
+    <div class="fork-head"><b>Weight surgery <span class="surg-badge" id="surgEdited" hidden>edited</span></b><button class="fork-x" id="surgClose" aria-label="Close">✕</button></div>
+    <p class="fork-lead">Change the loaded weights <b>in memory</b> and watch the forward pass react — the attention maps redraw and <b>Generate</b> will sound different. Nothing is saved; <b>Restore</b> puts them back. For edits you keep, use <code>edit_weights.py</code>.</p>
+    <label class="fork-namel" style="margin-bottom:12px">Target&nbsp;<select id="surgTarget" class="surg-select"></select></label>
+    <div class="surg-op">
+      <button class="surg-apply" data-op="noise">Add noise</button>
+      <input type="range" id="surgNoise" min="0" max="1" step="0.02" value="0.2" />
+      <span class="surg-val" id="surgNoiseV">σ 0.20</span>
+    </div>
+    <div class="surg-op">
+      <button class="surg-apply" data-op="scale">Scale</button>
+      <input type="range" id="surgScale" min="0" max="2" step="0.05" value="1" />
+      <span class="surg-val" id="surgScaleV">× 1.00</span>
+    </div>
+    <div class="surg-op">
+      <button class="surg-apply surg-danger" data-op="ablate">Ablate target</button>
+      <span class="fork-hint" style="margin:0">zero it out — a block becomes a no-op pass-through</span>
+    </div>
+    <div class="surg-foot">
+      <button class="surg-restore" id="surgRestore">Restore original</button>
+      <span class="fork-hint" id="surgStatus" style="margin:0"></span>
+    </div>
+  </div>
   <div class="forkpanel" id="forkPanel" hidden>
     <div class="fork-head"><b>Fork <span id="forkTierName">this tier</span></b><button class="fork-x" id="forkClose" aria-label="Close">✕</button></div>
     <p class="fork-lead">Make your own editable copy and train it. The browser can't train, so this hands you the exact command to run in <code>scratch_coder/</code> — each fork gets its own copy of the model code you can change.</p>
@@ -398,6 +446,30 @@ function renderForkCmd() {
     : "Copies the tier's trained weights (rebuilding them from <code>weights.bin</code> if the checkpoint isn't on disk) and keeps teaching. A shape change in <code>model.py</code> means it starts fresh instead.";
 }
 
+// --- weight surgery panel: drive gpt.js's in-memory edits, then redraw the live views.
+function buildSurgTargets() {
+  const L = (gpt && gpt.cfg && gpt.cfg.n_layer) || 0;
+  const opts = ['<option value="all">All weights</option>', '<option value="embedding">Embedding</option>'];
+  for (let l = 0; l < L; l++) opts.push(`<option value="block:${l}">Block ${l}</option>`);
+  opts.push('<option value="output">Output head</option>');
+  $('surgTarget').innerHTML = opts.join('');
+}
+function afterSurgery(msg) {
+  const edited = !!(gpt && gpt.edited);
+  $('surgEdited').hidden = !edited;
+  $('surgStatus').textContent = msg + (edited ? ' — Generate to hear it' : '');
+  // The attention maps read gpt.W directly, so re-running the forward pass shows the
+  // damage immediately. (The static brightness diagram is from the export, not live.)
+  if (gpt && !$('attnSection').hidden && !$('attnRun').disabled) runAttn();
+}
+function applySurgery(op) {
+  if (!gpt) return;
+  const target = $('surgTarget').value;
+  if (op === 'noise') { const s = +$('surgNoise').value; gpt.addNoise(target, s); afterSurgery(`added σ=${s.toFixed(2)} noise to ${target}`); }
+  else if (op === 'scale') { const f = +$('surgScale').value; gpt.scaleW(target, f); afterSurgery(`scaled ${target} by ${f.toFixed(2)}`); }
+  else if (op === 'ablate') { gpt.ablate(target); afterSurgery(`ablated ${target}`); }
+}
+
 async function boot() {
   // One-time wiring — these handlers read the current `model`/`gpt`, which loadTier
   // swaps when you change tiers, so they never need re-binding.
@@ -419,6 +491,7 @@ async function boot() {
     const p = $('forkPanel'), show = p.hidden;
     p.hidden = !show;
     if (show) {
+      $('surgeryPanel').hidden = true;
       if (!$('forkName').value) $('forkName').value = 'my-' + (curTier?.id || 'tier');
       $('forkTierName').textContent = curTier?.label || 'this tier';
       renderForkCmd(); $('forkName').focus(); $('forkName').select();
@@ -435,6 +508,19 @@ async function boot() {
       $('forkCopy').textContent = 'Copied'; setTimeout(() => { $('forkCopy').textContent = 'Copy'; }, 1200);
     } catch (_) { $('forkCopy').textContent = 'Ctrl+C'; }
   };
+
+  // Weight-surgery panel.
+  $('surgeryBtn').onclick = () => {
+    const p = $('surgeryPanel'), show = p.hidden;
+    p.hidden = !show;
+    if (show) { $('forkPanel').hidden = true; buildSurgTargets();
+      $('surgEdited').hidden = !(gpt && gpt.edited); $('surgStatus').textContent = ''; }
+  };
+  $('surgClose').onclick = () => { $('surgeryPanel').hidden = true; };
+  $('surgNoise').addEventListener('input', () => { $('surgNoiseV').textContent = 'σ ' + (+$('surgNoise').value).toFixed(2); });
+  $('surgScale').addEventListener('input', () => { $('surgScaleV').textContent = '× ' + (+$('surgScale').value).toFixed(2); });
+  document.querySelectorAll('.surg-apply').forEach((b) => { b.onclick = () => applySurgery(b.dataset.op); });
+  $('surgRestore').onclick = () => { if (gpt) { gpt.restore(); afterSurgery('restored to original'); } };
 
   // Tier switcher from the manifest. Default to a light tier the page can load
   // and run instantly — the "Chromebook" sweet spot (or the smallest available),
@@ -506,7 +592,8 @@ async function loadTier(dir) {
   curTier = { id: dir === '.' ? null : dir.split('/').pop(), dir,
               label: model.tier || (dir === '.' ? 'this model' : dir.split('/').pop()) };
   $('forkBtn').hidden = !(hasValues && curTier.id);
-  $('forkPanel').hidden = true;   // collapse it when switching tiers
+  $('surgeryBtn').hidden = !(hasValues && model.weights);   // surgery needs live weights
+  $('forkPanel').hidden = true; $('surgeryPanel').hidden = true;   // collapse when switching tiers
 
   $('banner').hidden = true;
   if (!hasValues) {

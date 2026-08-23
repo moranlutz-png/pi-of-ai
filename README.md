@@ -131,6 +131,15 @@ python fork_tier.py --tier chromebook --name from-zero --scratch   # same shape,
 #   .pt; if that's not on disk it rebuilds a weights-only checkpoint from the committed weights.bin,
 #   so forking works on a fresh clone. Then:  cd experiments/my-ultra && bash train.sh
 
+# --- weight surgery: break a trained model on purpose and watch what it loses ---
+#   In the browser inspector, the "Weight surgery" button edits the weights IN MEMORY
+#   (add noise / scale / ablate a block or the whole model) and the forward pass reacts
+#   live — nothing is saved. The CLI twin persists the edit to a new checkpoint:
+python edit_weights.py --ckpt data/ckpt.pt --op zero-layer --layer 3      # disable a block
+python edit_weights.py --ckpt data/ckpt.pt --op add-noise --target all --sigma 0.1
+python edit_weights.py --ckpt data/ckpt.pt --op prune --target all --frac 0.2   # magnitude prune
+#   then re-export (export_inspect.py --weights ...) to view it, or train.py --resume to heal it
+
 # --- rules-baker: generate training data against a local teacher (e.g. Ollama) ---
 cd rules_baker
 python data_gen/generate_dataset.py --config configs/qwen_coder_0_5b_chromebook.yaml

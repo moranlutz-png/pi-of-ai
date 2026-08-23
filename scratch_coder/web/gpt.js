@@ -39,6 +39,12 @@ function softmaxCausal(scores, i) {
   for (let j = 0; j <= i; j++) scores[j] /= sum;
 }
 
+// Standard normal (Box–Muller), for the "add noise" weight-surgery op.
+function gaussian() {
+  let u = 0, v = 0; while (u === 0) u = Math.random(); while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
 export class ScratchGPT {
   constructor(cfg, weights) { this.cfg = cfg; this.W = weights; }
 
@@ -54,8 +60,43 @@ export class ScratchGPT {
     for (const t of inspect.weights.tensors) W[t.name] = all.subarray(t.offset, t.offset + t.count);
     const g = new ScratchGPT(inspect.config, W);
     g.vocab = (inspect.embedding && inspect.embedding.points) ? inspect.embedding.points.map((p) => p.char) : null;
+    // For weight surgery: every W[name] is a view into `all`, so editing them edits the
+    // live forward pass. Keep the whole buffer and a pristine copy so restore() is exact.
+    g._all = all; g._orig = Float32Array.from(all); g.edited = false;
     return g;
   }
+
+  // --- weight surgery ---------------------------------------------------------
+  // Change the loaded weights IN MEMORY so generation and attention react at once.
+  // Nothing here writes a file — restore() copies the pristine buffer back. The CLI
+  // twin that DOES persist is edit_weights.py.
+  _names(target) {
+    const all = Object.keys(this.W);
+    if (target === 'all') return all;
+    if (target === 'embedding') return all.filter((n) => n.startsWith('tok_emb') || n.startsWith('pos_emb'));
+    if (target === 'output') return all.filter((n) => n.startsWith('ln_f') || n.startsWith('head'));
+    if (target.startsWith('block:')) { const l = target.slice(6); return all.filter((n) => n.startsWith(`blocks.${l}.`)); }
+    return [];
+  }
+  _std(a) { let m = 0; for (let i = 0; i < a.length; i++) m += a[i]; m /= a.length;
+    let v = 0; for (let i = 0; i < a.length; i++) { const d = a[i] - m; v += d * d; } return Math.sqrt(v / a.length); }
+  addNoise(target, sigma) {   // add sigma * (this tensor's std) * N(0,1) to each weight
+    for (const n of this._names(target)) { const a = this.W[n], s = sigma * this._std(a); for (let i = 0; i < a.length; i++) a[i] += s * gaussian(); }
+    this.edited = true;
+  }
+  scaleW(target, factor) { for (const n of this._names(target)) { const a = this.W[n]; for (let i = 0; i < a.length; i++) a[i] *= factor; } this.edited = true; }
+  ablate(target) {
+    // A block: zero its two output projections so it adds nothing to the residual
+    // stream — an identity pass-through, i.e. "remove this layer" without a reshape.
+    // Anything else: hard-zero every weight in it.
+    if (target.startsWith('block:')) {
+      const l = target.slice(6);
+      for (const nm of [`blocks.${l}.attn.c_proj.weight`, `blocks.${l}.attn.c_proj.bias`,
+                        `blocks.${l}.mlp.c_proj.weight`, `blocks.${l}.mlp.c_proj.bias`]) if (this.W[nm]) this.W[nm].fill(0);
+    } else { for (const n of this._names(target)) this.W[n].fill(0); }
+    this.edited = true;
+  }
+  restore() { this._all.set(this._orig); this.edited = false; }
 
   encode(text) {
     if (!this.vocab) throw new Error('no vocab in inspect.json');
