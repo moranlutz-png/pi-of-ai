@@ -209,7 +209,7 @@
       <a class="filebtn" id="dataBtn" href="viewer.html?view=corpus" hidden><svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6H10.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-2.938-2.938Z"/></svg><span class="filebtn-t">Training data</span><span class="filebtn-meta" id="dataMeta"></span></a>
     </div>
   </div>
-  <p class="lead">Follow a piece of text left to right through the model — from raw characters, through embedding and each transformer block, to a guess at the next character. Each station shows what it does and the weights it's built from. It's small enough to see all the way through; it will never be a useful coder, and that's the point.</p>
+  <p class="lead">Follow text left to right through the model — raw characters, through each transformer block, to a guess at the next character. Small enough to see all the way through; it will never be a useful coder, and that's the point.</p>
   <div class="tierbar" id="tierBar" hidden></div>
   <div class="cfg" id="cfg">loading…</div>
   <div class="banner" id="banner" hidden></div>
@@ -225,11 +225,11 @@
 
   <div id="knobs"></div>
 
-  <p class="legend">Each station's little squares are its <b>weight tensors</b> — the numbers that make up that step — sized by how many it holds. Brightness is how spread-out those numbers are; switch to <b>Difference</b> to see what training changed at each stage (at four layers, <b>less than you'd guess, and not evenly</b>). The route never changes: text in on the left, a next-character guess on the right.</p>
+  <p class="legend">Each station's squares are its <b>weight tensors</b>, sized by how many numbers they hold; brightness is how spread-out those numbers are. Switch to <b>Difference</b> to see what training changed at each stage.</p>
 
   <section id="genSection" hidden>
     <h1 style="font-size:18px; margin:36px 0 4px">Generate</h1>
-    <p class="lead">Give it a few characters and it continues them — one character at a time, the whole forward pass running here in the browser with no server. It only ever saw Python source, so expect Python-flavoured shapes: indentation, <code>def</code>, brackets, names. At 0.84M parameters trained from scratch it will not write working code; seeing what structure it <i>did</i> pick up is the point.</p>
+    <p class="lead">Give it a few characters and it continues them, one at a time — the whole forward pass running in the browser, no server. It only ever saw Python, so expect Python-flavoured shapes: indentation, <code>def</code>, brackets, names. It won't write working code; the structure it <i>did</i> pick up is the point.</p>
     <div class="geninput">
       <input id="genPrompt" type="text" value="def " spellcheck="false" autocomplete="off" aria-label="Prompt" />
       <select id="genTemp" aria-label="Temperature">
@@ -253,7 +253,7 @@
 
   <section id="embedSection" hidden>
     <h1 style="font-size:18px; margin:36px 0 4px">Embedding neighbourhoods</h1>
-    <p class="lead">Each character is a node placed where its learned embedding lands, projected to 3D, with lines to its nearest neighbours in the full 128-dimensional space — the connections the model has learned between characters. <b>Drag to orbit, scroll to zoom</b>, hover a character to read its neighbour list. A lightly-trained model may not have separated digits from letters from whitespace yet; tangled connections are the honest state of the model, not a bug.</p>
+    <p class="lead">Each character sits where its learned embedding lands, projected to 3D, with lines to its nearest neighbours in the full space. <b>Drag to orbit, scroll to zoom</b>, hover a character for its neighbour list. A lightly-trained model may not have separated digits from letters from whitespace yet — tangled connections are the honest state of the model, not a bug.</p>
     <div class="embed-wrap">
       <canvas id="embed" role="img" aria-label="3D character embedding graph — drag to orbit, scroll to zoom"></canvas>
       <div class="nbrpanel" id="embedNeighbours"></div>
@@ -262,7 +262,7 @@
       <p class="viewhint" id="embedVar"></p>
       <label class="embtoggle"><input type="checkbox" id="embByStrength" checked /> Fade lines by connection strength (brighter = closer neighbours)</label>
     </div>
-    <p class="viewhint" style="margin-top:10px">Two lists sit side by side. <b>Model now</b> is the characters nearest the hovered one in the embedding the model has learned so far, by <b>cosine similarity</b> (−1 opposite … 1 identical). <b>Ideal</b> is what a fully trained model should recover — the characters the training text actually uses in the same contexts, measured straight from the corpus. A model-now character that also appears in the ideal list is one the model already gets right, so it turns <b style="color:var(--ok)">green</b>. Early on few match; that gap is how far it still has to go. (The two sets are scored differently, so the ideal numbers run higher — compare which characters appear, not the exact values.) Whitespace has no glyph, so: <code>␠</code> space · <code>↵</code> newline · <code>⇥</code> tab · <code>␍</code> carriage return.</p>
+    <p class="viewhint" style="margin-top:10px"><b>Model now</b> is the characters nearest the hovered one in the learned embedding, by <b>cosine similarity</b> (−1 … 1). <b>Ideal</b> is what a fully trained model should recover, measured straight from the corpus. A character in both turns <b style="color:var(--ok)">green</b> — one the model already gets right; early on few match. Whitespace: <code>␠</code> space · <code>↵</code> newline · <code>⇥</code> tab · <code>␍</code> carriage return.</p>
   </section>
 
   <section id="attnSection" hidden>
@@ -274,13 +274,12 @@
     </div>
     <p class="viewhint" id="attnStatus"></p>
     <div class="attnguide">
-      <b>How to read one square (heatmap):</b>
+      <b>How to read one heatmap square:</b>
       <ul>
-        <li>Each little grid is one <b>head</b>. There are several heads per <b>layer</b> (a row of grids), and several layers stacked down the page — each one a separate "reader" that can look at the text differently.</li>
-        <li>The characters run along the <b>top</b> and the <b>left</b> of every grid. To read a square: go to a <b>row</b> (the character being processed) and slide across to a <b>column</b> (a character it looked back at).</li>
-        <li><b>Brighter = more attention.</b> A bright square at row&nbsp;“<code>(</code>”, column&nbsp;“<code>o</code>” means: while processing the <code>(</code>, this head leaned on the earlier <code>o</code>. <span style="color:var(--dim)">Hover any square to read it as a sentence.</span></li>
-        <li>It's a <b>triangle</b>, not a full square, because a character can only see itself and what came <b>before</b> it — never the future.</li>
-        <li>Common shapes: a bright <b>diagonal</b> = "attend to myself"; a bright stripe just below it = "attend to the previous character"; a bright first <b>column</b> = "attend back to the very start".</li>
+        <li>Each grid is one <b>head</b>; a row of grids is a <b>layer</b>. Each head reads the text differently.</li>
+        <li>Characters run along the <b>top</b> and <b>left</b>. Pick a <b>row</b> (character being processed), slide to a <b>column</b> (a character it looked back at). <b>Brighter = more attention.</b> <span style="color:var(--dim)">Hover any square to read it as a sentence.</span></li>
+        <li>It's a <b>triangle</b> because a character can only see itself and what came <b>before</b> it.</li>
+        <li>Common shapes: bright <b>diagonal</b> = attend to myself; stripe below it = the previous character; bright first <b>column</b> = back to the start.</li>
       </ul>
     </div>
     <div id="attn"></div>
@@ -288,7 +287,7 @@
 
   <section id="curvesSection" hidden>
     <h1 style="font-size:18px; margin:36px 0 4px">Training curves</h1>
-    <p class="lead">Loss over training, and the per-layer gradient norms — both from what the trainer logs each eval and would otherwise throw away.</p>
+    <p class="lead">Loss over training and the per-layer gradient norms, straight from what the trainer logs each eval.</p>
     <div class="curves-wrap">
       <div class="curvebox"><h3>Validation loss</h3><svg id="lossCurve" role="img" aria-label="validation loss over training"></svg></div>
       <div class="curvebox"><h3>Gradient norm per layer</h3><svg id="gradCurve" role="img" aria-label="per-layer gradient norms over training"></svg><div id="gradLegend"></div></div>

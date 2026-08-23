@@ -72,7 +72,7 @@ export function renderKnobs(root, model, view = 'trained') {
 
   for (const g of arch.groups) {
     let title, blurb;
-    if (g.kind === 'embedding') { title = 'Embedding'; blurb = 'Each character becomes a list of 128 numbers, plus where it sits in the text.'; }
+    if (g.kind === 'embedding') { title = 'Embedding'; blurb = `Each character becomes a list of ${arch.config.n_embd} numbers, plus where it sits in the text.`; }
     else if (g.kind === 'output') { title = 'Output head'; blurb = 'Turns the final numbers into a score for every possible next character.'; }
     else { const i = g.index, n = arch.config.n_layer; title = `Block ${i}`; blurb = `Look back at earlier characters (attention), then think it over (MLP). Layer ${i + 1} of ${n}.`; }
     station(title, g.kind, blurb, '', g);
