@@ -281,7 +281,7 @@
   </div>
   <div class="forkpanel" id="surgeryPanel" hidden>
     <div class="fork-head"><b>Weight surgery <span class="surg-badge" id="surgEdited" hidden>edited</span></b><button class="fork-x" id="surgClose" aria-label="Close">✕</button></div>
-    <p class="fork-lead">Change the loaded weights <b>in memory</b> and watch the forward pass react — the attention maps redraw and <b>Generate</b> will sound different. Nothing is saved; <b>Restore</b> puts them back. For edits you keep, use <code>edit_weights.py</code>.</p>
+    <p class="fork-lead">Change the loaded weights <b>in memory</b> and watch the model react — the flow diagram's brightness shifts, the attention maps redraw, and <b>Generate</b> sounds different. Nothing is saved; <b>Restore</b> puts them back. For edits you keep, use <code>edit_weights.py</code>.</p>
     <label class="fork-namel" style="margin-bottom:12px">Target&nbsp;<select id="surgTarget" class="surg-select"></select></label>
     <div class="surg-op">
       <button class="surg-apply" data-op="noise">Add noise</button>
@@ -466,8 +466,16 @@ function afterSurgery(msg) {
     $('genOut').textContent = '';
     $('genStatus').textContent = edited ? 'weights edited — press Generate to hear it' : 'restored to original — press Generate';
   }
+  // Make the flow diagram react too: recompute each tensor's std from the live weights
+  // and re-render. A zeroed tensor goes dark, a noised one brightens. Restore recomputes
+  // back to the exported values (same std formula), so the diagram snaps back with it.
+  if (gpt && gpt.liveStds && model && model.trained) {
+    const live = gpt.liveStds();
+    for (const n in live) if (model.trained[n]) model.trained[n].std = live[n];
+    renderKnobs($('knobs'), model, curView);
+  }
   // The attention maps read gpt.W directly, so re-running the forward pass shows the
-  // change immediately. (The static brightness diagram is from the export, not live.)
+  // change immediately.
   if (gpt && !$('attnSection').hidden && !$('attnRun').disabled) runAttn();
 }
 function applySurgery(op) {

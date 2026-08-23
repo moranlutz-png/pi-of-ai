@@ -97,6 +97,10 @@ export class ScratchGPT {
     this.edited = true;
   }
   restore() { this._all.set(this._orig); this.edited = false; }
+  // Each tensor's std from the LIVE weights — same population-std as the exporter's
+  // numpy std, so the flow diagram's brightness can react to surgery and snap back
+  // exactly on restore.
+  liveStds() { const out = {}; for (const n of Object.keys(this.W)) out[n] = this._std(this.W[n]); return out; }
 
   encode(text) {
     if (!this.vocab) throw new Error('no vocab in inspect.json');
