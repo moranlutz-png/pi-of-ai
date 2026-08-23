@@ -142,18 +142,16 @@
   .genout .seed { color:var(--dim); }
   .genout .cursor { color:var(--dimmer); }
 
-  /* ---- Source & training-data viewers ---- */
+  /* ---- Source & training-data: buttons that open the GitHub-style viewer page ---- */
   #srcSection[hidden], #dataSection[hidden] { display:none; }
-  .srctabs { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 10px; }
-  .srctab { background:var(--panel); border:1px solid var(--edge2); color:var(--dim);
-    border-radius:7px; padding:5px 11px; font:12px var(--mono); cursor:pointer; }
-  .srctab:hover { color:var(--ink); }
-  .srctab.active { background:var(--edge2); color:var(--ink); }
-  .srccode { margin:0; background:var(--panel); border:1px solid var(--edge); border-radius:10px;
-    padding:14px 16px; max-height:60vh; overflow:auto; font:12px/1.6 var(--mono); color:var(--ink); white-space:pre; }
-  .datatext { width:100%; box-sizing:border-box; height:60vh; resize:vertical; background:var(--panel);
-    border:1px solid var(--edge); border-radius:10px; padding:14px 16px; color:var(--ink);
-    font:12px/1.6 var(--mono); white-space:pre; }
+  .filebtn { display:inline-flex; align-items:center; gap:11px; text-decoration:none; color:var(--ink);
+    background:var(--panel); border:1px solid var(--edge2); border-radius:10px; padding:12px 16px;
+    font-size:13.5px; margin-top:8px; transition:background .12s, border-color .12s; }
+  .filebtn:hover { background:var(--panel2); border-color:#5a5a63; }
+  .filebtn svg { opacity:.7; flex-shrink:0; }
+  .filebtn-t { font-weight:600; }
+  .filebtn-meta { color:var(--dimmer); font:11.5px var(--mono); }
+  .filebtn-go { color:var(--dim); margin-left:2px; font-size:15px; }
 
   /* ---- Live attention ---- */
   #attnSection[hidden] { display:none; }
@@ -293,16 +291,20 @@
 
   <section id="srcSection" hidden>
     <h1 style="font-size:18px; margin:36px 0 4px">The code it's built from</h1>
-    <p class="lead">The whole model is plain Python — no framework. This is the actual source it was written and trained in: the from-scratch GPT, the training loop, the corpus builder, and the sampler. Read-only; it is exactly the code that produced the weights above.</p>
-    <div class="srctabs" id="srcTabs"></div>
-    <pre class="srccode" id="srcCode"></pre>
+    <p class="lead">The whole model is plain Python — no framework. Open the actual source it was written and trained in, laid out like a file on GitHub.</p>
+    <a class="filebtn" id="srcBtn" href="viewer.html?view=source">
+      <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6H10.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-2.938-2.938Z"/></svg>
+      <span class="filebtn-t">Inspect the source code</span><span class="filebtn-meta" id="srcMeta"></span><span class="filebtn-go">→</span>
+    </a>
   </section>
 
   <section id="dataSection" hidden>
     <h1 style="font-size:18px; margin:36px 0 4px">Training data</h1>
-    <p class="lead">Everything the model ever saw: real Python from this machine's own standard library, concatenated into one stream of characters. It learned to code by predicting the next character of this and nothing else. The whole training split is below — scroll through it.</p>
-    <p class="viewhint" id="dataStats"></p>
-    <textarea id="dataText" class="datatext" readonly spellcheck="false" aria-label="Training corpus"></textarea>
+    <p class="lead">Everything the model ever saw: real Python from the standard library, one stream of characters it learned to predict. Open it like a file on GitHub.</p>
+    <a class="filebtn" id="dataBtn" href="viewer.html?view=corpus">
+      <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6H10.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-2.938-2.938Z"/></svg>
+      <span class="filebtn-t">Inspect the training data</span><span class="filebtn-meta" id="dataMeta"></span><span class="filebtn-go">→</span>
+    </a>
   </section>
 
 <script type="module">
@@ -442,39 +444,16 @@ async function loadTier(dir) {
     $('curvesSection').hidden = false; renderCurves($('curvesSection'), model.training);
   } else { $('curvesSection').hidden = true; }
 
-  if (Array.isArray(model.source) && model.source.length) { $('srcSection').hidden = false; renderSource(model.source); }
-  else { $('srcSection').hidden = true; }
-  if (model.corpus && model.corpus.file) { $('dataSection').hidden = false; loadCorpus(model.corpus); }
-  else { $('dataSection').hidden = true; }
-}
-
-function renderSource(files) {
-  const tabs = $('srcTabs'), code = $('srcCode');
-  const show = (i) => {
-    [...tabs.children].forEach((t, k) => t.classList.toggle('active', k === i));
-    code.textContent = files[i].code;   // textContent — the browser escapes it, no HTML injection
-  };
-  tabs.innerHTML = '';
-  files.forEach((f, i) => {
-    const b = document.createElement('button'); b.className = 'srctab'; b.textContent = f.name;
-    b.onclick = () => show(i); tabs.appendChild(b);
-  });
-  show(0);
-}
-
-async function loadCorpus(corpus) {
-  const ta = $('dataText'), stats = $('dataStats');
-  stats.textContent = 'loading…';
-  try {
-    const text = await (await fetch(corpus.file, { cache: 'no-store' })).text();
-    ta.value = text;
-    const total = corpus.chars || text.length, shown = corpus.shownChars || text.length;
-    stats.textContent = total > shown
-      ? `Showing the first ${shown.toLocaleString()} of ${total.toLocaleString()} characters — the training split is real Python from the standard library; it's capped here so the browser stays responsive.`
-      : `${total.toLocaleString()} characters of Python from the standard library — the exact training split, nothing else`;
-  } catch (e) {
-    stats.textContent = 'could not load ' + corpus.file + ': ' + e.message;
-  }
+  // Source & training data now open in the GitHub-style viewer page; here we just
+  // reveal the buttons and label them with a count.
+  if (Array.isArray(model.source) && model.source.length) {
+    $('srcSection').hidden = false;
+    $('srcMeta').textContent = `${model.source.length} files`;
+  } else { $('srcSection').hidden = true; }
+  if (model.corpus && model.corpus.file) {
+    $('dataSection').hidden = false;
+    $('dataMeta').textContent = model.corpus.chars ? `${(model.corpus.chars / 1e6).toFixed(1)}M chars` : '';
+  } else { $('dataSection').hidden = true; }
 }
 
 let genStop = false, genBusy = false;

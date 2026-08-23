@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Source — Scratch-Coder</title>
+<style>
+  /* GitHub's dark "blob" (file) view, reproduced. */
+  :root { --gh-bg:#0d1117; --gh-box:#161b22; --gh-border:#30363d; --gh-ln:#6e7681; --gh-txt:#e6edf3;
+    --gh-link:#2f81f7; --gh-hover:rgba(177,186,196,.06);
+    --gh-kw:#ff7b72; --gh-str:#a5d6ff; --gh-com:#8b949e; --gh-num:#79c0ff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--gh-bg); color:var(--gh-txt);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; }
+  .top { display:flex; align-items:center; gap:16px; padding:14px 20px; border-bottom:1px solid var(--gh-border);
+    position:sticky; top:0; background:var(--gh-bg); z-index:5; flex-wrap:wrap; }
+  .back { color:var(--gh-link); text-decoration:none; font-size:13px; font-weight:500; }
+  .back:hover { text-decoration:underline; }
+  .top h1 { font-size:15px; font-weight:600; margin:0; letter-spacing:-.01em; }
+  .files { display:flex; flex-wrap:wrap; gap:5px; padding:12px 20px 0; }
+  .filetab { background:transparent; border:1px solid var(--gh-border); color:var(--gh-txt); border-radius:6px;
+    padding:4px 11px; font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; cursor:pointer; }
+  .filetab:hover { background:#21262d; }
+  .filetab.active { background:#21262d; border-color:#8b949e; }
+  .wrap { padding:14px 20px 70px; }
+  .blob { border:1px solid var(--gh-border); border-radius:6px; overflow:hidden; }
+  .blob-h { background:var(--gh-box); border-bottom:1px solid var(--gh-border); padding:9px 16px;
+    font-size:12px; color:#8b949e; display:flex; gap:14px; align-items:center; }
+  .blob-h b { color:var(--gh-txt); font-weight:600; font-size:13px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  .code { overflow-x:auto; }
+  table.src { border-collapse:collapse; width:100%;
+    font:12px/20px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  table.src td { padding:0; vertical-align:top; }
+  td.ln { text-align:right; color:var(--gh-ln); padding:0 16px 0 12px; width:1%; white-space:nowrap;
+    user-select:none; -webkit-user-select:none; }
+  td.cl { padding:0 16px; white-space:pre; color:var(--gh-txt); }
+  tr:hover td.cl, tr:hover td.ln { background:var(--gh-hover); }
+  .kw { color:var(--gh-kw); } .str { color:var(--gh-str); } .com { color:var(--gh-com); } .num { color:var(--gh-num); }
+  .note { color:#8b949e; font-size:12px; margin:16px 20px; max-width:80ch; line-height:1.6; }
+  .loading { color:#8b949e; padding:30px 20px; font-size:13px; }
+</style>
+</head>
+<body>
+  <div class="top">
+    <a class="back" href="inspect.html">← Back to inspector</a>
+    <h1 id="title">Loading…</h1>
+  </div>
+  <div class="files" id="files"></div>
+  <div class="wrap"><div class="blob"><div class="blob-h" id="blobH"></div>
+    <div class="code"><table class="src" id="src"><tbody><tr><td class="loading">Loading…</td></tr></tbody></table></div>
+  </div></div>
+  <p class="note" id="note"></p>
+
+<script type="module">
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const KW = new Set(['def','class','return','if','elif','else','for','while','in','not','and','or','is',
+    'import','from','as','with','try','except','finally','raise','pass','break','continue','lambda','yield',
+    'global','nonlocal','assert','del','None','True','False','async','await']);
+
+  // Single-pass tokeniser: safe (each token escaped, no overlapping spans). Line-by-line,
+  // so multi-line strings aren't perfectly tracked, but it never emits broken HTML.
+  function hl(line) {
+    let out = '', i = 0; const n = line.length;
+    while (i < n) {
+      const c = line[i];
+      if (c === '#') { out += `<span class="com">${esc(line.slice(i))}</span>`; break; }
+      if (c === '"' || c === "'") {
+        let j = i + 1; while (j < n && line[j] !== c) { if (line[j] === '\\') j++; j++; }
+        out += `<span class="str">${esc(line.slice(i, Math.min(j + 1, n)))}</span>`; i = j + 1; continue;
+      }
+      if (/[A-Za-z_]/.test(c)) {
+        let j = i; while (j < n && /\w/.test(line[j])) j++;
+        const w = line.slice(i, j);
+        out += KW.has(w) ? `<span class="kw">${esc(w)}</span>` : esc(w); i = j; continue;
+      }
+      if (/[0-9]/.test(c)) {
+        let j = i; while (j < n && /[0-9.]/.test(line[j])) j++;
+        out += `<span class="num">${esc(line.slice(i, j))}</span>`; i = j; continue;
+      }
+      out += esc(c); i++;
+    }
+    return out || '';
+  }
+
+  const MAX_LINES = 4000;   // cap huge files so the DOM stays responsive, like GitHub truncates
+  function renderCode(text) {
+    const lines = text.split('\n');
+    const shown = Math.min(lines.length, MAX_LINES);
+    let html = '';
+    for (let i = 0; i < shown; i++) html += `<tr><td class="ln">${i + 1}</td><td class="cl">${hl(lines[i])}</td></tr>`;
+    $('src').innerHTML = '<tbody>' + html + '</tbody>';
+    return { total: lines.length, shown };
+  }
+
+  const params = new URLSearchParams(location.search);
+  const view = params.get('view') === 'corpus' ? 'corpus' : 'source';
+
+  async function boot() {
+    if (view === 'corpus') {
+      $('title').textContent = 'Training data';
+      document.title = 'Training data — Scratch-Coder';
+      let inspect = {};
+      try { inspect = await (await fetch('inspect.json', { cache: 'no-store' })).json(); } catch (_) {}
+      const file = (inspect.corpus && inspect.corpus.file) || 'corpus.txt';
+      const total = inspect.corpus && inspect.corpus.chars;
+      let text = '';
+      try { text = await (await fetch(file, { cache: 'no-store' })).text(); }
+      catch (e) { $('src').innerHTML = `<tbody><tr><td class="loading">Could not load ${esc(file)}: ${esc(e.message)}</td></tr></tbody>`; return; }
+      const r = renderCode(text);
+      $('blobH').innerHTML = `<b>corpus.txt</b><span>${r.shown.toLocaleString()} lines shown</span>`;
+      $('note').textContent = 'A representative slice of the real Python the model learned from — the standard library, one continuous stream of characters it was trained to predict. '
+        + (r.total > r.shown ? `Showing the first ${r.shown.toLocaleString()} of ${r.total.toLocaleString()} lines in this file so the page stays responsive.` : `${r.total.toLocaleString()} lines.`);
+      return;
+    }
+
+    // Source: the model's own Python, one tab per file.
+    $('title').textContent = "The code it's built from";
+    document.title = 'Source — Scratch-Coder';
+    let inspect = {};
+    try { inspect = await (await fetch('inspect.json', { cache: 'no-store' })).json(); } catch (_) {}
+    const files = Array.isArray(inspect.source) ? inspect.source : [];
+    if (!files.length) { $('src').innerHTML = '<tbody><tr><td class="loading">No source embedded — re-export with python export_inspect.py.</td></tr></tbody>'; return; }
+    const show = (idx) => {
+      [...$('files').children].forEach((b, k) => b.classList.toggle('active', k === idx));
+      const f = files[idx];
+      const r = renderCode(f.code);
+      $('blobH').innerHTML = `<b>${esc(f.name)}</b><span>${r.total.toLocaleString()} lines</span>`;
+    };
+    $('files').innerHTML = files.map((f) => `<button class="filetab">${esc(f.name)}</button>`).join('');
+    [...$('files').children].forEach((b, k) => { b.onclick = () => show(k); });
+    $('note').textContent = 'The whole model is plain Python — no framework. This is the exact source that produced the weights: the from-scratch GPT, the training loop, the corpus builder, and the sampler.';
+    show(0);
+  }
+  boot();
+</script>
+</body>
+</html>
