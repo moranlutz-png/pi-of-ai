@@ -55,7 +55,7 @@ parameter counts, so you can watch capability grow with scale:
 | **Chromebook** | ~1.2M | 31 MB stdlib | the sweet spot |
 | **Laptop** | ~1.9M | 31 MB stdlib | sharper output |
 | **Max** | ~6.4M | 80 MB stdlib + site-packages | the any-PC ceiling |
-| *Ultra* | ~14M | 128 MB Python ecosystem | powerful-PC showcase (bigger `weights.bin`, slow in-browser) |
+| **Ultra** | ~14.3M | 128 MB Python ecosystem | powerful-PC showcase (57 MB `weights.bin`, slow in-browser) |
 
 The lesson these tiers teach together: **more scale buys convincing *syntax* —
 type hints, OOP, argument unpacking — but never crosses into *semantics*** (it
@@ -129,7 +129,7 @@ python data_gen/generate_dataset.py --config configs/qwen_coder_0_5b_chromebook.
 ## What's committed
 
 - **The Scratch-Coder tier weights ARE committed** (`*/web/tiers/*/weights.bin`,
-  ~40 MB total) so the browser inspector works out of the box on a fresh clone —
+  ~100 MB total across the five tiers) so the browser inspector works out of the box on a fresh clone —
   no GPU, no re-train. Deliberately overriding the usual "no binaries" rule
   because being runnable everywhere is the whole point of *this* model.
 - **Everything else regenerable is not committed** — the rules-baker's merged

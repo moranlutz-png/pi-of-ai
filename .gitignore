@@ -19,9 +19,11 @@ rbgpu/
 *.onnx
 *.ckpt
 
-# Generated corpora / checkpoints
+# Generated corpora / checkpoints (one dir per tier's training run — all regenerable)
 scratch_coder/data/
 scratch_coder/data_big/
+scratch_coder/data_max/
+scratch_coder/data_ultra/
 rules_baker/outputs/
 
 # Per-checkpoint inspector export (regenerate with scratch_coder/export_inspect.py);
