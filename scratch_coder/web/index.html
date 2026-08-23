@@ -457,9 +457,17 @@ function buildSurgTargets() {
 function afterSurgery(msg) {
   const edited = !!(gpt && gpt.edited);
   $('surgEdited').hidden = !edited;
-  $('surgStatus').textContent = msg + (edited ? ' — Generate to hear it' : '');
+  $('surgStatus').textContent = msg;
+  // The last generation no longer reflects the current weights, so leaving it on screen
+  // reads as "nothing happened" (this is why Restore looked broken). Stop any run, clear
+  // the stale text, and nudge a re-generate so the change — or the recovery — is visible.
+  genStop = true;
+  if ($('genOut').textContent) {
+    $('genOut').textContent = '';
+    $('genStatus').textContent = edited ? 'weights edited — press Generate to hear it' : 'restored to original — press Generate';
+  }
   // The attention maps read gpt.W directly, so re-running the forward pass shows the
-  // damage immediately. (The static brightness diagram is from the export, not live.)
+  // change immediately. (The static brightness diagram is from the export, not live.)
   if (gpt && !$('attnSection').hidden && !$('attnRun').disabled) runAttn();
 }
 function applySurgery(op) {
@@ -520,7 +528,12 @@ async function boot() {
   $('surgNoise').addEventListener('input', () => { $('surgNoiseV').textContent = 'σ ' + (+$('surgNoise').value).toFixed(2); });
   $('surgScale').addEventListener('input', () => { $('surgScaleV').textContent = '× ' + (+$('surgScale').value).toFixed(2); });
   document.querySelectorAll('.surg-apply').forEach((b) => { b.onclick = () => applySurgery(b.dataset.op); });
-  $('surgRestore').onclick = () => { if (gpt) { gpt.restore(); afterSurgery('restored to original'); } };
+  $('surgRestore').onclick = () => {
+    if (!gpt) return;
+    gpt.restore(); afterSurgery('restored to original');
+    const b = $('surgRestore'); b.textContent = 'Restored ✓';
+    setTimeout(() => { b.textContent = 'Restore original'; }, 1300);
+  };
 
   // Tier switcher from the manifest. Default to a light tier the page can load
   // and run instantly — the "Chromebook" sweet spot (or the smallest available),
