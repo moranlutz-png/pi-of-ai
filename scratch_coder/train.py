@@ -46,6 +46,8 @@ ap.add_argument("--n-embd", type=int, default=128, help="embedding width")
 ap.add_argument("--block", type=int, default=BLOCK, help="context length in characters")
 ap.add_argument("--tag", default="", help="suffix for checkpoint/loss files so tiers don't clash")
 ap.add_argument("--data", default="data", help="data directory (train.bin/val.bin/meta.pkl) to train on")
+ap.add_argument("--out-dir", default="", help="where checkpoint/loss files go (default: the --data dir); "
+                "a fork points this at its own folder so it reads a shared corpus without clobbering it")
 ap.add_argument("--batch", type=int, default=BATCH, help="batch size (lower it to fit a bigger model in VRAM)")
 ap.add_argument("--lr", type=float, default=LR, help="learning rate (lower it for bigger models, e.g. 1e-3)")
 args = ap.parse_args()
@@ -53,9 +55,13 @@ BLOCK = args.block   # get_batch reads these module globals, so set them before 
 BATCH = args.batch
 LR = args.lr
 D = Path(__file__).resolve().parent / args.data
+# Checkpoints/logs go beside the data by default, but --out-dir splits them off so a
+# fork can read a shared corpus (--data) while writing its own checkpoint here.
+OUT = (Path(__file__).resolve().parent / args.out_dir) if args.out_dir else D
+OUT.mkdir(parents=True, exist_ok=True)
 # Per-tier files when --tag is given, so several sizes can be trained side by side.
-CKPT = D / (f"ckpt_{args.tag}.pt" if args.tag else "ckpt.pt")
-LOSS_LOG = D / (f"loss_{args.tag}.jsonl" if args.tag else "loss.jsonl")
+CKPT = OUT / (f"ckpt_{args.tag}.pt" if args.tag else "ckpt.pt")
+LOSS_LOG = OUT / (f"loss_{args.tag}.jsonl" if args.tag else "loss.jsonl")
 
 meta = pickle.load(open(D / "meta.pkl", "rb"))
 itos, stoi = meta["itos"], meta["stoi"]

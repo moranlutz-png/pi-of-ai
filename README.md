@@ -121,6 +121,16 @@ python export_inspect.py --weights                       # write inspect.json + 
 #   Bigger corpus:  python prepare_data.py --out-dir data_max --max-bytes 80000000 --site-packages
 python sample_big.py "def "                              # or watch it from the CLI
 
+# --- fork a tier: copy it into your own editable experiment, then train it ---
+python fork_tier.py --list                               # tiers you can fork
+python fork_tier.py --tier ultra --name my-ultra         # continue: copy its weights + code
+python fork_tier.py --tier chromebook --name from-zero --scratch   # same shape, random init
+#   Each fork lands in experiments/<name>/ with its OWN copy of model.py/train.py — edit the
+#   architecture there and it changes only your fork. It reads the shared corpus and writes its
+#   checkpoint into its own folder (never clobbering a tier). "Continue" prefers the tier's real
+#   .pt; if that's not on disk it rebuilds a weights-only checkpoint from the committed weights.bin,
+#   so forking works on a fresh clone. Then:  cd experiments/my-ultra && bash train.sh
+
 # --- rules-baker: generate training data against a local teacher (e.g. Ollama) ---
 cd rules_baker
 python data_gen/generate_dataset.py --config configs/qwen_coder_0_5b_chromebook.yaml
