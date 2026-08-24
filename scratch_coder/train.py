@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import pickle
 import time
@@ -50,10 +51,18 @@ ap.add_argument("--out-dir", default="", help="where checkpoint/loss files go (d
                 "a fork points this at its own folder so it reads a shared corpus without clobbering it")
 ap.add_argument("--batch", type=int, default=BATCH, help="batch size (lower it to fit a bigger model in VRAM)")
 ap.add_argument("--lr", type=float, default=LR, help="learning rate (lower it for bigger models, e.g. 1e-3)")
+ap.add_argument("--schedule", choices=["constant", "cosine"], default="constant",
+                help="LR schedule: 'constant' (the old behaviour) or 'cosine' with a warmup then decay to --min-lr")
+ap.add_argument("--warmup", type=int, default=200, help="cosine schedule: linear warmup steps from 0 up to --lr")
+ap.add_argument("--min-lr", type=float, default=0.0, help="cosine schedule: floor to decay to (0 -> --lr/10)")
+ap.add_argument("--grad-accum", type=int, default=1,
+                help="accumulate this many micro-batches per optimizer step — a bigger EFFECTIVE batch "
+                     "(batch x grad-accum) for steadier gradients, without the VRAM of a bigger raw batch")
 args = ap.parse_args()
 BLOCK = args.block   # get_batch reads these module globals, so set them before that runs
 BATCH = args.batch
 LR = args.lr
+MIN_LR = args.min_lr if args.min_lr > 0 else LR / 10   # cosine floor
 D = Path(__file__).resolve().parent / args.data
 # Checkpoints/logs go beside the data by default, but --out-dir splits them off so a
 # fork can read a shared corpus (--data) while writing its own checkpoint here.
@@ -136,6 +145,23 @@ def save():
 
 
 end_iter = start_iter + args.iters
+
+
+def lr_at(step):
+    """Constant (the old behaviour), or a linear warmup then a cosine decay to MIN_LR —
+    the standard schedule that lets a bigger model settle into a lower loss than a flat
+    rate reaches: high early to move fast, low late to fine-tune without overshooting."""
+    if args.schedule != "cosine":
+        return LR
+    if step < args.warmup:
+        return LR * (step + 1) / max(1, args.warmup)
+    prog = min(1.0, (step - args.warmup) / max(1, end_iter - args.warmup))
+    return MIN_LR + 0.5 * (LR - MIN_LR) * (1 + math.cos(math.pi * prog))
+
+
+print(f"schedule: {args.schedule} (lr {LR:g}"
+      + (f" -> {MIN_LR:g}, warmup {args.warmup})" if args.schedule == "cosine" else ")")
+      + f" | grad-accum {args.grad_accum} -> effective batch {BATCH * args.grad_accum}")
 # The norm from the last completed step, so that if the next one blows up we can
 # report what the gradients were doing just before it did.
 last_grad_norm = float("nan")
@@ -146,28 +172,32 @@ try:
             vl = val_loss(); best = min(best, vl)
             norms = layer_grad_norms(model) if it > start_iter else []
             save()   # checkpoint at every eval, so a killed long run keeps its progress
-            print(f"iter {it:4d} | val loss {vl:.3f} | best {best:.3f} | {time.time()-t0:.0f}s")
+            print(f"iter {it:4d} | val loss {vl:.3f} | best {best:.3f} | lr {lr_at(it):.2e} | {time.time()-t0:.0f}s")
             if it > start_iter:
                 print(f"           grads {format_layer_norms(norms)}")
             with LOSS_LOG.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"iter": it, "val_loss": round(vl, 5), "best": round(best, 5),
+                                     "lr": round(lr_at(it), 7),
                                      "elapsed_s": round(time.time() - t0, 1), "params": n_params,
                                      "layer_norms": [round(float(n), 6) for n in norms]}) + "\n")
         if it >= end_iter:
             break
-        xb, yb = get_batch("train")
-        _, loss = model(xb, yb)
+        for g in opt.param_groups:   # apply the LR schedule for this step
+            g["lr"] = lr_at(it)
 
-        # Checked BEFORE backward(): a NaN loss is in the weights one line later,
-        # and from then on every iteration trains on nothing while still printing
-        # as though it were working. .item() costs a device sync each step, which
-        # on a 2.3M-parameter model is far cheaper than finding out at the end.
-        lv = loss.item()
-        if is_poisoned(lv):
-            raise SystemExit(poisoned_report(it, lv, last_grad_norm))
-
+        # One optimizer step over grad-accum micro-batches: a bigger EFFECTIVE batch for
+        # steadier gradients at the VRAM of a single micro-batch. accum=1 is the old path.
         opt.zero_grad(set_to_none=True)
-        loss.backward()
+        for _ in range(args.grad_accum):
+            xb, yb = get_batch("train")
+            _, loss = model(xb, yb)
+            # Checked BEFORE backward(): a NaN loss is in the weights one line later, and
+            # from then on every iteration trains on nothing while still printing as though
+            # it were working. .item() costs a device sync, far cheaper than finding out at the end.
+            lv = loss.item()
+            if is_poisoned(lv):
+                raise SystemExit(poisoned_report(it, lv, last_grad_norm))
+            (loss / args.grad_accum).backward()   # scale so the accumulated grad is the mean
         last_grad_norm = clip_and_measure(model, GRAD_CLIP)
         opt.step()
 except KeyboardInterrupt:
