@@ -800,9 +800,15 @@ async function runGen() {
   paint();
   const t0 = performance.now();
   const WS = new Set([' ', '\n', '\t', '\r']);
+  // KV-cache generation (see stepCache in gpt.js): prime once on the prompt, then feed
+  // each new character straight back as a single-token step — no longer re-running the
+  // whole context every character. When the cache fills the context window it's rebuilt
+  // from the most recent tokens: one recompute every ~half a window, not every step.
+  const half = Math.max(8, block >> 1);
+  let cache, logits;
+  ({ cache, logits } = gpt.primeCache(ids.slice(-block)));
   let n = 0;
   for (; n < MAX_NEW && !genStop; n++) {
-    const { logits } = gpt.forward(ids.slice(-block));   // crop to the context window, like sample_big.py
     // Nucleus + a mild repetition penalty over recent NON-whitespace characters, so it
     // stops looping at low temperature without ever discouraging indentation/newlines.
     const recent = ids.slice(-40).filter((id) => !WS.has(gpt.vocab[id]));
@@ -810,6 +816,8 @@ async function runGen() {
     ids.push(next);
     genText += gpt.vocab[next];
     paint();
+    if (cache.pos >= block) ({ cache, logits } = gpt.primeCache(ids.slice(-half)));  // window slid — rebuild
+    else logits = gpt.stepCache(cache, next);
     await new Promise((r) => setTimeout(r, 0));           // yield so the character actually paints
   }
   clearInterval(spin);

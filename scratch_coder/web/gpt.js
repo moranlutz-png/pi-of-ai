@@ -152,6 +152,62 @@ export class ScratchGPT {
     return { logits: linear(xf, W['head.weight'], null, C, V), attn };
   }
 
+  // --- KV-cache generation: the optimisation real runtimes use ---------------
+  // forward() reprocesses the WHOLE context every call — readable, and what the
+  // attention view needs, but it means generating N tokens costs N full passes over
+  // the growing context. Instead we keep each layer's keys and values and run only the
+  // ONE new token through, attending it over the cache. That turns O(N·context) work
+  // into O(N) single-token steps — the exact reason a 14M model felt slower than a
+  // quantised 2B: we were recomputing the entire context for every character.
+  newCache() {
+    const L = this.cfg.n_layer;
+    return { k: Array.from({ length: L }, () => []), v: Array.from({ length: L }, () => []), pos: 0 };
+  }
+  // Run one token at position cache.pos, append its k/v to the cache, and return the
+  // logits for the token that comes next. No causal mask is needed: everything in the
+  // cache is a position <= this one, so attention is causal by construction.
+  stepCache(cache, tokenId) {
+    const { n_embd: C, n_head: H, n_layer: L, vocab_size: V } = this.cfg;
+    const hd = C / H, W = this.W, sc = scale(hd), t = cache.pos;
+    const te = W['tok_emb.weight'], pe = W['pos_emb.weight'];
+    const x = new Float32Array(C);
+    for (let i = 0; i < C; i++) x[i] = te[tokenId * C + i] + pe[t * C + i];
+    for (let l = 0; l < L; l++) {
+      const p = `blocks.${l}.`;
+      const h = layernorm(x, W[p + 'ln1.weight'], W[p + 'ln1.bias']);
+      const qkv = linear(h, W[p + 'attn.c_attn.weight'], W[p + 'attn.c_attn.bias'], C, 3 * C);
+      const q = qkv.subarray(0, C);
+      cache.k[l].push(Float32Array.from(qkv.subarray(C, 2 * C)));       // this token's key
+      cache.v[l].push(Float32Array.from(qkv.subarray(2 * C, 3 * C)));   // this token's value
+      const K = cache.k[l], Vv = cache.v[l], T = K.length, y = new Float32Array(C);
+      for (let hh = 0; hh < H; hh++) {
+        const off = hh * hd, scores = new Float32Array(T);
+        let mx = -Infinity;
+        for (let j = 0; j < T; j++) { let s = 0; for (let d = 0; d < hd; d++) s += q[off + d] * K[j][off + d]; s *= sc; scores[j] = s; if (s > mx) mx = s; }
+        let sum = 0; for (let j = 0; j < T; j++) { scores[j] = Math.exp(scores[j] - mx); sum += scores[j]; }
+        for (let j = 0; j < T; j++) { const w = scores[j] / sum; for (let d = 0; d < hd; d++) y[off + d] += w * Vv[j][off + d]; }
+      }
+      const ao = linear(y, W[p + 'attn.c_proj.weight'], W[p + 'attn.c_proj.bias'], C, C);
+      for (let i = 0; i < C; i++) x[i] += ao[i];
+      const h2 = layernorm(x, W[p + 'ln2.weight'], W[p + 'ln2.bias']);
+      const m1 = gelu(linear(h2, W[p + 'mlp.c_fc.weight'], W[p + 'mlp.c_fc.bias'], C, 4 * C));
+      const m2 = linear(m1, W[p + 'mlp.c_proj.weight'], W[p + 'mlp.c_proj.bias'], 4 * C, C);
+      for (let i = 0; i < C; i++) x[i] += m2[i];
+    }
+    cache.pos = t + 1;
+    const xf = layernorm(x, W['ln_f.weight'], W['ln_f.bias']);
+    return linear(xf, W['head.weight'], null, C, V);
+  }
+  // Build a fresh cache by running a list of tokens through in order (positions 0..n-1),
+  // returning the cache and the logits for the token after the last. Used to prime on the
+  // prompt, and to rebuild when the context window slides past block_size.
+  primeCache(ids) {
+    const cache = this.newCache();
+    let logits;
+    for (const id of ids) logits = this.stepCache(cache, id);
+    return { cache, logits };
+  }
+
   decode(ids) { return ids.map((i) => this.vocab[i]).join(''); }
 
   // Draw one next-token id from the final logits — the browser twin of sample_big.py,
