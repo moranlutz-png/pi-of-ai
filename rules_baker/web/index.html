@@ -503,10 +503,12 @@
     border-radius:6px; padding:3px 8px; margin:3px 0; color:var(--ink); }
   /* The prompt, styled like the Claude Code input: a rounded bordered box with a
      muted caret, and a shortcuts hint beneath it. */
+  /* Prompt bar: no frame — just a hairline above and below it, like the Claude Code
+     terminal. The lines span the terminal width; the input sits between them. */
   .termline { display:flex; align-items:center; gap:9px; margin-top:10px;
-    border:1px solid var(--edge2); border-radius:10px; padding:9px 12px;
-    background:rgba(255,255,255,.02); transition:border-color .12s; }
-  .termline:focus-within { border-color:#565662; }
+    border:0; border-top:1px solid var(--edge2); border-bottom:1px solid var(--edge2);
+    border-radius:0; padding:9px 2px; background:transparent; transition:border-color .12s; }
+  .termline:focus-within { border-top-color:#565662; border-bottom-color:#565662; }
   .termcaret { color:var(--dim); flex:none; }
   .termhint { margin:7px 2px 2px; font:11px var(--mono); color:var(--dimmer); }
   /* Slash-command picker. Overlays the transcript rather than sitting in flow:
