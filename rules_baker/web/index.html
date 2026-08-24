@@ -496,6 +496,11 @@
   #termOut .errmsg { color:var(--bad); }
   #termOut .okmsg  { color:var(--ok); }
   #termOut .termtip { color:var(--dimmer); font-style:italic; }
+  /* Echoed command lines. The shared .cmd class is the chat's boxed command chip;
+     in the terminal we don't want a box — just a soft light-grey highlight so your
+     own prompts stand out from the model's output. */
+  #termOut .cmd { display:block; background:rgba(255,255,255,.06); border:0;
+    border-radius:6px; padding:3px 8px; margin:3px 0; color:var(--ink); }
   /* The prompt, styled like the Claude Code input: a rounded bordered box with a
      muted caret, and a shortcuts hint beneath it. */
   .termline { display:flex; align-items:center; gap:9px; margin-top:10px;
