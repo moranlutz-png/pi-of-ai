@@ -776,7 +776,21 @@ async function runGen() {
   const MAX_NEW = 1000, block = gpt.cfg.block_size;   // press Stop to end early
   genStop = false; genBusy = true;
   $('genRun').disabled = true; $('genStop').disabled = false;
-  $('genStatus').textContent = 'generating…';
+  // Live status, Claude-Code style: a pulsing spinner + "Generating…" with a rotating
+  // tip while the forward pass runs; it settles to "✓ done · …" at the end.
+  const SPIN = ['✶', '✳', '✻', '✽', '✻', '✳'];
+  const TIPS = [
+    'lower the temperature for tamer, more repetitive output',
+    'push it past 1.0 to watch it get wild',
+    'it only ever saw Python — expect Python shapes, not correct code',
+    'try Weight surgery to break it and hear the damage',
+    'Fork this tier to keep training it yourself',
+    'switch tiers from the dropdown to compare sizes',
+  ];
+  let sf = 0, st = Math.floor(Math.random() * TIPS.length);
+  const drawStatus = () => { $('genStatus').innerHTML = `${SPIN[sf % SPIN.length]} Generating…  <span style="color:var(--dimmer)">· ${esc(TIPS[st])}</span>`; };
+  drawStatus();
+  const spin = setInterval(() => { sf++; drawStatus(); if (sf % 12 === 0) st = (st + 1) % TIPS.length; }, 300);
   const ids = gpt.encode(prompt);
   const out = $('genOut');
   // The prompt is dimmed so the model's own output stands apart from what you typed.
@@ -798,9 +812,10 @@ async function runGen() {
     paint();
     await new Promise((r) => setTimeout(r, 0));           // yield so the character actually paints
   }
+  clearInterval(spin);
   out.innerHTML = `<span class="seed">${esc(seedText)}</span>${esc(genText)}`;
   const cps = (n / ((performance.now() - t0) / 1000)).toFixed(0);
-  $('genStatus').textContent = `${n} characters · ${cps}/s · forward pass in this browser tab`;
+  $('genStatus').textContent = `${genStop ? '■ stopped' : '✓ done'} · ${n} characters · ${cps}/s · forward pass in this tab`;
   $('genRun').disabled = false; $('genStop').disabled = true; genBusy = false;
 }
 
