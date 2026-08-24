@@ -716,6 +716,13 @@
   .dd-hint { padding:5px 10px 8px; font-size:11px; color:var(--dimmer); }
   .dd-sep { height:1px; background:var(--edge2); margin:5px 6px; }
   .ddbadge { font:10.5px var(--mono); color:var(--dim); background:rgba(255,255,255,.06); border-radius:20px; padding:0 7px; margin-left:auto; }
+  /* "Search all N models…" — a link into the command palette, tinted so it reads as
+     a doorway out of the cached list rather than another model to load. */
+  .dd-all .lbl { color:#7db2ff; }
+  .dd-all:hover .lbl { text-decoration:underline; }
+  .dd-all svg { color:#7db2ff; opacity:.9; }
+  .ddkbd { margin-left:auto; font:10px var(--mono); color:var(--dim); border:1px solid var(--edge2);
+    border-radius:5px; padding:1px 5px; }
   .collapse-btn { background:none; border:0; color:var(--dim); font:inherit; font-size:12.5px; font-weight:500;
     cursor:pointer; padding:2px 0; display:inline-flex; align-items:center; gap:7px; margin-top:12px; }
   /* No box on click — the only feedback is the label's colour, since this is a
@@ -2934,12 +2941,21 @@ function modelMenuItems() {
 }
 
 function fillModelMenu(menu, onPick) {
-  const items = modelMenuItems();
+  const allItems = modelMenuItems();
+  const recents = recentUrls();
+  // "Cached" = models loaded before (so wllama already has the weights cached and they
+  // reload in a blink) or a stored local .gguf. Those quick-to-load ones are ALL this
+  // dropdown searches; browsing the whole catalogue is what the ⌘/Ctrl+K palette is for.
+  const cachedMap = new Map();
+  for (const u of recents) { const it = allItems.find(i => i.url === u); if (it) cachedMap.set(u, it); }
+  for (const it of allItems) if (it.storedId && !cachedMap.has(it.storedId)) cachedMap.set(it.storedId, it);
+  const cached = [...cachedMap.values()];
+
   menu.innerHTML = '';
 
   const search = document.createElement('div');
   search.className = 'dd-search';
-  search.innerHTML = `${ICONS.search}<input type="text" placeholder="Search all models" `
+  search.innerHTML = `${ICONS.search}<input type="text" placeholder="Search cached models" `
     + `autocomplete="off" spellcheck="false" />`;
   menu.appendChild(search);
 
@@ -2947,13 +2963,21 @@ function fillModelMenu(menu, onPick) {
   list.className = 'dd-list';
   menu.appendChild(list);
 
+  // Replaces the old "Search to reach all N models" hint: a link to the command
+  // palette, which lists and loads any model — the dropdown only reaches the cached ones.
+  const all = document.createElement('div');
+  all.className = 'dd-item dd-all';
+  all.innerHTML = `${ICONS.search}<span class="lbl">Search all ${allItems.length} models…</span>`
+    + `<span class="ddkbd">⌘K</span>`;
+  all.onclick = (ev) => { ev.stopPropagation(); menu.hidden = true; palOpen(); };
+  menu.appendChild(all);
+
   const sep = document.createElement('div'); sep.className = 'dd-sep'; menu.appendChild(sep);
   const loc = document.createElement('div'); loc.className = 'dd-item';
   loc.innerHTML = `${ICONS.plus}<span class="lbl">Load local .gguf</span>`;
   loc.onclick = (ev) => { ev.stopPropagation(); menu.hidden = true; document.getElementById('file').click(); };
   menu.appendChild(loc);
 
-  const recents = recentUrls();
   const row = (i) => {
     const it = document.createElement('div');
     it.className = 'dd-item';
@@ -2965,30 +2989,19 @@ function fillModelMenu(menu, onPick) {
 
   const render = (q) => {
     list.innerHTML = '';
-    let shown, heading;
-    if (q) {
-      shown = items.filter(i => i.name.toLowerCase().includes(q));
-      heading = shown.length ? 'Results' : null;
-    } else {
-      // Most-recent first; before anything has been loaded, just the first few.
-      const ordered = recents.map(u => items.find(i => i.url === u)).filter(Boolean);
-      shown = (ordered.length ? ordered : items).slice(0, RECENT_SHOWN);
-      heading = ordered.length ? 'Recent' : 'Models';
-    }
+    const shown = q ? cached.filter(i => i.name.toLowerCase().includes(q)) : cached;
+    const heading = q ? (shown.length ? 'Results' : null) : (cached.length ? 'Cached' : null);
     if (heading) {
       const h = document.createElement('div'); h.className = 'dd-head'; h.textContent = heading;
       list.appendChild(h);
     }
     if (!shown.length) {
-      const n = document.createElement('div'); n.className = 'dd-hint'; n.textContent = 'No matching model';
+      const n = document.createElement('div'); n.className = 'dd-hint';
+      n.textContent = q ? 'No cached model matches — try Search all models'
+                        : 'No models cached yet — load one from Search all models';
       list.appendChild(n);
     }
     shown.forEach(i => list.appendChild(row(i)));
-    if (!q && items.length > shown.length) {
-      const hint = document.createElement('div'); hint.className = 'dd-hint';
-      hint.textContent = `Search to reach all ${items.length} models`;
-      list.appendChild(hint);
-    }
   };
 
   const input = search.querySelector('input');
