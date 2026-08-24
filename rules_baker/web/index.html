@@ -846,26 +846,6 @@
   body.view-scratch .main > :not(#scratch):not(#terminal):not(#termOverlay) { display:none; }
   body.view-scratch #scratch { display:block; margin:0; }
   body.view-scratch .main { padding:8px; }
-  /* ============================================================================
-     APPLE ALIGNMENT — match the Scratch-Coder inspector's dark-Apple look: SF Pro
-     type, Apple-blue capsule primaries, blue focus rings. Additive only (the app is
-     already dark #262626), so no light/dark flip and nothing niche is retinted.
-     ============================================================================ */
-  :root { --accent:#0a84ff; --accent-press:#0060df; }
-  body { font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Inter","Segoe UI",system-ui,sans-serif;
-    letter-spacing:-.011em; }
-  .act { border-radius:8px; }
-  /* Primary calls-to-action → Apple-blue capsule */
-  #runBtn, #detLoad { background:var(--accent); color:#fff; border:0; border-radius:980px;
-    box-shadow:0 1px 2px rgba(0,0,0,.3); }
-  #runBtn:hover:not(:disabled), #detLoad:hover:not(:disabled) { background:var(--accent-press); }
-  .split .split-main, .split .split-dd { background:var(--accent); color:#fff; border:0; }
-  .split .split-main { border-radius:980px 0 0 980px; }
-  .split .split-dd { border-radius:0 980px 980px 0; border-left:1px solid rgba(255,255,255,.22); }
-  .split .split-main:hover:not(:disabled), .split .split-dd:hover:not(:disabled) { background:var(--accent-press); }
-  /* Blue focus rings on text fields (not the borderless terminal input) */
-  input[type=text]:focus, .url:focus, textarea:focus, select:focus {
-    outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(10,132,255,.28); }
 </style>
 </head>
 <body>
