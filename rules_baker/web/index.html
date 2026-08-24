@@ -496,13 +496,19 @@
   #termOut .errmsg { color:var(--bad); }
   #termOut .okmsg  { color:var(--ok); }
   #termOut .termtip { color:var(--dimmer); font-style:italic; }
-  .termline { display:flex; align-items:center; gap:8px; margin-top:6px; }
-  .termcaret { color:var(--ok); flex:none; }
+  /* The prompt, styled like the Claude Code input: a rounded bordered box with a
+     muted caret, and a shortcuts hint beneath it. */
+  .termline { display:flex; align-items:center; gap:9px; margin-top:10px;
+    border:1px solid var(--edge2); border-radius:10px; padding:9px 12px;
+    background:rgba(255,255,255,.02); transition:border-color .12s; }
+  .termline:focus-within { border-color:#565662; }
+  .termcaret { color:var(--dim); flex:none; }
+  .termhint { margin:7px 2px 2px; font:11px var(--mono); color:var(--dimmer); }
   /* Slash-command picker. Overlays the transcript rather than sitting in flow:
      #term is a fixed-height scroll region, so an in-flow menu got clipped by it
      and pushed the caret line out of view. Anchored to the bottom so it grows
      upward from the input, like a shell completion menu. */
-  .slashmenu { position:absolute; left:12px; right:12px; bottom:42px; z-index:5;
+  .slashmenu { position:absolute; left:12px; right:12px; bottom:70px; z-index:5;
     border:1px solid var(--edge2); border-radius:8px; background:#232323;
     box-shadow:0 -6px 22px rgba(0,0,0,.45);
     overflow:hidden; max-height:250px; overflow-y:auto; }
@@ -992,10 +998,11 @@
              so it never covers what you are typing. -->
         <div id="slashMenu" class="slashmenu" hidden role="listbox" aria-label="Commands"></div>
         <div class="termline">
-          <span class="termcaret">&gt;</span>
+          <span class="termcaret">&#10095;</span>
           <input id="termIn" type="text" autocomplete="off" autocorrect="off"
-                 spellcheck="false" aria-label="Terminal input" />
+                 spellcheck="false" aria-label="Terminal input" placeholder="Type a request, or /help" />
         </div>
+        <div class="termhint">? for shortcuts</div>
       </div>
     </div>
 
@@ -4971,6 +4978,7 @@ async function termChain(goal) {
 async function termRun(raw) {
   const t = raw.trim();
   if (!t) return;
+  if (t === '?') { tp(TERM_HELP, 'sysmsg'); return; }   // the "? for shortcuts" hint, made real
   if (t.startsWith('/')) {
     const sp = t.indexOf(' ');
     const cmd = (sp === -1 ? t.slice(1) : t.slice(1, sp)).toLowerCase();
