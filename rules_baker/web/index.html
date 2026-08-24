@@ -1259,7 +1259,7 @@
             <h3>Shortcuts</h3>
             <p class="lead">Keyboard shortcuts.</p>
             <div class="set-rows">
-              <div class="set-row"><span class="m">Ctrl / ⌘ + K</span><span>Focus search</span></div>
+              <div class="set-row"><span class="m">⌘ + K</span><span>Focus search</span></div>
               <div class="set-row"><span class="m">Esc</span><span>Close any popup</span></div>
             </div>
           </div>
@@ -2968,7 +2968,7 @@ function fillModelMenu(menu, onPick) {
   const all = document.createElement('div');
   all.className = 'dd-item dd-all';
   all.innerHTML = `${ICONS.search}<span class="lbl">Search all ${allItems.length} models…</span>`
-    + `<span class="ddkbd">⌘K</span>`;
+    + `<span class="ddkbd">${IS_MAC ? '⌘K' : 'Ctrl+K'}</span>`;
   all.onclick = (ev) => { ev.stopPropagation(); menu.hidden = true; palOpen(); };
   menu.appendChild(all);
 
@@ -4194,6 +4194,15 @@ $('newChatBtn').onclick = async () => {
 
 // ---- Enter to generate (Shift+Enter for a newline); Cmd/Ctrl+Enter kept too ----
 const IS_MAC = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '');
+// On Windows/Linux, swap the ⌘ glyph for "Ctrl" wherever it appears in the page's
+// static text — the shortcuts already accept Ctrl (every handler tests ctrlKey||metaKey),
+// so this only corrects the displayed symbol. Runs once; code that inserts ⌘ later
+// (e.g. the model dropdown's keycap) branches on IS_MAC itself.
+if (!IS_MAC) {
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT), hits = [];
+  for (let n = w.nextNode(); n; n = w.nextNode()) if (n.nodeValue.includes('⌘')) hits.push(n);
+  hits.forEach((n) => { n.nodeValue = n.nodeValue.replace(/⌘\s*\+?\s*/g, 'Ctrl+'); });
+}
 // Enter is now the primary shortcut, so the pill needs no modifier glyph.
 $('runKbd').innerHTML = '<span>↵</span>';
 
