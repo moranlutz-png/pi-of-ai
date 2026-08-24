@@ -5,11 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Scratch-Coder — Model Inspector</title>
 <style>
-  /* Apple light theme — System Settings / apple.com chrome; the live data-viz keeps a
-     dark backdrop on inset panels (see the "Apple redesign" block at the end). */
-  :root { --bg:#f5f5f7; --panel:#ffffff; --panel2:#eceef1; --edge:rgba(0,0,0,.10); --edge2:rgba(0,0,0,.15);
-    --hair:rgba(0,0,0,.06); --ink:#1d1d1f; --dim:#6e6e73; --dimmer:#8e8e93;
-    --ok:#34c759; --bad:#ff3b30; --accent:#0071e3; --accent-press:#0059b8;
+  /* Apple dark theme — the original dark background with the Apple design language. */
+  :root { --bg:#262626; --panel:#2f2f31; --panel2:#3a3a3c; --edge:rgba(255,255,255,.10); --edge2:rgba(255,255,255,.15);
+    --hair:rgba(255,255,255,.06); --ink:#f5f5f7; --dim:#a1a1a6; --dimmer:#8e8e93;
+    --ok:#34c759; --bad:#ff453a; --accent:#0a84ff; --accent-press:#0060df;
     --dk:#1c1c1e; --dk-ink:#f5f5f7; --dk-dim:#a1a1a6; --dk-edge:rgba(255,255,255,.12);
     --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace; }
   * { box-sizing:border-box; }
@@ -271,19 +270,13 @@
      flow diagram, the 3D embedding, the attention heatmaps, the training curves)
      keep a dark backdrop on inset panels, the way Apple frames media in light UI.
      ============================================================================ */
-  /* Scrollbars: dark translucent for the light page. */
-  * { scrollbar-color:rgba(0,0,0,.26) transparent; }
-  ::-webkit-scrollbar-thumb { background:rgba(0,0,0,.22); }
-  ::-webkit-scrollbar-thumb:hover { background:rgba(0,0,0,.38); }
-
-  body { background:
-      radial-gradient(1100px 620px at 50% -260px, #ffffff, rgba(255,255,255,0) 62%), var(--bg);
+  body { background:var(--bg);
     font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Inter","Segoe UI",system-ui,sans-serif;
     letter-spacing:-.011em; padding:34px 40px 96px; }
   h1 { font-weight:600; letter-spacing:-.021em; }
   .scratchbrand b { font-weight:600; }
   .lead { font-size:15px; line-height:1.5; }
-  code, .fork-lead code, .fork-hint code, .attnguide code { background:rgba(0,0,0,.055); color:var(--ink); }
+  code, .fork-lead code, .fork-hint code, .attnguide code { background:rgba(255,255,255,.09); color:var(--ink); }
 
   /* --- Cards: hairline + soft layered shadow + generous radius --- */
   .forkpanel, .attnguide { background:var(--panel); border:1px solid var(--edge);
@@ -304,21 +297,21 @@
   #flowInput, #genPrompt, #genTemp, #attnPrompt, .fork-namel input, .surg-select {
     background:var(--panel); color:var(--ink); border:1px solid var(--edge2); border-radius:10px; }
   #flowInput:focus, #genPrompt:focus, #attnPrompt:focus, .fork-namel input:focus, .surg-select:focus,
-  #genTemp:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3.5px rgba(0,113,227,.22); }
+  #genTemp:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3.5px rgba(10,132,255,.35); }
   .surg-op input[type=range], .embtoggle input { accent-color:var(--accent); }
 
   /* --- Segmented control (Trained / Random / Difference) — iOS style --- */
-  .toggle { background:rgba(120,120,128,.14); border:0; border-radius:11px; padding:2px; gap:2px; overflow:visible; }
+  .toggle { background:rgba(120,120,128,.22); border:0; border-radius:11px; padding:2px; gap:2px; overflow:visible; }
   .toggle button { background:transparent; color:var(--dim); border:0; border-radius:9px; font-weight:590; padding:6px 16px; }
-  .toggle button.active { background:#fff; color:var(--ink);
-    box-shadow:0 1px 3px rgba(0,0,0,.14), 0 0 0 .5px rgba(0,0,0,.04); }
+  .toggle button.active { background:#5c5c60; color:var(--ink);
+    box-shadow:0 1px 3px rgba(0,0,0,.4), inset 0 .5px 0 rgba(255,255,255,.14); }
   .toggle button:disabled { opacity:.4; }
 
   /* --- Model-picker dropdown: white capsule + light frosted menu --- */
   .dd-btn { background:var(--panel); border:1px solid var(--edge2); color:var(--ink); box-shadow:0 1px 2px rgba(0,0,0,.05); }
   .dd-btn:hover { background:var(--panel2); }
-  .dd-menu { background:rgba(255,255,255,.74); border:1px solid rgba(0,0,0,.08);
-    box-shadow:0 20px 48px rgba(0,0,0,.20), inset 0 1px 0 rgba(255,255,255,.7); }
+  .dd-menu { background:rgba(44,44,46,.72); border:1px solid rgba(255,255,255,.13);
+    box-shadow:0 20px 48px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.12); }
   .dd-item { color:var(--ink); }
   .dd-item:hover { background:var(--accent); color:#fff; }
   .dd-item:hover .dd-sz, .dd-item:hover .chk { color:#fff; }
@@ -330,14 +323,14 @@
   .fork-mode.active small { color:var(--dim); }
   .fork-namel input:focus { border-color:var(--accent); }
   .surg-foot { border-top-color:var(--edge); }
-  .surg-badge { color:#b25000; background:rgba(255,149,0,.16); border-color:rgba(255,149,0,.35); }
+  .surg-badge { color:#ffb37a; background:rgba(255,149,0,.16); border-color:rgba(255,149,0,.4); }
 
   /* --- Generate output & command block --- */
   .genout { background:var(--panel); border:1px solid var(--edge); border-radius:14px; color:var(--ink);
     box-shadow:inset 0 1px 2px rgba(0,0,0,.03); }
   .fork-cmd { background:var(--dk); border:0; color:#e6e6e6; border-radius:12px; }
   .fork-cmd .fc-flag { color:#7ee787; } .fork-cmd .fc-cmt { color:#8b949e; }
-  .banner { background:rgba(255,149,0,.11); border-color:rgba(255,149,0,.34); color:#a85400; }
+  .banner { background:rgba(255,149,0,.12); border-color:rgba(255,149,0,.34); color:#ffb37a; }
 
   /* ============ dark insets: the live visualizations ============ */
   .flow { background:var(--dk); border-radius:20px; padding:16px 14px; gap:2px;
