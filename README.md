@@ -69,9 +69,24 @@ still references variables it never declared). Data matters more than size: the
 The interactive **inspector** is the heart of the teaching kit. It runs the
 from-scratch model's real forward pass in JavaScript, so you can watch it think:
 
+Pick the line for **your** shell (they do the same thing — start a local server, then
+open **http://localhost:8123**):
+
+**macOS · Linux · Git Bash · PowerShell 7+** — `&&` works, Python is `python3`:
 ```bash
-cd rules_baker/web && python3 serve.py 8123      # open http://localhost:8123
+cd rules_baker/web && python3 serve.py 8123
 ```
+
+**Windows PowerShell (5.1 — the blue one built into Windows)** — `&&` is **not** valid
+and Python is `py`, so use `;` (or two lines) and `py`:
+```powershell
+cd rules_baker\web ; py serve.py 8123
+```
+> If `py` isn't found, use `python`. If the port's busy, a server is already running —
+> just open the URL, or pick another port (`... serve.py 8126`). Leave the window open;
+> closing it stops the server.
+
+*(Once it's deployed to GitHub Pages you don't need this at all — it's just a URL.)*
 
 - **Sidebar → Scratch-Coder** — the inspector. Pick a size from the model-picker
   dropdown, then explore:
@@ -106,7 +121,7 @@ the whole browser inspector — is pure CPU/JS.
 ## Quick start
 
 ```bash
-# --- run the browser inspector (above) ---
+# --- run the browser inspector (above; Windows PowerShell 5.1: `cd rules_baker\web ; py serve.py 8123`) ---
 cd rules_baker/web && python3 serve.py 8123
 
 # --- from-scratch coder: build a corpus, then train a tier ---
