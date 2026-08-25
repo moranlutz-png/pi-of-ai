@@ -8,7 +8,9 @@ machine. Character-level: we map every distinct character to an integer.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import pickle
+import random
 import sys
 import sysconfig
 from pathlib import Path
@@ -20,6 +22,13 @@ ap.add_argument("--out-dir", default="data", help="where to write train.bin/val.
 ap.add_argument("--max-bytes", type=int, default=32_000_000, help="corpus size cap")
 ap.add_argument("--site-packages", action="store_true",
                 help="also include installed third-party code — more data, noisier (for the Max tier)")
+ap.add_argument("--extra-lib", action="append", default=[], metavar="DIR",
+                help="additional Python Lib dir(s) to scan beyond this interpreter's — repeatable, "
+                     "so several installs' code can be pooled for a bigger corpus")
+ap.add_argument("--shuffle", action="store_true",
+                help="shuffle files before the byte cap, so the corpus is a diverse cross-section "
+                     "of the whole pool rather than the alphabetically-first slice")
+ap.add_argument("--seed", type=int, default=1337, help="shuffle seed (reproducible corpora)")
 cli = ap.parse_args()
 
 OUT = Path(__file__).resolve().parent / cli.out_dir
@@ -33,18 +42,37 @@ if not (LIB / "os.py").exists():
 
 MAX_BYTES = cli.max_bytes
 
-texts, total = [], 0
-# Recursive (rglob), so subpackages (json/, email/, importlib/, unittest/, ...) and the
-# stdlib's own test suites all count — it's all real, idiomatic Python. By default only
-# site-packages is skipped (installed third-party code); --site-packages includes it for
-# the Max tier, where sheer volume matters more than staying purely canonical.
-for path in sorted(LIB.rglob("*.py")):
-    if not cli.site_packages and "site-packages" in str(path).lower():
-        continue
+# Pool the .py files from this interpreter's Lib plus any --extra-lib dirs, so several
+# installs' code (stdlib + site-packages + a torch venv, say) can feed one big corpus.
+# Recursive (rglob), so subpackages and the stdlib's own test suites all count. By default
+# site-packages is skipped; --site-packages includes it, where sheer volume matters.
+libs = [LIB] + [Path(x) for x in cli.extra_lib]
+paths, seen_paths = [], set()
+for lib in libs:
+    if not lib.exists():
+        print(f"skip (missing): {lib}"); continue
+    for path in lib.rglob("*.py"):
+        if not cli.site_packages and "site-packages" in str(path).lower():
+            continue
+        key = str(path.resolve()).lower()
+        if key in seen_paths:
+            continue
+        seen_paths.add(key); paths.append(path)
+
+# Shuffle for a diverse cross-section (else the byte cap just takes the alphabetical-first
+# slice — all 'a'..'m' packages); sorted otherwise, to keep the small tiers reproducible.
+random.Random(cli.seed).shuffle(paths) if cli.shuffle else paths.sort()
+
+texts, total, seen_hashes = [], 0, set()
+for path in paths:
     try:
         t = path.read_text(encoding="utf-8", errors="ignore")
     except OSError:
         continue
+    h = hashlib.md5(t.encode("utf-8", "ignore")).digest()   # drop exact dupes (same file in two installs)
+    if h in seen_hashes:
+        continue
+    seen_hashes.add(h)
     texts.append(t)
     total += len(t)
     if total >= MAX_BYTES:

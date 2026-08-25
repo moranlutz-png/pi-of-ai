@@ -58,6 +58,10 @@ ap.add_argument("--min-lr", type=float, default=0.0, help="cosine schedule: floo
 ap.add_argument("--grad-accum", type=int, default=1,
                 help="accumulate this many micro-batches per optimizer step — a bigger EFFECTIVE batch "
                      "(batch x grad-accum) for steadier gradients, without the VRAM of a bigger raw batch")
+ap.add_argument("--fresh-schedule", action="store_true",
+                help="run the cosine schedule relative to THIS invocation's start, not absolute iter — "
+                     "for a continued-training phase (resume a checkpoint, then train on more data with "
+                     "its own warmup + decay). Without it, --resume continues the original schedule.")
 args = ap.parse_args()
 BLOCK = args.block   # get_batch reads these module globals, so set them before that runs
 BATCH = args.batch
@@ -153,9 +157,14 @@ def lr_at(step):
     rate reaches: high early to move fast, low late to fine-tune without overshooting."""
     if args.schedule != "cosine":
         return LR
-    if step < args.warmup:
-        return LR * (step + 1) / max(1, args.warmup)
-    prog = min(1.0, (step - args.warmup) / max(1, end_iter - args.warmup))
+    # --fresh-schedule: measure from this phase's start over this phase's length, so a
+    # continued run gets its own warmup + decay. Default: absolute, so an interrupted run
+    # resumed with the remaining --iters continues the one original schedule.
+    s = (step - start_iter) if args.fresh_schedule else step
+    span = args.iters if args.fresh_schedule else end_iter
+    if s < args.warmup:
+        return LR * (s + 1) / max(1, args.warmup)
+    prog = min(1.0, (s - args.warmup) / max(1, span - args.warmup))
     return MIN_LR + 0.5 * (LR - MIN_LR) * (1 + math.cos(math.pi * prog))
 
 
