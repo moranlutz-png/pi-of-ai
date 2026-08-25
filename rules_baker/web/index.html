@@ -4772,7 +4772,16 @@ function currentSampling() {
 }
 const termHistory = []; let histIdx = 0; let termBusy = false;
 
-function tp(text, cls) { const d = document.createElement('div'); if (cls) d.className = cls; d.textContent = text; termOut.appendChild(d); termEl.scrollTop = termEl.scrollHeight; return d; }
+// Auto-scroll the terminal ONLY when you're already at the bottom, so scrolling up to
+// read earlier output during a live generation isn't yanked back down on every token.
+function termAtBottom() { return termEl.scrollHeight - termEl.clientHeight - termEl.scrollTop < 24; }
+function tp(text, cls) {
+  const stick = termAtBottom();
+  const d = document.createElement('div'); if (cls) d.className = cls; d.textContent = text;
+  termOut.appendChild(d);
+  if (stick) termEl.scrollTop = termEl.scrollHeight;
+  return d;
+}
 termEl.addEventListener('click', (e) => { if (e.target.tagName !== 'INPUT') termIn.focus(); });
 
 // The Terminal is presented as a right-side drawer: its section is fixed off-screen
@@ -4919,7 +4928,9 @@ async function termGenerate(prompt) {
     // Go through complete() rather than wllama directly, so the terminal works
     // on the Ollama runtime too and shares one streaming implementation.
     full = await complete(messages, termState.tokens, (cur) => {
-      nTok++; line.textContent = cur; termEl.scrollTop = termEl.scrollHeight;
+      const stick = termAtBottom();       // was the user following at the bottom?
+      nTok++; line.textContent = cur;
+      if (stick) termEl.scrollTop = termEl.scrollHeight;   // only then keep them pinned
     });
   } catch (e) { ok = false; tp('[error: ' + e.message + ']', 'errmsg'); }
   clearInterval(spin); tipLine.remove();   // the tip is only for the wait
@@ -4933,7 +4944,7 @@ async function termGenerate(prompt) {
   if (!ok) { status.textContent = `✗ failed · ${meta}`; status.className = 'errmsg'; }
   else if (abort) { status.textContent = `■ stopped · ${meta}`; status.className = 'sysmsg'; }
   else { status.textContent = `✓ done · ${meta}`; status.className = 'sysmsg'; }   // light grey, not green — it's a stats readout
-  termEl.scrollTop = termEl.scrollHeight;
+  if (termAtBottom()) termEl.scrollTop = termEl.scrollHeight;   // respect a scrolled-up reader
   if (termState.autofix) {
     for (const s of segments(full).filter((x) => x.type === 'code')) {
       const rep = await checkPython(s.code, 8000);
