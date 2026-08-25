@@ -4932,7 +4932,7 @@ async function termGenerate(prompt) {
   const meta = `${nTok} tokens · ${secs}s · ${modelLabel}`;
   if (!ok) { status.textContent = `✗ failed · ${meta}`; status.className = 'errmsg'; }
   else if (abort) { status.textContent = `■ stopped · ${meta}`; status.className = 'sysmsg'; }
-  else { status.textContent = `✓ done · ${meta}`; status.className = 'okmsg'; }
+  else { status.textContent = `✓ done · ${meta}`; status.className = 'sysmsg'; }   // light grey, not green — it's a stats readout
   termEl.scrollTop = termEl.scrollHeight;
   if (termState.autofix) {
     for (const s of segments(full).filter((x) => x.type === 'code')) {
