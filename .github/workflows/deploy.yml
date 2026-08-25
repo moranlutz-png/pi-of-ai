@@ -1,0 +1,40 @@
+# Publishes the Pi-of-AI browser app (rules_baker/web) to GitHub Pages.
+# One-time setup: repo Settings -> Pages -> Build and deployment -> Source:
+# "GitHub Actions". After that, every push to main redeploys automatically.
+# Live at: https://<user>.github.io/<repo>/  (e.g. moranlutz-png.github.io/pi-of-ai/)
+name: Deploy Pi-of-AI to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:        # lets you trigger a deploy by hand from the Actions tab
+
+# Least-privilege permissions the Pages deploy needs.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; a newer push supersedes an in-flight run.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload the app (rules_baker/web) as the site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: rules_baker/web
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

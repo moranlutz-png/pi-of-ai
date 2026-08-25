@@ -158,5 +158,8 @@ python data_gen/generate_dataset.py --config configs/qwen_coder_0_5b_chromebook.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Contributions and forks welcome; that's the whole
-idea.
+**© 2026 [YOUR NAME] — licensed under [CC BY-NC 4.0](LICENSE).** You're free to
+use, share, fork, and learn from this — code *and* trained model weights — **as
+long as you credit the author** and **don't use it for anything commercial**
+(no selling it, and no bundling it into a paid product or service). For
+commercial use, ask. Non-commercial forks and contributions are welcome.
