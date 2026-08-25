@@ -1,7 +1,7 @@
 Pi-of-AI — License
 
-Copyright (c) 2026 [YOUR NAME].  All rights reserved except as expressly
-granted below.  <-- replace [YOUR NAME] with your legal name.
+Copyright (c) 2026 Lutz Moran.  All rights reserved except as expressly
+granted below.
 
 This work — including all source code, the trained model weights
 (every */web/tiers/*/weights.bin and any other model/checkpoint files),
