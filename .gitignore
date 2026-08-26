@@ -68,3 +68,4 @@ Thumbs.db
 
 # ESP32 generated model header (regenerate with esp32/quantize.py)
 scratch_coder/esp32/pi_gpt/model_weights.h
+scratch_coder/esp32/model.bin

@@ -1,0 +1,8 @@
+# Custom 16MB layout: 3MB app + a ~13.5MB "model" data partition for the INT4 weights.
+# The sketch memory-maps the "model" partition (subtype 0x40) and reads weights in place.
+# Flash the weights there with:  py -m esptool --chip esp32s3 --port COMx write_flash 0x310000 ..\model.bin
+# Name,   Type, SubType,  Offset,    Size
+nvs,      data, nvs,      0x9000,    0x5000,
+otadata,  data, ota,      0xe000,    0x2000,
+app0,     app,  ota_0,    0x10000,   0x300000,
+model,    data, 0x40,     0x310000,  0xCF0000,
