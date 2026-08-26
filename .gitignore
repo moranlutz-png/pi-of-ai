@@ -65,3 +65,6 @@ hf_cache/
 # ---- OS cruft ----
 Thumbs.db
 .DS_Store
+
+# ESP32 generated model header (regenerate with esp32/quantize.py)
+scratch_coder/esp32/pi_gpt/model_weights.h
