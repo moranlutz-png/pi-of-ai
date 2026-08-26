@@ -62,6 +62,11 @@ ap.add_argument("--fresh-schedule", action="store_true",
                 help="run the cosine schedule relative to THIS invocation's start, not absolute iter — "
                      "for a continued-training phase (resume a checkpoint, then train on more data with "
                      "its own warmup + decay). Without it, --resume continues the original schedule.")
+ap.add_argument("--sched-start", type=int, default=-1,
+                help="(with --fresh-schedule) the iter the phase's schedule began — pass this on a "
+                     "RESUME so the cosine continues instead of re-warming up (default: this run's start)")
+ap.add_argument("--sched-total", type=int, default=-1,
+                help="(with --fresh-schedule) the phase's TOTAL length in iters (default: --iters)")
 args = ap.parse_args()
 BLOCK = args.block   # get_batch reads these module globals, so set them before that runs
 BATCH = args.batch
@@ -160,8 +165,12 @@ def lr_at(step):
     # --fresh-schedule: measure from this phase's start over this phase's length, so a
     # continued run gets its own warmup + decay. Default: absolute, so an interrupted run
     # resumed with the remaining --iters continues the one original schedule.
-    s = (step - start_iter) if args.fresh_schedule else step
-    span = args.iters if args.fresh_schedule else end_iter
+    if args.fresh_schedule:
+        ref = args.sched_start if args.sched_start >= 0 else start_iter   # phase's true start (resume-proof)
+        span = args.sched_total if args.sched_total >= 0 else args.iters
+        s = step - ref
+    else:
+        s, span = step, end_iter
     if s < args.warmup:
         return LR * (s + 1) / max(1, args.warmup)
     prog = min(1.0, (s - args.warmup) / max(1, span - args.warmup))
