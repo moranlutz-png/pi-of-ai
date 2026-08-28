@@ -265,14 +265,12 @@
 
   /* ===== Desktop-app window chrome: menu bar + toolbar + canvas|inspector split ===== */
   .appwin { border:1px solid var(--edge2); border-radius:11px; overflow:hidden; margin:0 0 22px;
-    background:var(--panel); box-shadow:0 14px 44px rgba(0,0,0,.34); }
-  .menubar { display:flex; align-items:center; gap:20px; padding:8px 14px;
-    border-bottom:1px solid var(--edge); background:var(--panel2); font:12.5px var(--mono); }
+    background:var(--bg); box-shadow:0 14px 44px rgba(0,0,0,.34); }
+  .menubar { display:flex; align-items:center; gap:9px; padding:8px 14px;
+    border-bottom:1px solid var(--edge); background:var(--bg); font:12.5px var(--mono); }
   .menu-ico { display:inline-flex; color:var(--ink); }
   .menu-ico svg { width:15px; height:15px; }
-  .menu { color:var(--dim); cursor:default; }
-  .menu:hover { color:var(--ink); }
-  .menu-title { margin-left:auto; color:var(--dimmer); font-weight:600; letter-spacing:.02em; }
+  .menu-title { color:var(--ink); font-weight:600; letter-spacing:.02em; }
   .toolbar { display:flex; align-items:center; justify-content:space-between; gap:14px;
     padding:10px 14px; border-bottom:1px solid var(--edge); }
   .toolbar-l { display:flex; align-items:center; gap:8px; flex:1; min-width:0; }
@@ -302,7 +300,6 @@
   <div class="appwin">
     <div class="menubar">
       <span class="menu-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg></span>
-      <span class="menu">File</span><span class="menu">Edit</span><span class="menu">Model</span><span class="menu">Window</span>
       <span class="menu-title">Scratch-Coder</span>
     </div>
     <div class="toolbar">
@@ -325,7 +322,7 @@
         <p class="legend">Each station's squares are its <b>weight tensors</b>, sized by how many numbers they hold; brightness is how spread-out those numbers are. Switch to <b>Difference</b> to see what training changed at each stage.</p>
       </div>
       <div class="inspector">
-        <div class="insp-head"><span class="insp-ico">&#128295;</span> Model Inspector</div>
+        <div class="insp-head">Model Inspector</div>
         <div class="tierbar" id="tierBar" hidden></div>
         <div class="cfg" id="cfg">loading…</div>
         <div class="insp-actions">
