@@ -319,7 +319,7 @@
         <div class="banner" id="banner" hidden></div>
         <p class="viewhint" id="viewhint"></p>
         <div id="knobs"></div>
-        <p class="legend">Each station's squares are its <b>weight tensors</b>, sized by how many numbers they hold; brightness is how spread-out those numbers are. Switch to <b>Difference</b> to see what training changed at each stage.</p>
+        <p class="legend">Squares are <b>weight tensors</b> — size = count, brightness = spread.</p>
       </div>
       <div class="inspector">
         <div class="insp-head">Model Inspector</div>
@@ -342,10 +342,10 @@
       </div>
     </div>
   </div>
-  <p class="lead">Follow text left to right through the model — raw characters, through each transformer block, to a guess at the next character. Small enough to see all the way through; it will never be a useful coder, and that's the point.</p>
+  <p class="lead">Text flows left → right, from raw characters to a next-character guess.</p>
   <div class="forkpanel" id="surgeryPanel" hidden>
     <div class="fork-head"><b>Weight surgery <span class="surg-badge" id="surgEdited" hidden>edited</span></b><button class="fork-x" id="surgClose" aria-label="Close">✕</button></div>
-    <p class="fork-lead">Change the loaded weights <b>in memory</b> and watch the model react — the flow diagram's brightness shifts, the attention maps redraw, and <b>Generate</b> sounds different. Nothing is saved; <b>Restore</b> puts them back. For edits you keep, use <code>edit_weights.py</code>.</p>
+    <p class="fork-lead">Edit the loaded weights <b>in memory</b> and watch it react. Nothing is saved — <b>Restore</b> reverts; keep edits with <code>edit_weights.py</code>.</p>
     <label class="fork-namel" style="margin-bottom:12px">Target&nbsp;<select id="surgTarget" class="surg-select"></select></label>
     <div class="surg-op">
       <button class="surg-apply" data-op="noise">Add noise</button>
@@ -368,7 +368,7 @@
   </div>
   <div class="forkpanel" id="forkPanel" hidden>
     <div class="fork-head"><b>Fork <span id="forkTierName">this tier</span></b><button class="fork-x" id="forkClose" aria-label="Close">✕</button></div>
-    <p class="fork-lead">Make your own editable copy and train it. The browser can't train, so this hands you the exact command to run in <code>scratch_coder/</code> — each fork gets its own copy of the model code you can change.</p>
+    <p class="fork-lead">Your own editable copy to train — run this command in <code>scratch_coder/</code>.</p>
     <div class="fork-modes">
       <button class="fork-mode active" data-mode="continue">Continue training<small>keep teaching its weights</small></button>
       <button class="fork-mode" data-mode="scratch">From scratch<small>same shape, random init</small></button>
@@ -381,7 +381,7 @@
 
   <section id="genSection" hidden>
     <h1 style="font-size:18px; margin:36px 0 4px">Generate</h1>
-    <p class="lead">Give it a few characters and it continues them, one at a time — the whole forward pass running in the browser, no server. It only ever saw Python, so expect Python-flavoured shapes: indentation, <code>def</code>, brackets, names. It won't write working code; the structure it <i>did</i> pick up is the point.</p>
+    <p class="lead">Give it a few characters; it continues them one at a time, in-browser. It only saw Python, so expect Python shapes — not working code.</p>
     <div class="geninput">
       <input id="genPrompt" type="text" value="def " spellcheck="false" autocomplete="off" aria-label="Prompt" />
       <select id="genTemp" aria-label="Temperature">
@@ -405,7 +405,7 @@
 
   <section id="embedSection" hidden>
     <h1 style="font-size:18px; margin:36px 0 4px">Embedding neighbourhoods</h1>
-    <p class="lead">Each character sits where its learned embedding lands, projected to 3D, with lines to its nearest neighbours in the full space. <b>Drag to orbit, scroll to zoom</b>, hover a character for its neighbour list. A lightly-trained model may not have separated digits from letters from whitespace yet — tangled connections are the honest state of the model, not a bug.</p>
+    <p class="lead">Connections the model makes between characters — each links to its nearest neighbours. <b>Drag to orbit, scroll to zoom.</b></p>
     <div class="embed-wrap">
       <canvas id="embed" role="img" aria-label="3D character embedding graph — drag to orbit, scroll to zoom"></canvas>
       <div class="nbrpanel" id="embedNeighbours"></div>
@@ -414,24 +414,21 @@
       <p class="viewhint" id="embedVar"></p>
       <label class="embtoggle"><input type="checkbox" id="embByStrength" checked /> Fade lines by connection strength (brighter = closer neighbours)</label>
     </div>
-    <p class="viewhint" style="margin-top:10px"><b>Model now</b> is the characters nearest the hovered one in the learned embedding, by <b>cosine similarity</b> (−1 … 1). <b>Ideal</b> is what a fully trained model should recover, measured straight from the corpus. A character in both turns <b style="color:var(--ok)">green</b> — one the model already gets right; early on few match. Whitespace: <code>␠</code> space · <code>↵</code> newline · <code>⇥</code> tab · <code>␍</code> carriage return.</p>
+    <p class="viewhint" style="margin-top:10px"><b>Model now</b> vs <b>Ideal</b> neighbours by cosine similarity; matches turn <b style="color:var(--ok)">green</b>. Whitespace: <code>␠</code> space · <code>↵</code> newline · <code>⇥</code> tab · <code>␍</code> return.</p>
   </section>
 
   <section id="attnSection" hidden>
     <h1 style="font-size:18px; margin:36px 0 4px">Live attention</h1>
-    <p class="lead"><b>Attention</b> is how the model decides which earlier characters matter while it processes each one. Type a prompt and every head computes it here in the browser — no sampling, just the real forward pass.</p>
+    <p class="lead">Which earlier characters the model looks at while reading each one — the real forward pass, in-browser.</p>
     <div class="attninput">
       <input id="attnPrompt" type="text" value="def hello(" spellcheck="false" autocomplete="off" />
       <button id="attnRun">Run forward</button>
     </div>
     <p class="viewhint" id="attnStatus"></p>
     <div class="attnguide">
-      <b>How to read one heatmap square:</b>
       <ul>
-        <li>Each grid is one <b>head</b>; a row of grids is a <b>layer</b>. Each head reads the text differently.</li>
-        <li>Characters run along the <b>top</b> and <b>left</b>. Pick a <b>row</b> (character being processed), slide to a <b>column</b> (a character it looked back at). <b>Brighter = more attention.</b> <span style="color:var(--dim)">Hover any square to read it as a sentence.</span></li>
-        <li>It's a <b>triangle</b> because a character can only see itself and what came <b>before</b> it.</li>
-        <li>Common shapes: bright <b>diagonal</b> = attend to myself; stripe below it = the previous character; bright first <b>column</b> = back to the start.</li>
+        <li>Each grid is a <b>head</b>, each row of grids a <b>layer</b>. Row = character being read, column = one it looked back at; <b>brighter = more attention</b>.</li>
+        <li>Triangular because a character sees only itself and what came <b>before</b> it.</li>
       </ul>
     </div>
     <div id="attn"></div>
@@ -439,7 +436,7 @@
 
   <section id="curvesSection" hidden>
     <h1 style="font-size:18px; margin:36px 0 4px">Training curves</h1>
-    <p class="lead">Loss over training and the per-layer gradient norms, straight from what the trainer logs each eval.</p>
+    <p class="lead">Validation loss and per-layer gradient norms, as the trainer logged them.</p>
     <div class="curves-wrap">
       <div class="curvebox"><h3>Validation loss</h3><svg id="lossCurve" role="img" aria-label="validation loss over training"></svg></div>
       <div class="curvebox"><h3>Gradient norm per layer</h3><svg id="gradCurve" role="img" aria-label="per-layer gradient norms over training"></svg><div id="gradLegend"></div></div>
