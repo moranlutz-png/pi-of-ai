@@ -321,14 +321,14 @@
     <span class="tabbar-brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg> Scratch-Coder</span>
     <div class="tierbar" id="tierBar" hidden></div>
     <nav class="tabs" role="tablist" aria-label="Sections">
-      <button class="tab active" data-tab="flow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>Flow</button>
+      <button class="tab" data-tab="flow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>Flow</button>
       <button class="tab" data-tab="generate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l1.8 4.9L18.5 11l-4.7 2.1L12 18l-1.8-4.9L5.5 11l4.7-2.1L12 4z"/></svg>Generate</button>
-      <button class="tab" data-tab="embeddings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.3 10.9 15.7 7.1M8.3 13.1l7.4 3.8"/></svg>Embeddings</button>
+      <button class="tab active" data-tab="embeddings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.3 10.9 15.7 7.1M8.3 13.1l7.4 3.8"/></svg>Embeddings</button>
       <button class="tab" data-tab="attention"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>Attention</button>
       <button class="tab" data-tab="training"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16h16"/><path d="M7 14l3.5-3.5 3 3L21 7"/></svg>Training</button>
     </nav>
   </div>
-  <div class="appwin" id="flowView">
+  <div class="appwin tab-inactive" id="flowView">
     <div class="toolbar">
       <div class="toolbar-l">
         <button class="navbtn" id="navPrev" title="Previous model size">&#9664;</button>
@@ -368,7 +368,7 @@
       </div>
     </div>
   </div>
-  <p class="lead" id="flowLead">Text flows left → right, from raw characters to a next-character guess.</p>
+  <p class="lead tab-inactive" id="flowLead">Text flows left → right, from raw characters to a next-character guess.</p>
   <div class="forkpanel" id="surgeryPanel" hidden>
     <div class="fork-head"><b>Weight surgery <span class="surg-badge" id="surgEdited" hidden>edited</span></b><button class="fork-x" id="surgClose" aria-label="Close">✕</button></div>
     <p class="fork-lead">Edit the loaded weights <b>in memory</b> and watch it react. Nothing is saved — <b>Restore</b> reverts; keep edits with <code>edit_weights.py</code>.</p>
@@ -482,7 +482,7 @@ import { renderCurves } from './curves.js';
 const $ = (id) => document.getElementById(id);
 let model = null, hasValues = false, gpt = null, curView = 'trained';
 let curTier = null;   // { id, label, dir } of the loaded tier — drives the Fork panel
-let currentTab = 'flow';   // which section-tab is showing
+let currentTab = 'embeddings';   // which section-tab is showing (Embeddings opens first)
 let tabRendered = {};      // per-tab: has this model's heavy render run yet (reset on tier load)
 
 const HINTS = {
