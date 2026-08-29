@@ -35,6 +35,58 @@ function describeHead(m, T) {
   return `mostly ${top.k} (${Math.round(top.v * 100)}%)`;
 }
 
+// Reading trace: the plain-English, no-heatmap view. The prompt is shown as its characters;
+// pick one and a little bar over each earlier character shows how much this one looked back at
+// it — attention averaged across every head and layer, so it reads as one "overall" pass.
+export function renderTrace(root, attn, chars) {
+  root.innerHTML = '';
+  if (!attn || !attn.length) return;
+  const L = attn.length, H = attn[0].length, T = attn[0][0].length;
+  // Combined attention matrix M[i][j]: mean over all heads and layers (each row still a
+  // distribution, since averaging distributions gives a distribution).
+  const M = Array.from({ length: T }, () => new Float64Array(T));
+  for (let l = 0; l < L; l++) for (let h = 0; h < H; h++) { const m = attn[l][h];
+    for (let i = 0; i < T; i++) for (let j = 0; j <= i; j++) M[i][j] += m[i][j]; }
+  const nh = L * H; for (let i = 0; i < T; i++) for (let j = 0; j <= i; j++) M[i][j] /= nh;
+
+  const hint = document.createElement('div'); hint.className = 'trace-hint';
+  hint.innerHTML = 'Each bar is how much the character you pick looked back at an earlier one. '
+    + '<b>Click a character</b> to trace it.';
+  const rowEl = document.createElement('div'); rowEl.className = 'trace-row';
+  const say = document.createElement('div'); say.className = 'trace-say';
+
+  const chips = [];
+  for (let k = 0; k < T; k++) {
+    const b = document.createElement('button'); b.className = 'trace-chip'; b.dataset.i = k;
+    b.innerHTML = `<span class="tc-bar"></span><span class="tc-glyph">${gl(chars[k])}</span>`;
+    b.onclick = () => { sel = k; paint(k); };
+    b.onmouseenter = () => paint(k);
+    b.onmouseleave = () => paint(sel);
+    rowEl.appendChild(b); chips.push(b);
+  }
+
+  const rel = (i, j) => j === i ? ' — itself' : j === i - 1 ? ' — the character just before it'
+    : j === 0 ? ' — the very first character' : '';
+  let sel = T - 1;
+  function paint(i) {
+    let best = 0, bw = -1;
+    for (let k = 0; k < T; k++) {
+      const c = chips[k], bar = c.firstChild;
+      c.classList.toggle('reading', k === i);
+      if (k <= i) { const w = M[i][k]; c.style.setProperty('--w', w.toFixed(3));
+        bar.style.height = (w * 40).toFixed(1) + 'px'; if (w > bw) { bw = w; best = k; } }
+      else { c.style.setProperty('--w', '0'); bar.style.height = '0'; }
+    }
+    say.innerHTML = i === 0
+      ? `<b>“${gl(chars[0])}”</b> is the first character — there's nothing earlier for it to look at.`
+      : `Reading <b>“${gl(chars[i])}”</b>, the model looked most at <b>“${gl(chars[best])}”</b> `
+        + `(<b>${Math.round(bw * 100)}%</b> of its attention)${rel(i, best)}.`;
+  }
+
+  root.appendChild(hint); root.appendChild(rowEl); root.appendChild(say);
+  paint(sel);
+}
+
 export function renderAttention(root, attn, chars) {
   root.innerHTML = '';
   if (!attn || !attn.length) return;
