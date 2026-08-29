@@ -47,12 +47,23 @@
     box-shadow:0 18px 44px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.12); }
   .dd-menu[hidden] { display:none; }
   .dd-head { padding:7px 10px 4px; font-size:9.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--dimmer); }
-  .dd-item { display:flex; align-items:center; gap:11px; padding:8px 10px; border-radius:7px; font-size:13px; color:var(--ink); cursor:pointer; }
+  .dd-item { position:relative; display:flex; align-items:center; gap:11px; padding:8px 10px; border-radius:7px; font-size:13px; color:var(--ink); cursor:pointer; }
   .dd-item:hover { background:rgba(255,255,255,.14); }
-  .dd-item svg { width:16px; height:16px; opacity:.85; flex-shrink:0; }
+  .dd-item > svg { width:16px; height:16px; opacity:.85; flex-shrink:0; }
   .dd-item .lbl { flex:1; }
   .dd-item .dd-sz { font:10.5px var(--mono); color:var(--dimmer); }
   .dd-item .chk { width:14px; text-align:center; color:#8ab4ff; font-size:12px; }
+  .dd-item .dd-cae { color:var(--dimmer); font-size:13px; margin-left:1px; }
+  /* Apple-style flyout: a submenu of per-tier actions that opens to the right on hover. */
+  .dd-sub { position:absolute; left:100%; top:-6px; min-width:186px; z-index:40;
+    background:var(--panel2); border:1px solid var(--edge2); border-radius:11px; padding:5px;
+    box-shadow:0 16px 40px rgba(0,0,0,.44); display:none; }
+  .dd-item:hover > .dd-sub, .dd-sub:hover { display:block; }
+  .dd-sub .dd-subitem { display:flex; align-items:center; gap:10px; width:100%; box-sizing:border-box;
+    text-align:left; background:transparent; border:0; border-radius:7px; padding:8px 11px;
+    font:inherit; font-size:12.5px; color:var(--ink); cursor:pointer; text-decoration:none; white-space:nowrap; }
+  .dd-sub .dd-subitem:hover { background:rgba(255,255,255,.12); }
+  .dd-sub .dd-subitem svg { width:14px; height:14px; opacity:.8; flex-shrink:0; }
   .lead { color:var(--dim); margin:0; font-size:13.5px; max-width:74ch; }
   .cfg { color:var(--dimmer); font:12px var(--mono); margin:12px 0 16px; }
   .banner { background:rgba(212,162,75,.09); border:1px solid rgba(212,162,75,.3);
@@ -767,6 +778,12 @@ async function boot() {
 
 const TIER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>';
 const TIER_CHEV = '<svg class="dd-cd" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+// Icons for the per-tier flyout submenu.
+const SUB_ICONS = {
+  load: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>',
+  fork: '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M5 5.372v.878c0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75v-.878a2.25 2.25 0 1 1 1.5 0v.878a2.25 2.25 0 0 1-2.25 2.25h-1.5v2.128a2.251 2.251 0 1 1-1.5 0V8.5h-1.5A2.25 2.25 0 0 1 3.5 6.25v-.878a2.25 2.25 0 1 1 1.5 0ZM4.25 4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM8 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm3.75-9a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z"/></svg>',
+  file: '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6H10.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-2.938-2.938Z"/></svg>',
+};
 
 function buildTierSwitcher(tiers) {
   const bar = $('tierBar');
@@ -776,11 +793,35 @@ function buildTierSwitcher(tiers) {
     + '<button class="dd-btn" id="tierBtn" aria-haspopup="listbox" aria-expanded="false"></button>'
     + '<div class="dd-menu" id="tierMenu" hidden role="listbox">'
     +   '<div class="dd-head">Model size · Scratch-Coder</div>'
-    +   tiers.map((t) => `<div class="dd-item" role="option" data-dir="tiers/${t.id}">${TIER_ICON}<span class="lbl">${t.label}</span><span class="dd-sz">${(t.params / 1e6).toFixed(2)}M</span><span class="chk"></span></div>`).join('')
+    +   tiers.map((t) => {
+          const dir = `tiers/${t.id}`;
+          return `<div class="dd-item" role="option" data-dir="${dir}">${TIER_ICON}`
+            + `<span class="lbl">${t.label}</span><span class="dd-sz">${(t.params / 1e6).toFixed(2)}M</span>`
+            + `<span class="chk"></span><span class="dd-cae">›</span>`
+            + `<div class="dd-sub">`
+            +   `<button class="dd-subitem" data-act="load">${SUB_ICONS.load}Switch to this size</button>`
+            +   `<button class="dd-subitem" data-act="fork">${SUB_ICONS.fork}Fork this tier</button>`
+            +   `<a class="dd-subitem" href="viewer.html?view=source&tier=${dir}" target="_blank" rel="noopener">${SUB_ICONS.file}Source code</a>`
+            +   `<a class="dd-subitem" href="viewer.html?view=corpus&tier=${dir}" target="_blank" rel="noopener">${SUB_ICONS.file}Training data</a>`
+            + `</div></div>`;
+        }).join('')
     + '</div></div>';
   const btn = $('tierBtn'), menu = $('tierMenu');
   btn.onclick = (e) => { e.stopPropagation(); const show = menu.hidden; menu.hidden = !show; btn.setAttribute('aria-expanded', String(show)); };
-  menu.querySelectorAll('.dd-item').forEach((it) => { it.onclick = () => { menu.hidden = true; loadTier(it.dataset.dir); }; });
+  menu.querySelectorAll('.dd-item').forEach((it) => {
+    const dir = it.dataset.dir;
+    // Click the row itself (not the flyout) to switch — the flyout has its own actions.
+    it.onclick = (e) => { if (e.target.closest('.dd-sub')) return; menu.hidden = true; loadTier(dir); };
+    it.querySelectorAll('.dd-subitem[data-act]').forEach((b) => {
+      b.onclick = async (e) => {
+        e.stopPropagation(); menu.hidden = true;
+        if (b.dataset.act === 'load') loadTier(dir);
+        else if (b.dataset.act === 'fork') { await loadTier(dir); activateTab('flow'); if (!$('forkBtn').hidden && $('forkPanel').hidden) $('forkBtn').click(); }
+      };
+    });
+    // Source / Training-data links just navigate (new tab); close the menu behind them.
+    it.querySelectorAll('.dd-subitem[href]').forEach((a) => { a.onclick = (e) => { e.stopPropagation(); menu.hidden = true; }; });
+  });
   document.addEventListener('click', () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); });
 }
 

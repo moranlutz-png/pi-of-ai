@@ -104,17 +104,20 @@
 
   const params = new URLSearchParams(location.search);
   const view = params.get('view') === 'corpus' ? 'corpus' : 'source';
+  // Optional ?tier=tiers/<id> — read that tier's files instead of the default model's.
+  const tier = (params.get('tier') || '').replace(/[^a-zA-Z0-9/_-]/g, '');
+  const base = tier ? tier.replace(/\/+$/, '') + '/' : '';
 
   async function boot() {
     if (view === 'corpus') {
       $('title').textContent = 'Training data';
       document.title = 'Training data — Scratch-Coder';
       let inspect = {};
-      try { inspect = await (await fetch('inspect.json', { cache: 'no-store' })).json(); } catch (_) {}
+      try { inspect = await (await fetch(base + 'inspect.json', { cache: 'no-store' })).json(); } catch (_) {}
       const file = (inspect.corpus && inspect.corpus.file) || 'corpus.txt';
       const total = inspect.corpus && inspect.corpus.chars;
       let text = '';
-      try { text = await (await fetch(file, { cache: 'no-store' })).text(); }
+      try { text = await (await fetch(base + file, { cache: 'no-store' })).text(); }
       catch (e) { $('src').innerHTML = `<tbody><tr><td class="loading">Could not load ${esc(file)}: ${esc(e.message)}</td></tr></tbody>`; return; }
       const r = renderCode(text);
       $('blobH').innerHTML = `<b>corpus.txt</b><span>${r.shown.toLocaleString()} lines shown</span>`;
@@ -127,7 +130,7 @@
     $('title').textContent = "The code it's built from";
     document.title = 'Source — Scratch-Coder';
     let inspect = {};
-    try { inspect = await (await fetch('inspect.json', { cache: 'no-store' })).json(); } catch (_) {}
+    try { inspect = await (await fetch(base + 'inspect.json', { cache: 'no-store' })).json(); } catch (_) {}
     const files = Array.isArray(inspect.source) ? inspect.source : [];
     if (!files.length) { $('src').innerHTML = '<tbody><tr><td class="loading">No source embedded — re-export with python export_inspect.py.</td></tr></tbody>'; return; }
     const show = (idx) => {
