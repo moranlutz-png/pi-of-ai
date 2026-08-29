@@ -179,6 +179,9 @@
     border-radius:10px; padding:14px 16px; min-height:220px; margin:0; font:13px/1.65 var(--mono); color:var(--ink); }
   .genout .seed { color:var(--dim); }
   .genout .cursor { color:var(--dimmer); }
+  /* Each generated character is hoverable — it replays the odds it was sampled from. */
+  .genout .gc { border-radius:2px; cursor:default; }
+  .genout .gc:hover, .genout .gc.hot { background:rgba(255,207,107,.24); color:#fff; }
   /* Live next-character odds: the model predicts a distribution, then samples from it. */
   .genodds { flex:0 0 clamp(230px, 30%, 300px); background:var(--panel); border:1px solid var(--edge);
     border-radius:10px; padding:13px 15px; display:flex; flex-direction:column; }
@@ -729,6 +732,19 @@ async function boot() {
   $('genRun').onclick = runGen;
   $('genStop').onclick = () => { genStop = true; };
   $('genPrompt').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); runGen(); } });
+  // Hover any generated character to replay the odds it was sampled from; leaving restores the last.
+  $('genOut').addEventListener('mouseover', (e) => {
+    const g = e.target.closest('.gc'); if (!g) return;
+    const step = genSteps[+g.dataset.gi]; if (!step) return;
+    renderOdds(step.probs, step.pickedId);
+    $('genOut').querySelectorAll('.gc.hot').forEach((x) => x.classList.remove('hot'));
+    g.classList.add('hot');
+  });
+  $('genOut').addEventListener('mouseleave', () => {
+    $('genOut').querySelectorAll('.gc.hot').forEach((x) => x.classList.remove('hot'));
+    const last = genSteps[genSteps.length - 1];
+    if (last) renderOdds(last.probs, last.pickedId);
+  });
   // Randomness slider: relabel live, and re-preview the next-character odds as it moves.
   let previewT;
   const schedulePreview = () => { clearTimeout(previewT); previewT = setTimeout(previewOdds, 180); };
@@ -955,10 +971,14 @@ function previewOdds() {
 }
 
 let genStop = false, genBusy = false;
+// One entry per generated character: the odds it was sampled from + which id it picked.
+// Hovering that character in the output replays its table in the odds panel.
+let genSteps = [];
 async function runGen() {
   if (!gpt || genBusy) return;
   const prompt = $('genPrompt').value || 'def ';
   const temp = curTemp();
+  genSteps = [];
   const MAX_NEW = 1000, block = gpt.cfg.block_size;   // press Stop to end early
   genStop = false; genBusy = true;
   $('genRun').disabled = true; $('genStop').disabled = false;
@@ -999,7 +1019,9 @@ async function runGen() {
     // stops looping at low temperature without ever discouraging indentation/newlines.
     const recent = ids.slice(-40).filter((id) => !WS.has(gpt.vocab[id]));
     const next = gpt.sampleNext(logits, temp, 40, { topP: 0.95, repeatPenalty: 1.15, recent });
-    renderOdds(gpt.topProbs(logits, temp, 8), next);   // the odds this pick came from
+    const probs = gpt.topProbs(logits, temp, 8);
+    renderOdds(probs, next);                 // live: the odds this pick came from
+    genSteps.push({ probs, pickedId: next }); // remember them so you can hover it later
     ids.push(next);
     genText += gpt.vocab[next];
     paint();
@@ -1008,7 +1030,10 @@ async function runGen() {
     await new Promise((r) => setTimeout(r, 0));           // yield so the character actually paints
   }
   clearInterval(spin);
-  out.innerHTML = `<span class="seed">${esc(seedText)}</span>${esc(genText)}`;
+  // Final render: wrap each generated character so it can be hovered to replay its own odds.
+  let html = `<span class="seed">${esc(seedText)}</span>`;
+  for (let k = 0; k < genText.length; k++) html += `<span class="gc" data-gi="${k}">${esc(genText[k])}</span>`;
+  out.innerHTML = html;
   const cps = (n / ((performance.now() - t0) / 1000)).toFixed(0);
   $('genStatus').textContent = `${genStop ? '■ stopped' : '✓ done'} · ${n} characters · ${cps}/s · forward pass in this tab`;
   $('genRun').disabled = false; $('genStop').disabled = true; genBusy = false;
