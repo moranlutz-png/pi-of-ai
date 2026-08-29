@@ -138,18 +138,37 @@
   .geninput { display:flex; gap:10px; align-items:center; margin:8px 0 12px; flex-wrap:wrap; }
   #genPrompt { flex:1; min-width:200px; background:var(--panel); border:1px solid var(--edge2); color:var(--ink);
     border-radius:8px; padding:8px 11px; font:13px var(--mono); }
-  #genTemp { background:var(--panel); border:1px solid var(--edge2); color:var(--ink);
-    border-radius:8px; padding:8px 9px; font:12.5px var(--mono); }
+  /* Randomness slider (was the "Temp · 0.8" dropdown) — plain words instead of jargon. */
+  .genrand { display:inline-flex; align-items:center; gap:9px; background:var(--panel);
+    border:1px solid var(--edge2); border-radius:8px; padding:6px 12px; }
+  .genrand label { color:var(--dim); font-size:12.5px; }
+  #genTemp { width:110px; accent-color:#5a96f0; cursor:pointer; }
+  .genrand-v { color:var(--ink); font-size:12.5px; font-weight:600; min-width:74px; }
   /* App-style buttons: the dashboard's .act look (dark panel, subtle border). */
   #genRun, #genStop { display:inline-flex; align-items:center; background:var(--panel2); color:var(--ink);
     border:1px solid var(--edge2); border-radius:6px; padding:7px 13px; font:inherit; font-size:13px;
     font-weight:600; cursor:pointer; }
   #genRun:hover:not(:disabled), #genStop:hover:not(:disabled) { background:#43434b; }
   #genRun:disabled, #genStop:disabled { opacity:.4; cursor:not-allowed; }
-  .genout { white-space:pre-wrap; word-break:break-word; background:var(--panel); border:1px solid var(--edge);
-    border-radius:10px; padding:14px 16px; min-height:130px; margin:0; font:13px/1.65 var(--mono); color:var(--ink); }
+  .genstage { display:flex; gap:14px; align-items:stretch; }
+  @media (max-width:760px) { .genstage { flex-direction:column; } }
+  .genout { flex:1; min-width:0; white-space:pre-wrap; word-break:break-word; background:var(--panel); border:1px solid var(--edge);
+    border-radius:10px; padding:14px 16px; min-height:220px; margin:0; font:13px/1.65 var(--mono); color:var(--ink); }
   .genout .seed { color:var(--dim); }
   .genout .cursor { color:var(--dimmer); }
+  /* Live next-character odds: the model predicts a distribution, then samples from it. */
+  .genodds { flex:0 0 clamp(230px, 30%, 300px); background:var(--panel); border:1px solid var(--edge);
+    border-radius:10px; padding:13px 15px; display:flex; flex-direction:column; }
+  .genodds-h { font-size:12px; font-weight:600; color:var(--dim); text-transform:uppercase; letter-spacing:.05em; margin-bottom:11px; }
+  .genodds-rows { display:flex; flex-direction:column; gap:5px; }
+  .odds-row { display:grid; grid-template-columns:20px 1fr 40px; align-items:center; gap:8px; }
+  .odds-ch { font:14px var(--mono); color:var(--ink); text-align:center; }
+  .odds-track { height:16px; background:rgba(255,255,255,.05); border-radius:4px; overflow:hidden; }
+  .odds-fill { height:100%; width:0; background:#5a96f0; border-radius:4px; transition:width .12s ease, background .12s; }
+  .odds-row.picked .odds-fill { background:#ffcf6b; }
+  .odds-row.picked .odds-ch { color:#ffcf6b; font-weight:700; }
+  .odds-p { font:11px var(--mono); color:var(--dim); text-align:right; }
+  .genodds-foot { margin-top:auto; padding-top:12px; color:var(--dimmer); font-size:11.5px; line-height:1.5; }
 
   /* ---- Top bar: brand on the left, the file-viewer buttons in the top-right corner ---- */
   .topbar { display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; margin:0 0 14px; }
@@ -435,22 +454,22 @@
     <p class="lead">Give it a few characters; it continues them one at a time, in-browser. It only saw Python, so expect Python shapes — not working code.</p>
     <div class="geninput">
       <input id="genPrompt" type="text" value="def " spellcheck="false" autocomplete="off" aria-label="Prompt" />
-      <select id="genTemp" aria-label="Temperature">
-        <option value="0.1">Temp · 0.1</option>
-        <option value="0.2">Temp · 0.2</option>
-        <option value="0.3">Temp · 0.3</option>
-        <option value="0.5">Temp · 0.5</option>
-        <option value="0.7">Temp · 0.7</option>
-        <option value="0.8" selected>Temp · 0.8</option>
-        <option value="1">Temp · 1.0</option>
-        <option value="1.2">Temp · 1.2</option>
-        <option value="1.5">Temp · 1.5</option>
-        <option value="2">Temp · 2.0</option>
-      </select>
+      <div class="genrand">
+        <label for="genTemp">Randomness</label>
+        <input type="range" id="genTemp" min="0" max="6" step="1" value="3" aria-label="Randomness" />
+        <span class="genrand-v" id="genTempV">Balanced</span>
+      </div>
       <button id="genRun">Generate</button>
       <button id="genStop" disabled>Stop</button>
     </div>
-    <pre id="genOut" class="genout"></pre>
+    <div class="genstage">
+      <pre id="genOut" class="genout"></pre>
+      <div class="genodds" id="genOdds">
+        <div class="genodds-h">What it might type next</div>
+        <div class="genodds-rows" id="genOddsRows"></div>
+        <div class="genodds-foot" id="genOddsFoot">The model scores every character, then rolls the dice — weighted by these odds. More randomness flattens them.</div>
+      </div>
+    </div>
     <p class="viewhint" id="genStatus"></p>
   </section>
 
@@ -637,6 +656,7 @@ function renderTab(name) {
   if (name === 'embeddings' && !$('embedSection').hidden && model && model.embedding) renderEmbedding($('embedSection'), model.embedding);
   else if (name === 'attention' && gpt && !$('attnRun').disabled) runAttn();
   else if (name === 'training' && !$('curvesSection').hidden && model && Array.isArray(model.training)) renderCurves($('curvesSection'), model.training);
+  else if (name === 'generate') previewOdds();
 }
 
 async function boot() {
@@ -655,6 +675,11 @@ async function boot() {
   $('genRun').onclick = runGen;
   $('genStop').onclick = () => { genStop = true; };
   $('genPrompt').addEventListener('keydown', (e) => { if (e.key === 'Enter') runGen(); });
+  // Randomness slider: relabel live, and re-preview the next-character odds as it moves.
+  let previewT;
+  const schedulePreview = () => { clearTimeout(previewT); previewT = setTimeout(previewOdds, 180); };
+  $('genTemp').addEventListener('input', () => { $('genTempV').textContent = tempLabel(); schedulePreview(); });
+  $('genPrompt').addEventListener('input', schedulePreview);
 
   // Fork panel — the browser can't train, so this generates the fork_tier.py command.
   $('forkBtn').onclick = () => {
@@ -828,11 +853,41 @@ async function loadTier(dir) {
   } else { $('dataBtn').hidden = true; }
 }
 
+// The Randomness slider maps to real temperatures; low = safe & repetitive, high = wild.
+const TEMPS = [0.2, 0.5, 0.7, 0.8, 1.0, 1.2, 1.5];
+const curTemp = () => TEMPS[+$('genTemp').value] ?? 0.8;
+function tempLabel() {
+  const t = curTemp();
+  return t <= 0.3 ? 'Predictable' : t <= 0.7 ? 'Focused' : t <= 0.85 ? 'Balanced' : t <= 1.0 ? 'Creative' : 'Wild';
+}
+// The odds panel: top next-character candidates as bars, the sampled one highlighted.
+const oddsGlyph = (c) => ({ ' ': '␠', '\n': '↵', '\t': '⇥', '\r': '␍' }[c] ?? c);
+function renderOdds(list, pickedId) {
+  const rows = $('genOddsRows');
+  if (!list || !list.length) { rows.innerHTML = ''; return; }
+  const max = list[0].p || 1;
+  rows.innerHTML = list.map((o) =>
+    `<div class="odds-row${o.id === pickedId ? ' picked' : ''}">`
+    + `<span class="odds-ch">${esc(oddsGlyph(o.char))}</span>`
+    + `<span class="odds-track"><span class="odds-fill" style="width:${Math.round((o.p / max) * 100)}%"></span></span>`
+    + `<span class="odds-p">${(o.p * 100).toFixed(o.p < 0.1 ? 1 : 0)}%</span></div>`).join('');
+}
+// Show the odds for the character that would come next after the current prompt — a live
+// preview before you even press Generate, so the "predict a distribution" idea is visible.
+function previewOdds() {
+  if (!gpt || genBusy) return;
+  try {
+    const ids = gpt.encode($('genPrompt').value || 'def ');
+    const { logits } = gpt.primeCache(ids.slice(-gpt.cfg.block_size));
+    renderOdds(gpt.topProbs(logits, curTemp(), 8), -1);
+  } catch (_) {}
+}
+
 let genStop = false, genBusy = false;
 async function runGen() {
   if (!gpt || genBusy) return;
   const prompt = $('genPrompt').value || 'def ';
-  const temp = parseFloat($('genTemp').value);
+  const temp = curTemp();
   const MAX_NEW = 1000, block = gpt.cfg.block_size;   // press Stop to end early
   genStop = false; genBusy = true;
   $('genRun').disabled = true; $('genStop').disabled = false;
@@ -873,6 +928,7 @@ async function runGen() {
     // stops looping at low temperature without ever discouraging indentation/newlines.
     const recent = ids.slice(-40).filter((id) => !WS.has(gpt.vocab[id]));
     const next = gpt.sampleNext(logits, temp, 40, { topP: 0.95, repeatPenalty: 1.15, recent });
+    renderOdds(gpt.topProbs(logits, temp, 8), next);   // the odds this pick came from
     ids.push(next);
     genText += gpt.vocab[next];
     paint();

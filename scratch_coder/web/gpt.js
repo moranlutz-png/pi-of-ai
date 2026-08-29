@@ -246,4 +246,16 @@ export class ScratchGPT {
     for (let k = 0; k < pool.length; k++) { r -= ps[k]; if (r <= 0) return pool[k]; }
     return pool[pool.length - 1];
   }
+
+  // The top-k next-character odds after the temperature softmax — the distribution the model
+  // is about to sample from. Same exp((l−max)/t) as sampleNext, over the whole vocab, so the
+  // picture on screen matches exactly what temperature does (nucleus/repeat-penalty aside).
+  topProbs(logits, temperature = 0.8, k = 8) {
+    const V = logits.length, t = Math.max(1e-6, temperature);
+    let mx = -Infinity; for (let i = 0; i < V; i++) if (logits[i] > mx) mx = logits[i];
+    let sum = 0; const ps = new Float64Array(V);
+    for (let i = 0; i < V; i++) { const e = Math.exp((logits[i] - mx) / t); ps[i] = e; sum += e; }
+    const ord = Array.from({ length: V }, (_, i) => i).sort((a, b) => ps[b] - ps[a]).slice(0, k);
+    return ord.map((i) => ({ id: i, char: this.vocab[i], p: ps[i] / sum }));
+  }
 }
