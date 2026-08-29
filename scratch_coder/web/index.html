@@ -420,16 +420,6 @@
       <div class="inspector">
         <div class="insp-head">Model Inspector</div>
         <div class="cfg" id="cfg">loading…</div>
-        <div class="insp-actions">
-          <button class="forkbtn" id="forkBtn" hidden>
-            <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor"><path d="M5 5.372v.878c0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75v-.878a2.25 2.25 0 1 1 1.5 0v.878a2.25 2.25 0 0 1-2.25 2.25h-1.5v2.128a2.251 2.251 0 1 1-1.5 0V8.5h-1.5A2.25 2.25 0 0 1 3.5 6.25v-.878a2.25 2.25 0 1 1 1.5 0ZM4.25 4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM8 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm3.75-9a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z"/></svg>
-            Fork this tier
-          </button>
-          <button class="forkbtn" id="surgeryBtn" hidden>
-            <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor"><path d="M13.94 1.06a1.5 1.5 0 0 1 0 2.12l-1.3 1.3-2.12-2.12 1.3-1.3a1.5 1.5 0 0 1 2.12 0ZM9.36 3.36 2.9 9.82a1.5 1.5 0 0 0-.4.72l-.5 2.3a.5.5 0 0 0 .6.6l2.3-.5a1.5 1.5 0 0 0 .72-.4l6.46-6.46-2.12-2.12Z"/></svg>
-            Weight surgery
-          </button>
-        </div>
         <div class="insp-files">
           <a class="filebtn" id="srcBtn" href="viewer.html?view=source" hidden><svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6H10.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-2.938-2.938Z"/></svg><span class="filebtn-t">Source</span><span class="filebtn-meta" id="srcMeta"></span></a>
           <a class="filebtn" id="dataBtn" href="viewer.html?view=corpus" hidden><svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6H10.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-2.938-2.938Z"/></svg><span class="filebtn-t">Data</span><span class="filebtn-meta" id="dataMeta"></span></a>
@@ -690,6 +680,22 @@ function renderTab(name) {
   else if (name === 'generate') previewOdds();
 }
 
+// Fork / Weight-surgery panels — opened from the model-picker flyout (the buttons that used
+// to sit in the inspector are gone). Each self-guards on what the loaded tier supports.
+function openForkPanel() {
+  if (!(hasValues && curTier && curTier.id)) return;   // needs a real, exported tier
+  $('forkPanel').hidden = false; $('surgeryPanel').hidden = true;
+  if (!$('forkName').value) $('forkName').value = 'my-' + (curTier.id || 'tier');
+  $('forkTierName').textContent = curTier.label || 'this tier';
+  renderForkCmd(); $('forkName').focus(); $('forkName').select();
+}
+function openSurgeryPanel() {
+  if (!(gpt && model && model.weights)) return;         // surgery needs live weights
+  $('surgeryPanel').hidden = false; $('forkPanel').hidden = true;
+  buildSurgTargets();
+  $('surgEdited').hidden = !(gpt && gpt.edited); $('surgStatus').textContent = '';
+}
+
 async function boot() {
   // One-time wiring — these handlers read the current `model`/`gpt`, which loadTier
   // swaps when you change tiers, so they never need re-binding.
@@ -713,16 +719,6 @@ async function boot() {
   $('genPrompt').addEventListener('input', schedulePreview);
 
   // Fork panel — the browser can't train, so this generates the fork_tier.py command.
-  $('forkBtn').onclick = () => {
-    const p = $('forkPanel'), show = p.hidden;
-    p.hidden = !show;
-    if (show) {
-      $('surgeryPanel').hidden = true;
-      if (!$('forkName').value) $('forkName').value = 'my-' + (curTier?.id || 'tier');
-      $('forkTierName').textContent = curTier?.label || 'this tier';
-      renderForkCmd(); $('forkName').focus(); $('forkName').select();
-    }
-  };
   $('forkClose').onclick = () => { $('forkPanel').hidden = true; };
   $('forkName').addEventListener('input', renderForkCmd);
   document.querySelectorAll('.fork-mode').forEach((b) => { b.onclick = () => {
@@ -736,12 +732,6 @@ async function boot() {
   };
 
   // Weight-surgery panel.
-  $('surgeryBtn').onclick = () => {
-    const p = $('surgeryPanel'), show = p.hidden;
-    p.hidden = !show;
-    if (show) { $('forkPanel').hidden = true; buildSurgTargets();
-      $('surgEdited').hidden = !(gpt && gpt.edited); $('surgStatus').textContent = ''; }
-  };
   $('surgClose').onclick = () => { $('surgeryPanel').hidden = true; };
   // Toolbar ◀ ▶ cycle through the tier sizes by clicking the dropdown's rows.
   const cycleTier = (dir) => {
@@ -782,6 +772,7 @@ const TIER_CHEV = '<svg class="dd-cd" viewBox="0 0 24 24" fill="none" stroke="cu
 const SUB_ICONS = {
   load: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>',
   fork: '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M5 5.372v.878c0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75v-.878a2.25 2.25 0 1 1 1.5 0v.878a2.25 2.25 0 0 1-2.25 2.25h-1.5v2.128a2.251 2.251 0 1 1-1.5 0V8.5h-1.5A2.25 2.25 0 0 1 3.5 6.25v-.878a2.25 2.25 0 1 1 1.5 0ZM4.25 4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM8 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm3.75-9a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z"/></svg>',
+  surgery: '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M13.94 1.06a1.5 1.5 0 0 1 0 2.12l-1.3 1.3-2.12-2.12 1.3-1.3a1.5 1.5 0 0 1 2.12 0ZM9.36 3.36 2.9 9.82a1.5 1.5 0 0 0-.4.72l-.5 2.3a.5.5 0 0 0 .6.6l2.3-.5a1.5 1.5 0 0 0 .72-.4l6.46-6.46-2.12-2.12Z"/></svg>',
   file: '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6H10.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-2.938-2.938Z"/></svg>',
 };
 
@@ -801,6 +792,7 @@ function buildTierSwitcher(tiers) {
             + `<div class="dd-sub">`
             +   `<button class="dd-subitem" data-act="load">${SUB_ICONS.load}Switch to this size</button>`
             +   `<button class="dd-subitem" data-act="fork">${SUB_ICONS.fork}Fork this tier</button>`
+            +   `<button class="dd-subitem" data-act="surgery">${SUB_ICONS.surgery}Weight surgery</button>`
             +   `<a class="dd-subitem" href="viewer.html?view=source&tier=${dir}" target="_blank" rel="noopener">${SUB_ICONS.file}Source code</a>`
             +   `<a class="dd-subitem" href="viewer.html?view=corpus&tier=${dir}" target="_blank" rel="noopener">${SUB_ICONS.file}Training data</a>`
             + `</div></div>`;
@@ -816,7 +808,8 @@ function buildTierSwitcher(tiers) {
       b.onclick = async (e) => {
         e.stopPropagation(); menu.hidden = true;
         if (b.dataset.act === 'load') loadTier(dir);
-        else if (b.dataset.act === 'fork') { await loadTier(dir); activateTab('flow'); if (!$('forkBtn').hidden && $('forkPanel').hidden) $('forkBtn').click(); }
+        else if (b.dataset.act === 'fork') { await loadTier(dir); activateTab('flow'); openForkPanel(); }
+        else if (b.dataset.act === 'surgery') { await loadTier(dir); activateTab('flow'); openSurgeryPanel(); }
       };
     });
     // Source / Training-data links just navigate (new tab); close the menu behind them.
@@ -858,12 +851,10 @@ async function loadTier(dir) {
   }
   $('cfg').textContent = line;
 
-  // Track which tier is loaded, and (re)offer the Fork button for it. Forking needs a
-  // real tier id (the 'tiers/<id>' dir) and exported weights — the '.' fallback has neither.
+  // Track which tier is loaded — the model-picker flyout's Fork / Weight-surgery actions
+  // read this. Forking needs a real tier id (the 'tiers/<id>' dir); '.' fallback has none.
   curTier = { id: dir === '.' ? null : dir.split('/').pop(), dir,
               label: model.tier || (dir === '.' ? 'this model' : dir.split('/').pop()) };
-  $('forkBtn').hidden = !(hasValues && curTier.id);
-  $('surgeryBtn').hidden = !(hasValues && model.weights);   // surgery needs live weights
   $('forkPanel').hidden = true; $('surgeryPanel').hidden = true;   // collapse when switching tiers
 
   $('banner').hidden = true;
