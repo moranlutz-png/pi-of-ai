@@ -41,28 +41,33 @@
   .dd-btn svg { width:14px; height:14px; opacity:.85; flex-shrink:0; }
   .dd-btn .dd-cd { width:11px; opacity:.55; }
   .dd-btn .dd-sz { font:10.5px var(--mono); color:var(--dimmer); }
-  .dd-menu { position:absolute; top:calc(100% + 6px); left:0; z-index:30; min-width:240px;
-    background:rgba(58,58,60,.72); border:1px solid rgba(255,255,255,.13); border-radius:13px; padding:5px;
-    backdrop-filter:blur(38px) saturate(190%); -webkit-backdrop-filter:blur(38px) saturate(190%);
-    box-shadow:0 18px 44px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.12); }
+  /* macOS-style menus: frosted, compact, thin rows with a blue accent on the active row. */
+  .dd-menu, .dd-sub { background:rgba(48,48,50,.68); border:1px solid rgba(255,255,255,.12);
+    backdrop-filter:blur(40px) saturate(190%); -webkit-backdrop-filter:blur(40px) saturate(190%);
+    box-shadow:0 16px 40px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.1); }
+  .dd-menu { position:absolute; top:calc(100% + 6px); left:0; z-index:30; min-width:208px;
+    border-radius:10px; padding:4px; }
   .dd-menu[hidden] { display:none; }
-  .dd-head { padding:7px 10px 4px; font-size:9.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--dimmer); }
-  .dd-item { position:relative; display:flex; align-items:center; gap:11px; padding:8px 10px; border-radius:7px; font-size:13px; color:var(--ink); cursor:pointer; }
-  .dd-item:hover { background:rgba(255,255,255,.14); }
-  .dd-item > svg { width:16px; height:16px; opacity:.85; flex-shrink:0; }
+  .dd-head { padding:5px 9px 3px; font-size:9px; letter-spacing:.09em; text-transform:uppercase; color:var(--dimmer); }
+  .dd-item { position:relative; display:flex; align-items:center; gap:9px; padding:5px 9px; border-radius:6px;
+    font-size:12.5px; color:var(--ink); cursor:pointer; }
+  .dd-item:hover { background:rgba(72,142,240,.92); color:#fff; }
+  .dd-item:hover .dd-sz, .dd-item:hover .dd-cae { color:rgba(255,255,255,.82); }
+  .dd-item:hover .chk { color:#fff; }
+  .dd-item:hover > svg { opacity:1; }
+  .dd-item > svg { width:15px; height:15px; opacity:.85; flex-shrink:0; }
   .dd-item .lbl { flex:1; }
-  .dd-item .dd-sz { font:10.5px var(--mono); color:var(--dimmer); }
-  .dd-item .chk { width:14px; text-align:center; color:#8ab4ff; font-size:12px; }
-  .dd-item .dd-cae { color:var(--dimmer); font-size:13px; margin-left:1px; }
-  /* Apple-style flyout: a submenu of per-tier actions that opens to the right on hover. */
-  .dd-sub { position:absolute; left:100%; top:-6px; min-width:186px; z-index:40;
-    background:var(--panel2); border:1px solid var(--edge2); border-radius:11px; padding:5px;
-    box-shadow:0 16px 40px rgba(0,0,0,.44); display:none; }
+  .dd-item .dd-sz { font:10px var(--mono); color:var(--dimmer); }
+  .dd-item .chk { width:13px; text-align:center; color:#6ea8ff; font-size:12px; }
+  .dd-item .dd-cae { color:var(--dimmer); font-size:12px; margin-left:1px; }
+  /* Flyout submenu of per-tier actions — same frosted sheet, opens right on hover. */
+  .dd-sub { position:absolute; left:100%; top:-5px; min-width:172px; z-index:40; border-radius:9px; padding:4px; display:none; }
   .dd-item:hover > .dd-sub, .dd-sub:hover { display:block; }
-  .dd-sub .dd-subitem { display:flex; align-items:center; gap:10px; width:100%; box-sizing:border-box;
-    text-align:left; background:transparent; border:0; border-radius:7px; padding:8px 11px;
-    font:inherit; font-size:12.5px; color:var(--ink); cursor:pointer; text-decoration:none; white-space:nowrap; }
-  .dd-sub .dd-subitem:hover { background:rgba(255,255,255,.12); }
+  .dd-sub .dd-subitem { display:flex; align-items:center; gap:9px; width:100%; box-sizing:border-box;
+    text-align:left; background:transparent; border:0; border-radius:6px; padding:6px 10px;
+    font:inherit; font-size:12px; color:var(--ink); cursor:pointer; text-decoration:none; white-space:nowrap; }
+  .dd-sub .dd-subitem:hover { background:rgba(72,142,240,.92); color:#fff; }
+  .dd-sub .dd-subitem:hover svg { opacity:1; }
   .dd-sub .dd-subitem svg { width:14px; height:14px; opacity:.8; flex-shrink:0; }
   .lead { color:var(--dim); margin:0; font-size:13.5px; max-width:74ch; }
   .cfg { color:var(--dimmer); font:12px var(--mono); margin:12px 0 16px; }
@@ -160,8 +165,23 @@
   /* Randomness slider (was the "Temp · 0.8" dropdown) — plain words instead of jargon. */
   .genrand { display:inline-flex; align-items:center; gap:9px; }
   .genrand label { color:var(--dim); font-size:12.5px; }
-  #genTemp { width:110px; accent-color:#5a96f0; cursor:pointer; }
+  #genTemp { width:120px; }
   .genrand-v { color:var(--ink); font-size:12.5px; font-weight:600; min-width:74px; }
+
+  /* ===== macOS-style sliders: thin track, white fill left of a round white knob ===== */
+  input[type=range] { -webkit-appearance:none; appearance:none; background:transparent; height:20px;
+    margin:0; cursor:pointer; --fill:50%; }
+  input[type=range]:focus { outline:none; }
+  input[type=range]::-webkit-slider-runnable-track { height:4px; border-radius:3px;
+    background:linear-gradient(to right, rgba(255,255,255,.92) var(--fill), rgba(255,255,255,.17) var(--fill)); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:16px; height:16px;
+    margin-top:-6px; border-radius:50%; background:#fff;
+    box-shadow:0 1px 3px rgba(0,0,0,.5), 0 0 0 .5px rgba(0,0,0,.14); }
+  input[type=range]:active::-webkit-slider-thumb { background:#eee; }
+  input[type=range]::-moz-range-track { height:4px; border-radius:3px; background:rgba(255,255,255,.17); }
+  input[type=range]::-moz-range-progress { height:4px; border-radius:3px; background:rgba(255,255,255,.92); }
+  input[type=range]::-moz-range-thumb { width:16px; height:16px; border:0; border-radius:50%; background:#fff;
+    box-shadow:0 1px 3px rgba(0,0,0,.5); }
   .genrand-t { color:var(--dimmer); font:11.5px var(--mono); }
   /* Dashboard .act / .ghost buttons. */
   .composer-actions .act { display:inline-flex; align-items:center; gap:7px; background:var(--panel2);
@@ -246,10 +266,11 @@
 
   /* ---- Weight surgery: edit the in-memory weights and watch the forward pass react ---- */
   .toolrow { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-  .surg-select { flex:1; background:var(--bg); color:var(--ink); border:1px solid var(--edge2);
-    border-radius:7px; padding:7px 10px; font:12.5px var(--mono); }
+  .surg-select { flex:1; background:rgba(255,255,255,.06); color:var(--ink); border:1px solid rgba(255,255,255,.14);
+    border-radius:6px; padding:5px 9px; font:12px var(--mono); }
+  .surg-select:hover { background:rgba(255,255,255,.09); }
   .surg-op { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
-  .surg-op input[type=range] { flex:1; accent-color:#7fb0ff; min-width:80px; }
+  .surg-op input[type=range] { flex:1; min-width:80px; }
   .surg-apply { cursor:pointer; background:var(--panel2); color:var(--ink); border:1px solid var(--edge2);
     border-radius:7px; padding:6px 12px; font-size:12.5px; font-weight:600; min-width:108px; }
   .surg-apply:hover { border-color:#5a5a63; }
@@ -752,6 +773,10 @@ async function boot() {
   updateRand();
   $('genTemp').addEventListener('input', () => { updateRand(); schedulePreview(); });
   $('genPrompt').addEventListener('input', schedulePreview);
+  // Paint the macOS-style filled portion (white left of the knob) on every slider.
+  const paintRange = (el) => { const mn = +el.min || 0, mx = el.max !== '' ? +el.max : 100;
+    el.style.setProperty('--fill', (((+el.value - mn) / ((mx - mn) || 1)) * 100) + '%'); };
+  document.querySelectorAll('input[type=range]').forEach((r) => { paintRange(r); r.addEventListener('input', () => paintRange(r)); });
 
   // Fork panel — the browser can't train, so this generates the fork_tier.py command.
   $('forkClose').onclick = () => { $('forkPanel').hidden = true; };
