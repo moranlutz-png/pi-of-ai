@@ -305,8 +305,8 @@
   .tabs { display:flex; align-items:center; gap:2px; margin-left:auto; flex-wrap:wrap;
     background:var(--panel); border:1px solid var(--edge2); border-radius:999px; padding:4px; }
   .tab { display:inline-flex; align-items:center; gap:7px; background:transparent; border:0;
-    border-radius:999px; padding:7px 15px; font:12.5px var(--mono); color:var(--dim); cursor:pointer;
-    transition:background .12s, color .12s; white-space:nowrap; }
+    border-radius:999px; padding:7px 15px; font-family:inherit; font-size:13px; font-weight:500;
+    color:var(--dim); cursor:pointer; transition:background .12s, color .12s; white-space:nowrap; }
   .tab svg { width:15px; height:15px; opacity:.85; flex-shrink:0; pointer-events:none; }
   .tab:hover:not(:disabled) { color:var(--ink); }
   .tab.active { background:var(--edge2); color:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,.35); }
