@@ -146,21 +146,32 @@
 
   /* ---- Generate (run the model in the browser) ---- */
   #genSection[hidden] { display:none; }
-  .geninput { display:flex; gap:10px; align-items:center; margin:8px 0 12px; flex-wrap:wrap; }
-  #genPrompt { flex:1; min-width:200px; background:var(--panel); border:1px solid var(--edge2); color:var(--ink);
-    border-radius:8px; padding:8px 11px; font:13px var(--mono); }
+  /* Prompt bar = the dashboard composer: one rounded bounded surface, field on top, a control
+     row beneath, and a focus-within ring on the whole thing. */
+  .composer { margin:8px 0 14px; background:var(--panel); border:1px solid var(--edge2);
+    border-radius:16px; padding:12px 14px 10px; transition:border-color .14s, box-shadow .14s; }
+  .composer:focus-within { border-color:var(--dim); box-shadow:0 0 0 3px rgba(255,255,255,.06); }
+  .composer textarea { width:100%; background:transparent; border:0; outline:none; resize:none;
+    padding:0; margin:0; color:var(--ink); font:13px/1.65 var(--mono); min-height:24px; max-height:200px;
+    overflow-y:auto; display:block; }
+  .composer textarea::placeholder { color:var(--dimmer); }
+  .composer-bar { display:flex; align-items:center; gap:12px; margin-top:10px; }
+  .composer-actions { display:flex; align-items:center; gap:8px; flex:none; margin-left:auto; }
   /* Randomness slider (was the "Temp · 0.8" dropdown) — plain words instead of jargon. */
-  .genrand { display:inline-flex; align-items:center; gap:9px; background:var(--panel);
-    border:1px solid var(--edge2); border-radius:8px; padding:6px 12px; }
+  .genrand { display:inline-flex; align-items:center; gap:9px; }
   .genrand label { color:var(--dim); font-size:12.5px; }
   #genTemp { width:110px; accent-color:#5a96f0; cursor:pointer; }
   .genrand-v { color:var(--ink); font-size:12.5px; font-weight:600; min-width:74px; }
-  /* App-style buttons: the dashboard's .act look (dark panel, subtle border). */
-  #genRun, #genStop { display:inline-flex; align-items:center; background:var(--panel2); color:var(--ink);
-    border:1px solid var(--edge2); border-radius:6px; padding:7px 13px; font:inherit; font-size:13px;
-    font-weight:600; cursor:pointer; }
-  #genRun:hover:not(:disabled), #genStop:hover:not(:disabled) { background:#43434b; }
-  #genRun:disabled, #genStop:disabled { opacity:.4; cursor:not-allowed; }
+  /* Dashboard .act / .ghost buttons. */
+  .composer-actions .act { display:inline-flex; align-items:center; gap:7px; background:var(--panel2);
+    color:var(--ink); border:1px solid var(--edge2); border-radius:6px; padding:5px 11px; font:inherit;
+    font-size:13px; font-weight:600; cursor:pointer; }
+  .composer-actions .act:hover:not(:disabled) { background:#43434b; }
+  .composer-actions .act svg { width:15px; height:15px; opacity:.9; }
+  .composer-actions .ghost { background:transparent; color:var(--ink); border:1px solid var(--edge2);
+    border-radius:6px; padding:5px 11px; font:inherit; font-size:13px; font-weight:600; cursor:pointer; }
+  .composer-actions .ghost:hover:not(:disabled) { background:var(--panel2); }
+  .composer-actions button:disabled { opacity:.4; cursor:not-allowed; }
   .genstage { display:flex; gap:14px; align-items:stretch; }
   @media (max-width:760px) { .genstage { flex-direction:column; } }
   .genout { flex:1; min-width:0; white-space:pre-wrap; word-break:break-word; background:var(--panel); border:1px solid var(--edge);
@@ -467,15 +478,19 @@
   <section id="genSection" hidden>
     <h1 style="font-size:18px; margin:36px 0 4px">Generate</h1>
     <p class="lead">Give it a few characters; it continues them one at a time, in-browser. It only saw Python, so expect Python shapes — not working code.</p>
-    <div class="geninput">
-      <input id="genPrompt" type="text" value="def " spellcheck="false" autocomplete="off" aria-label="Prompt" />
-      <div class="genrand">
-        <label for="genTemp">Randomness</label>
-        <input type="range" id="genTemp" min="0" max="6" step="1" value="3" aria-label="Randomness" />
-        <span class="genrand-v" id="genTempV">Balanced</span>
+    <div class="composer">
+      <textarea id="genPrompt" rows="1" spellcheck="false" autocomplete="off" aria-label="Prompt" placeholder="Give it a few characters to continue…">def </textarea>
+      <div class="composer-bar">
+        <div class="genrand">
+          <label for="genTemp">Randomness</label>
+          <input type="range" id="genTemp" min="0" max="6" step="1" value="3" aria-label="Randomness" />
+          <span class="genrand-v" id="genTempV">Balanced</span>
+        </div>
+        <span class="composer-actions">
+          <button id="genStop" class="ghost" disabled>Stop</button>
+          <button id="genRun" class="act"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg>Generate</button>
+        </span>
       </div>
-      <button id="genRun">Generate</button>
-      <button id="genStop" disabled>Stop</button>
     </div>
     <div class="genstage">
       <pre id="genOut" class="genout"></pre>
@@ -711,7 +726,7 @@ async function boot() {
   $('attnPrompt').addEventListener('keydown', (e) => { if (e.key === 'Enter') runAttn(); });
   $('genRun').onclick = runGen;
   $('genStop').onclick = () => { genStop = true; };
-  $('genPrompt').addEventListener('keydown', (e) => { if (e.key === 'Enter') runGen(); });
+  $('genPrompt').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); runGen(); } });
   // Randomness slider: relabel live, and re-preview the next-character odds as it moves.
   let previewT;
   const schedulePreview = () => { clearTimeout(previewT); previewT = setTimeout(previewOdds, 180); };
