@@ -34,9 +34,10 @@
   .tierlbl { color:var(--dimmer); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; margin-right:4px; }
   /* Model-picker dropdown, matching the dashboard's .dd-btn + frosted .dd-menu. */
   .dd { position:relative; display:inline-block; }
-  .dd-btn { display:inline-flex; align-items:center; gap:8px; background:var(--panel); border:1px solid var(--edge);
-    border-radius:20px; padding:7px 13px 7px 12px; font:inherit; font-size:12.5px; font-weight:600; color:var(--ink); cursor:pointer; }
-  .dd-btn:hover { background:var(--panel2); }
+  .dd-btn { display:inline-flex; align-items:center; gap:8px; background:transparent; border:0;
+    border-radius:0; padding:6px 2px; font:inherit; font-size:12.5px; font-weight:600; color:var(--ink); cursor:pointer; }
+  .dd-btn:hover { color:var(--ink); }
+  .dd-btn:hover .dd-cd { opacity:.9; }
   .dd-btn svg { width:14px; height:14px; opacity:.85; flex-shrink:0; }
   .dd-btn .dd-cd { width:11px; opacity:.55; }
   .dd-btn .dd-sz { font:10.5px var(--mono); color:var(--dimmer); }
@@ -294,14 +295,40 @@
   .insp-files { display:flex; gap:8px; flex-wrap:wrap; margin-top:auto; padding-top:4px; }
   .inspector .tierbar { margin:0; }
 
+  /* ===== Section tabs: one sticky bar so all five views are visible and reachable ===== */
+  .tabbar { position:sticky; top:0; z-index:30; display:flex; align-items:center; gap:16px;
+    margin:-26px -30px 22px; padding:13px 30px; background:var(--bg); border-bottom:1px solid var(--edge); }
+  .tabbar-brand { display:flex; align-items:center; gap:9px; font:13px var(--mono); font-weight:600;
+    color:var(--ink); white-space:nowrap; }
+  .tabbar-brand svg { width:15px; height:15px; }
+  .tabbar .tierbar { margin:0; }
+  .tabs { display:flex; align-items:center; gap:2px; margin-left:auto; flex-wrap:wrap;
+    background:var(--panel); border:1px solid var(--edge2); border-radius:999px; padding:4px; }
+  .tab { display:inline-flex; align-items:center; gap:7px; background:transparent; border:0;
+    border-radius:999px; padding:7px 15px; font:12.5px var(--mono); color:var(--dim); cursor:pointer;
+    transition:background .12s, color .12s; white-space:nowrap; }
+  .tab svg { width:15px; height:15px; opacity:.85; flex-shrink:0; pointer-events:none; }
+  .tab:hover:not(:disabled) { color:var(--ink); }
+  .tab.active { background:var(--edge2); color:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,.35); }
+  .tab.active svg { opacity:1; }
+  .tab:disabled { opacity:.32; cursor:default; }
+  .tab-inactive { display:none !important; }
+
 </style>
 </head>
 <body>
-  <div class="appwin">
-    <div class="menubar">
-      <span class="menu-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg></span>
-      <span class="menu-title">Scratch-Coder</span>
-    </div>
+  <div class="tabbar">
+    <span class="tabbar-brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg> Scratch-Coder</span>
+    <div class="tierbar" id="tierBar" hidden></div>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab active" data-tab="flow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>Flow</button>
+      <button class="tab" data-tab="generate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l1.8 4.9L18.5 11l-4.7 2.1L12 18l-1.8-4.9L5.5 11l4.7-2.1L12 4z"/></svg>Generate</button>
+      <button class="tab" data-tab="embeddings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.3 10.9 15.7 7.1M8.3 13.1l7.4 3.8"/></svg>Embeddings</button>
+      <button class="tab" data-tab="attention"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>Attention</button>
+      <button class="tab" data-tab="training"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16h16"/><path d="M7 14l3.5-3.5 3 3L21 7"/></svg>Training</button>
+    </nav>
+  </div>
+  <div class="appwin" id="flowView">
     <div class="toolbar">
       <div class="toolbar-l">
         <button class="navbtn" id="navPrev" title="Previous model size">&#9664;</button>
@@ -323,7 +350,6 @@
       </div>
       <div class="inspector">
         <div class="insp-head">Model Inspector</div>
-        <div class="tierbar" id="tierBar" hidden></div>
         <div class="cfg" id="cfg">loading…</div>
         <div class="insp-actions">
           <button class="forkbtn" id="forkBtn" hidden>
@@ -342,7 +368,7 @@
       </div>
     </div>
   </div>
-  <p class="lead">Text flows left → right, from raw characters to a next-character guess.</p>
+  <p class="lead" id="flowLead">Text flows left → right, from raw characters to a next-character guess.</p>
   <div class="forkpanel" id="surgeryPanel" hidden>
     <div class="fork-head"><b>Weight surgery <span class="surg-badge" id="surgEdited" hidden>edited</span></b><button class="fork-x" id="surgClose" aria-label="Close">✕</button></div>
     <p class="fork-lead">Edit the loaded weights <b>in memory</b> and watch it react. Nothing is saved — <b>Restore</b> reverts; keep edits with <code>edit_weights.py</code>.</p>
@@ -456,6 +482,8 @@ import { renderCurves } from './curves.js';
 const $ = (id) => document.getElementById(id);
 let model = null, hasValues = false, gpt = null, curView = 'trained';
 let curTier = null;   // { id, label, dir } of the loaded tier — drives the Fork panel
+let currentTab = 'flow';   // which section-tab is showing
+let tabRendered = {};      // per-tab: has this model's heavy render run yet (reset on tier load)
 
 const HINTS = {
   trained: 'The trained model — brightness is each tensor’s weight spread.',
@@ -535,9 +563,57 @@ function applySurgery(op) {
   else if (op === 'ablate') { gpt.ablate(target); afterSurgery(`ablated ${target}`); }
 }
 
+// Each tab maps to the element(s) that make up that view. Flow keeps the window plus its
+// caption and the two slide-out panels, so they hide together when you leave the tab.
+const TAB_GROUPS = {
+  flow: ['flowView', 'flowLead', 'surgeryPanel', 'forkPanel'],
+  generate: ['genSection'],
+  embeddings: ['embedSection'],
+  attention: ['attnSection'],
+  training: ['curvesSection'],
+};
+// Enable only the tabs whose section actually has data; if the active one just vanished
+// (e.g. switched to a tier with no exported weights), fall back to Flow.
+function refreshTabs() {
+  const avail = { flow: true, generate: !$('genSection').hidden, embeddings: !$('embedSection').hidden,
+                  attention: !$('attnSection').hidden, training: !$('curvesSection').hidden };
+  document.querySelectorAll('.tab').forEach((b) => { b.disabled = !avail[b.dataset.tab]; });
+  if (!avail[currentTab]) currentTab = 'flow';
+}
+// Show one view, hide the rest. Size-sensitive canvases render on activation, never while
+// their tab is display:none (a hidden canvas measures 0 and locks at 1px). Attention re-renders
+// every time so it reflects live weight-surgery and is sized against a visible container.
+function activateTab(name, force) {
+  const btn = document.querySelector(`.tab[data-tab="${name}"]`);
+  if (!btn || btn.disabled) name = 'flow';
+  currentTab = name;
+  document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+  for (const [tab, ids] of Object.entries(TAB_GROUPS)) {
+    const on = tab === name;
+    ids.forEach((id) => { const el = $(id); if (el) el.classList.toggle('tab-inactive', !on); });
+  }
+  const noCache = name === 'attention';
+  if (force || noCache || !tabRendered[name]) { renderTab(name); if (!noCache) tabRendered[name] = true; }
+  // The embedding canvas measures its container once and again on window 'resize'; a tab
+  // switch is neither, so poke it to re-fit now that its box is on screen. Fire next frame
+  // (correct instantly in a real browser) and once more after a beat (some renderers apply
+  // the show/layout lazily, leaving the first measurement at zero).
+  if (name === 'embeddings') {
+    const refit = () => window.dispatchEvent(new Event('resize'));
+    requestAnimationFrame(refit);
+    setTimeout(refit, 90);
+  }
+}
+function renderTab(name) {
+  if (name === 'embeddings' && !$('embedSection').hidden && model && model.embedding) renderEmbedding($('embedSection'), model.embedding);
+  else if (name === 'attention' && gpt && !$('attnRun').disabled) runAttn();
+  else if (name === 'training' && !$('curvesSection').hidden && model && Array.isArray(model.training)) renderCurves($('curvesSection'), model.training);
+}
+
 async function boot() {
   // One-time wiring — these handlers read the current `model`/`gpt`, which loadTier
   // swaps when you change tiers, so they never need re-binding.
+  document.querySelectorAll('.tab').forEach((b) => { b.onclick = () => { if (!b.disabled) activateTab(b.dataset.tab, false); }; });
   $('viewTrained').onclick = () => setView('trained');
   $('viewRandom').onclick = () => setView('random');
   $('viewDiff').onclick = () => setView('diff');
@@ -687,14 +763,15 @@ async function loadTier(dir) {
 
   setView('trained');   // (re)draws the knob flow for this model
 
-  if (hasValues && model.embedding && Array.isArray(model.embedding.points)) {
-    $('embedSection').hidden = false; renderEmbedding($('embedSection'), model.embedding);
-  } else { $('embedSection').hidden = true; }
+  // Flag which sections have data (this drives tab availability). The heavy, size-sensitive
+  // renders are deferred to activateTab — a canvas measured while its tab is display:none
+  // locks at 1px, so each view draws only once it's actually on screen.
+  $('embedSection').hidden = !(hasValues && model.embedding && Array.isArray(model.embedding.points));
 
   gpt = null;
   if (hasValues && model.weights) {
     $('attnSection').hidden = false; $('genSection').hidden = false; $('attnRun').disabled = false;
-    try { gpt = await ScratchGPT.load(dir); await runAttn(); }
+    try { gpt = await ScratchGPT.load(dir); }
     catch (e) { $('attnStatus').textContent = 'attention unavailable: ' + e.message; $('attnRun').disabled = true; $('genSection').hidden = true; }
   } else if (hasValues) {
     $('attnSection').hidden = false; $('genSection').hidden = true;
@@ -702,9 +779,13 @@ async function loadTier(dir) {
     $('attnRun').disabled = true;
   } else { $('attnSection').hidden = true; $('genSection').hidden = true; }
 
-  if (hasValues && Array.isArray(model.training) && model.training.length) {
-    $('curvesSection').hidden = false; renderCurves($('curvesSection'), model.training);
-  } else { $('curvesSection').hidden = true; }
+  $('curvesSection').hidden = !(hasValues && Array.isArray(model.training) && model.training.length);
+
+  // New model in place: drop the per-tab render cache, refresh which tabs are live, and
+  // (re)draw whichever tab is currently showing so a tier-switch updates it in place.
+  tabRendered = {};
+  refreshTabs();
+  activateTab(currentTab, true);
 
   // Source & training data now open in the GitHub-style viewer page; here we just
   // reveal the buttons and label them with a count.
