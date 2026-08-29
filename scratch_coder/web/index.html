@@ -162,6 +162,7 @@
   .genrand label { color:var(--dim); font-size:12.5px; }
   #genTemp { width:110px; accent-color:#5a96f0; cursor:pointer; }
   .genrand-v { color:var(--ink); font-size:12.5px; font-weight:600; min-width:74px; }
+  .genrand-t { color:var(--dimmer); font:11.5px var(--mono); }
   /* Dashboard .act / .ghost buttons. */
   .composer-actions .act { display:inline-flex; align-items:center; gap:7px; background:var(--panel2);
     color:var(--ink); border:1px solid var(--edge2); border-radius:6px; padding:5px 11px; font:inherit;
@@ -485,6 +486,7 @@
           <label for="genTemp">Randomness</label>
           <input type="range" id="genTemp" min="0" max="6" step="1" value="3" aria-label="Randomness" />
           <span class="genrand-v" id="genTempV">Balanced</span>
+          <span class="genrand-t" id="genTempN">temp 0.8</span>
         </div>
         <span class="composer-actions">
           <button id="genStop" class="ghost" disabled>Stop</button>
@@ -730,7 +732,9 @@ async function boot() {
   // Randomness slider: relabel live, and re-preview the next-character odds as it moves.
   let previewT;
   const schedulePreview = () => { clearTimeout(previewT); previewT = setTimeout(previewOdds, 180); };
-  $('genTemp').addEventListener('input', () => { $('genTempV').textContent = tempLabel(); schedulePreview(); });
+  const updateRand = () => { $('genTempV').textContent = tempLabel(); $('genTempN').textContent = 'temp ' + curTemp().toFixed(1); };
+  updateRand();
+  $('genTemp').addEventListener('input', () => { updateRand(); schedulePreview(); });
   $('genPrompt').addEventListener('input', schedulePreview);
 
   // Fork panel — the browser can't train, so this generates the fork_tier.py command.
