@@ -301,8 +301,22 @@
   .curves-wrap { display:flex; flex-wrap:wrap; gap:26px; align-items:flex-start; margin-top:6px; }
   .curvebox h3 { font:12px var(--mono); color:var(--dim); text-transform:uppercase;
     letter-spacing:.06em; margin:0 0 6px; font-weight:600; }
+  .curvebox h3 .curve-sub { text-transform:none; letter-spacing:0; color:var(--dimmer); font-weight:400; }
   #lossCurve, #gradCurve { width:460px; max-width:100%; height:auto;
     background:var(--panel); border:1px solid var(--edge); border-radius:10px; }
+  /* Plain-English training story: the loss numbers turned into "chance it guesses right". */
+  .trainstory { display:flex; flex-wrap:wrap; align-items:center; gap:14px 26px; margin:2px 0 20px; }
+  .ts-stat { display:flex; align-items:baseline; gap:12px; }
+  .ts-from, .ts-to { font:600 30px var(--mono); }
+  .ts-from { color:var(--dim); }
+  .ts-to { color:var(--ok); }
+  .ts-arrow { color:var(--dimmer); font-size:20px; }
+  .ts-cap { color:var(--dim); font-size:13px; line-height:1.5; max-width:34ch; }
+  .ts-say { color:var(--dim); font-size:13px; line-height:1.6; margin:0; max-width:74ch; flex-basis:100%; }
+  .ts-say b { color:var(--ink); }
+  .curvebox-lead { max-width:460px; }
+  .curve-axhint { display:flex; justify-content:space-between; margin-top:5px; padding:0 4px;
+    color:var(--dimmer); font-size:11px; }
   #gradLegend { display:flex; flex-wrap:wrap; gap:12px; margin-top:8px; font:11.5px var(--mono); color:var(--dim); }
   .gradchip { display:inline-flex; align-items:center; gap:6px; }
   .gradchip i { width:12px; height:3px; border-radius:2px; display:inline-block; }
@@ -509,13 +523,19 @@
   </section>
 
   <section id="curvesSection" hidden>
-    <h1 style="font-size:18px; margin:36px 0 4px">Training curves</h1>
-    <p class="lead">Validation loss and per-layer gradient norms, as the trainer logged them.</p>
-    <div class="curves-wrap">
-      <div class="curvebox"><h3>Validation loss</h3><svg id="lossCurve" role="img" aria-label="validation loss over training"></svg></div>
-      <div class="curvebox"><h3>Gradient norm per layer</h3><svg id="gradCurve" role="img" aria-label="per-layer gradient norms over training"></svg><div id="gradLegend"></div></div>
+    <h1 style="font-size:18px; margin:36px 0 4px">Training</h1>
+    <p class="lead">How the model got good at guessing the next character — each point is a checkpoint as training ran.</p>
+    <div class="trainstory" id="trainStory"></div>
+    <div class="curvebox curvebox-lead">
+      <h3>How wrong its guesses were <span class="curve-sub">— loss, lower is better</span></h3>
+      <svg id="lossCurve" role="img" aria-label="validation loss over training"></svg>
+      <div class="curve-axhint"><span>start of training</span><span>end</span></div>
     </div>
-    <p id="curvesNote"></p>
+    <details class="attn-adv" id="gradAdv">
+      <summary>Advanced · per-layer gradient norms</summary>
+      <div class="curvebox"><h3>Gradient norm per layer</h3><svg id="gradCurve" role="img" aria-label="per-layer gradient norms over training"></svg><div id="gradLegend"></div></div>
+      <p id="curvesNote"></p>
+    </details>
   </section>
 
 

@@ -30,17 +30,35 @@ function axisLabels(svg, sc, W, H, pad, fmt) {
   svg.append(top, bot);
 }
 
+// Char-level loss is cross-entropy in nats, so exp(−loss) is the average probability the model
+// puts on the *correct* next character — a number anyone can read. Turn the raw drop into that.
+function pct(p) { return p < 0.1 ? (p * 100).toFixed(1).replace(/\.0$/, '') + '%' : Math.round(p * 100) + '%'; }
+function tellStory(story, rows) {
+  if (!story) return;
+  const first = rows[0].val_loss, last = rows[rows.length - 1].val_loss;
+  const pFrom = Math.exp(-first), pTo = Math.exp(-last);
+  story.innerHTML =
+    `<div class="ts-stat"><span class="ts-from">${pct(pFrom)}</span>`
+    + `<span class="ts-arrow">→</span><span class="ts-to">${pct(pTo)}</span></div>`
+    + `<div class="ts-cap">average chance it puts on the <b>correct</b> next character — from near-blind guessing to a real signal</div>`
+    + `<p class="ts-say">Each point on the chart is a checkpoint during training. Its <b>loss</b> — how surprised it was by the true next character — fell from <b>${first.toFixed(2)}</b> to <b>${last.toFixed(2)}</b>, which is the model going from random noise to genuinely Python-shaped guesses.</p>`;
+}
+
 export function renderCurves(root, training) {
   const lossSvg = root.querySelector('#lossCurve');
   const gradSvg = root.querySelector('#gradCurve');
   const legend = root.querySelector('#gradLegend');
   const note = root.querySelector('#curvesNote');
+  const story = root.querySelector('#trainStory');
 
   const rows = (training || []).filter((r) => finiteNum(r.val_loss) != null);
   if (rows.length < 2) {
+    if (story) story.innerHTML = '';
     note.textContent = 'Not enough logged points yet — run train.py (or train_forever.py), then re-export.';
     return;
   }
+
+  tellStory(story, rows);
 
   const W = 460, H = 190, pad = 30;
 
@@ -65,7 +83,7 @@ export function renderCurves(root, training) {
       chip.innerHTML = `<i style="background:hsl(${hue} 62% 62%)"></i>L${l} ${last[l].toExponential(1)}`;
       legend.appendChild(chip);
     }
-    note.textContent = 'The four layers sit within an order of magnitude of each other — a mild, non-monotonic spread, not the textbook vanishing-gradient picture. Four layers is not deep enough to vanish.';
+    note.textContent = `A gradient norm is how hard each layer was being nudged at that step. The ${nL} layers sit within an order of magnitude of each other — a mild, non-monotonic spread, not the textbook vanishing-gradient picture. This model isn't deep enough for gradients to vanish.`;
   } else {
     note.textContent = 'Loss is logged; gradient norms need a run that logged them (train.py does now).';
   }
