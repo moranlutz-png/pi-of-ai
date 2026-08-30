@@ -67,7 +67,8 @@ export function renderKnobs(root, model, view = 'trained', trace = null) {
         const st = hasValues ? cellStat(t.name, view, trained, random) : { v: null, label: 'export a checkpoint to see values' };
         const px = size(t.params);
         const lit = (st.v != null && maxStat > 0) ? 22 + 46 * (st.v / maxStat) : 15;
-        return `<span class="knob" title="${esc(t.name)}\n${t.shape.join(' × ')} · ${t.params.toLocaleString()} params\n${esc(t.role || '')}\n${st.label}"`
+        return `<span class="knob" data-tn="${esc(t.name)}" data-shape="${t.shape.join(',')}" data-role="${esc(t.role || '')}" data-hue="${hue}"`
+          + ` title="${esc(t.name)}\n${t.shape.join(' × ')} · ${t.params.toLocaleString()} params\n${esc(t.role || '')}\n${st.label}\n(click to see it)"`
           + ` style="width:${px}px;height:${px}px;background:hsl(${hue} 45% ${lit}%);border-color:hsl(${hue} 45% ${Math.min(lit + 18, 82)}%)"></span>`;
       }).join('');
       const share = arch.total_params ? `${(100 * group.params / arch.total_params).toFixed(1)}%` : '';

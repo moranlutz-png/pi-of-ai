@@ -86,8 +86,27 @@
   .kglabel { font:11px var(--mono); color:var(--dim); text-transform:uppercase; letter-spacing:.06em; }
   .kgshare { color:var(--dimmer); }
   .kcells { display:flex; flex-wrap:wrap; gap:5px; align-items:center; max-width:236px; }
-  .knob { border:1px solid; border-radius:5px; cursor:help; transition:transform .1s; }
-  .knob:hover { transform:scale(1.09); }
+  .knob { border:1px solid; border-radius:5px; cursor:pointer; transition:transform .1s; }
+  .knob:hover { transform:scale(1.14); filter:brightness(1.2); }
+  /* Tensor popup: click a weight square to see its actual values as a heatmap. */
+  .tpop { position:fixed; inset:0; z-index:200; display:flex; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.55); backdrop-filter:blur(3px); }
+  .tpop[hidden] { display:none; }
+  .tpop-card { background:rgba(40,40,42,.96); border:1px solid var(--edge2); border-radius:14px;
+    padding:16px 18px; max-width:min(92vw,520px); max-height:90vh; overflow:auto;
+    box-shadow:0 24px 60px rgba(0,0,0,.6); text-align:center; }
+  .tpop-head, .tpop-meta, .tpop-legend { text-align:left; }
+  .tpop-head { display:flex; align-items:baseline; gap:10px; margin-bottom:4px; }
+  .tpop-head b { font:13px var(--mono); color:var(--ink); word-break:break-all; }
+  .tpop-role { color:var(--dim); font-size:12px; flex:1; }
+  .tpop-x { background:transparent; border:0; color:var(--dim); font-size:16px; cursor:pointer; line-height:1; padding:2px 4px; }
+  .tpop-x:hover { color:var(--ink); }
+  .tpop-canvas { display:inline-block; margin:10px auto 8px;
+    image-rendering:pixelated; border-radius:8px; border:1px solid var(--edge); background:var(--bg); }
+  .tpop-meta { font:11px var(--mono); color:var(--dim); line-height:1.7; }
+  .tpop-legend { display:flex; align-items:center; gap:8px; margin-top:10px; font-size:11px; color:var(--dimmer); }
+  .tpl-grad { flex:1; height:9px; border-radius:3px;
+    background:linear-gradient(to right, #4aa0ff, #2b2b30, #ffab48); }
   .knob.buffer { background:repeating-linear-gradient(45deg,#2a2a2e,#2a2a2e 4px,#232327 4px,#232327 8px) !important;
     border:1px dashed var(--edge2) !important; }
 
@@ -600,6 +619,15 @@
     </details>
   </section>
 
+  <div class="tpop" id="tensorPop" hidden>
+    <div class="tpop-card">
+      <div class="tpop-head"><b id="tpopName"></b><span class="tpop-role" id="tpopRole"></span><button class="tpop-x" id="tpopClose" aria-label="Close">✕</button></div>
+      <canvas id="tpopCanvas" class="tpop-canvas"></canvas>
+      <div class="tpop-meta" id="tpopMeta"></div>
+      <div class="tpop-legend"><span>− negative</span><span class="tpl-grad"></span><span>positive +</span></div>
+    </div>
+  </div>
+
 
 <script type="module">
 import { parseInspect, parseArch } from './inspect.js';
@@ -651,6 +679,54 @@ function computeTrace() {
   } catch (_) { return null; }
 }
 function drawFlow() { renderKnobs($('knobs'), model, curView, computeTrace()); }
+
+// Click a weight square to see the tensor itself: its values drawn as a heatmap (blue = negative,
+// orange = positive, brightness = size), plus its shape and simple stats.
+function drawTensorHeatmap(canvas, data, rows, cols) {
+  const cw = Math.min(cols, 320), ch = Math.min(rows, 220);
+  canvas.width = cw; canvas.height = ch;
+  const ctx = canvas.getContext('2d'), img = ctx.createImageData(cw, ch);
+  let mx = 1e-9; for (let i = 0; i < data.length; i++) { const a = Math.abs(data[i]); if (a > mx) mx = a; }
+  for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
+    const r = Math.floor(y * rows / ch), c = Math.floor(x * cols / cw);
+    const t = Math.max(-1, Math.min(1, (data[r * cols + c] || 0) / mx));
+    let R, G, B;
+    if (t >= 0) { R = Math.round(43 + 212 * t); G = Math.round(43 + 128 * t); B = Math.round(48 + 24 * t); }
+    else { const a = -t; R = Math.round(43 + 31 * a); G = Math.round(43 + 117 * a); B = Math.round(48 + 207 * a); }
+    const idx = (y * cw + x) * 4; img.data[idx] = R; img.data[idx + 1] = G; img.data[idx + 2] = B; img.data[idx + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+function openTensorPopup(name, shapeStr, role) {
+  const dims = (shapeStr || '').split(',').map(Number).filter((n) => n > 0);
+  $('tpopName').textContent = name;
+  $('tpopRole').textContent = role || '';
+  const data = gpt && gpt.W && gpt.W[name];
+  const canvas = $('tpopCanvas');
+  if (!data) {
+    canvas.style.display = 'none';
+    $('tpopMeta').innerHTML = `shape <b>${dims.join(' × ') || '?'}</b> — load a tier with exported weights to see the values.`;
+  } else {
+    canvas.style.display = 'block';
+    // 2D weight -> [out, in]; 1D bias/norm -> reshape to a near-square block so it's visible.
+    let rows, cols;
+    if (dims.length >= 2) { rows = dims[0]; cols = dims.slice(1).reduce((a, b) => a * b, 1); }
+    else { cols = Math.ceil(Math.sqrt(data.length)); rows = Math.ceil(data.length / cols); }
+    drawTensorHeatmap(canvas, data, rows, cols);
+    // Scale the display to the tensor's real aspect ratio, bounded so it never overflows.
+    const maxW = 440, maxH = 320; let dw = maxW, dh = maxW * rows / cols;
+    if (dh > maxH) { dh = maxH; dw = maxH * cols / rows; }
+    canvas.style.width = Math.max(60, Math.round(dw)) + 'px'; canvas.style.height = Math.max(40, Math.round(dh)) + 'px';
+    let mn = Infinity, mxv = -Infinity, sum = 0; for (let i = 0; i < data.length; i++) { const v = data[i]; if (v < mn) mn = v; if (v > mxv) mxv = v; sum += v; }
+    const mean = sum / data.length;
+    let sq = 0; for (let i = 0; i < data.length; i++) { const d = data[i] - mean; sq += d * d; }
+    const std = Math.sqrt(sq / data.length);
+    $('tpopMeta').innerHTML = `<b>${data.length.toLocaleString()}</b> numbers, shaped <b>${dims.join(' × ') || rows + ' × ' + cols}</b>`
+      + ` &nbsp;·&nbsp; min ${mn.toFixed(3)} · max ${mxv.toFixed(3)} · mean ${mean.toFixed(3)} · std ${std.toFixed(3)}`
+      + `<br><span style="color:var(--dimmer)">Each pixel is one weight. This is a real matrix inside the model — the numbers your text is multiplied by.</span>`;
+  }
+  $('tensorPop').hidden = false;
+}
 
 // Build the fork_tier.py command for the loaded tier + chosen mode, lightly highlighted.
 function renderForkCmd() {
@@ -786,6 +862,14 @@ async function boot() {
     drawFlow();
     const ap = $('attnPrompt'); if (ap) ap.value = $('flowInput').value;
   });
+  // Click a weight square in the flow to open its tensor heatmap.
+  $('knobs').addEventListener('click', (e) => {
+    const k = e.target.closest('.knob'); if (!k || !k.dataset.tn) return;
+    openTensorPopup(k.dataset.tn, k.dataset.shape, k.dataset.role);
+  });
+  $('tpopClose').onclick = () => { $('tensorPop').hidden = true; };
+  $('tensorPop').addEventListener('click', (e) => { if (e.target.id === 'tensorPop') $('tensorPop').hidden = true; });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('tensorPop').hidden = true; });
   $('attnRun').onclick = runAttn;
   $('attnPrompt').addEventListener('keydown', (e) => { if (e.key === 'Enter') runAttn(); });
   $('genRun').onclick = runGen;
