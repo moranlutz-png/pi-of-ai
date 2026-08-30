@@ -108,7 +108,20 @@
   .st-toks { display:flex; flex-wrap:wrap; gap:3px; }
   .tok { font:12px var(--mono); background:rgba(255,255,255,.06); border:1px solid var(--edge);
     border-radius:4px; padding:1px 5px; color:var(--ink); }
-  .tok.pred { border-style:dashed; color:var(--dim); }
+  .tok.pred { border-style:solid; color:var(--ink); }
+  /* Embedding station: the traced character becoming its real vector of numbers. */
+  .emb-demo { display:flex; align-items:center; gap:6px; margin-top:6px; }
+  .emb-arrow { color:var(--dimmer); font-size:12px; }
+  .emb-strip { display:flex; gap:1px; height:18px; flex:1; border-radius:2px; overflow:hidden; }
+  .emb-cell { flex:1; min-width:2px; }
+  /* Next-char station: the model's real top predictions for the traced text. */
+  .pred-list { display:flex; flex-direction:column; gap:5px; margin-top:6px; }
+  .pred-row { display:flex; align-items:center; gap:6px; }
+  .pred-row .tok.pred { padding:1px 6px; }
+  .pred-row.top .tok.pred { background:rgba(255,207,107,.2); border-color:#ffcf6b; color:#fff; }
+  .pred-bar { flex:1; height:9px; background:rgba(255,255,255,.06); border-radius:3px; overflow:hidden; }
+  .pred-fill { display:block; height:100%; background:hsl(38 72% 56%); border-radius:3px; }
+  .pred-p { font:9.5px var(--mono); color:var(--dim); min-width:26px; text-align:right; }
   .flow-arrow { flex:0 0 auto; align-self:center; color:var(--dimmer); padding:0 7px; font-size:15px; }
   .buffer-note { margin-top:12px; color:var(--dim); font-size:12px; }
   .legend { margin-top:26px; color:var(--dim); font-size:12.5px; max-width:78ch; line-height:1.65; }
@@ -616,8 +629,25 @@ function setView(v) {
   $('viewhint').textContent = hasValues
     ? HINTS[v]
     : 'No checkpoint exported — showing structure only. Values light up after an export.';
-  renderKnobs($('knobs'), model, v);
+  drawFlow();
 }
+
+// Trace real data for the flow diagram: the last character's actual embedding vector and the
+// model's real next-character prediction for the text in the flow box. Lets the flow show live
+// data end-to-end (not just static weights), and both react to weight surgery.
+function computeTrace() {
+  const text = ($('flowInput')?.value) || 'def ';
+  if (!gpt || !text) return null;
+  try {
+    const C = gpt.cfg.n_embd, te = gpt.W['tok_emb.weight'];
+    const ids = gpt.encode(text);
+    const lastId = ids[ids.length - 1];
+    const embVec = Array.from(te.subarray(lastId * C, lastId * C + C));
+    const { logits } = gpt.primeCache(ids.slice(-gpt.cfg.block_size));
+    return { lastChar: gpt.vocab[lastId], embVec, top: gpt.topProbs(logits, 0.8, 5) };
+  } catch (_) { return null; }
+}
+function drawFlow() { renderKnobs($('knobs'), model, curView, computeTrace()); }
 
 // Build the fork_tier.py command for the loaded tier + chosen mode, lightly highlighted.
 function renderForkCmd() {
@@ -664,7 +694,7 @@ function afterSurgery(msg) {
   if (gpt && gpt.liveStds && model && model.trained) {
     const live = gpt.liveStds();
     for (const n in live) if (model.trained[n]) model.trained[n].std = live[n];
-    renderKnobs($('knobs'), model, curView);
+    drawFlow();
   }
   // The attention maps read gpt.W directly, so re-running the forward pass shows the
   // change immediately.
@@ -750,7 +780,7 @@ async function boot() {
   $('viewRandom').onclick = () => setView('random');
   $('viewDiff').onclick = () => setView('diff');
   $('flowInput').addEventListener('input', () => {
-    renderKnobs($('knobs'), model, curView);
+    drawFlow();
     const ap = $('attnPrompt'); if (ap) ap.value = $('flowInput').value;
   });
   $('attnRun').onclick = runAttn;
@@ -942,7 +972,7 @@ async function loadTier(dir) {
   gpt = null;
   if (hasValues && model.weights) {
     $('attnSection').hidden = false; $('genSection').hidden = false; $('attnRun').disabled = false;
-    try { gpt = await ScratchGPT.load(dir); }
+    try { gpt = await ScratchGPT.load(dir); drawFlow(); }   // redraw so the flow's live trace lights up
     catch (e) { $('attnStatus').textContent = 'attention unavailable: ' + e.message; $('attnRun').disabled = true; $('genSection').hidden = true; }
   } else if (hasValues) {
     $('attnSection').hidden = false; $('genSection').hidden = true;

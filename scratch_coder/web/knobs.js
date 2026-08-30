@@ -25,7 +25,21 @@ function cellStat(name, view, trained, random) {
   return { v, label: v == null ? 'no value' : `std ${v.toFixed(4)}` };
 }
 
-export function renderKnobs(root, model, view = 'trained') {
+// The last traced character's real embedding, drawn as a strip of numbers: purple = positive,
+// blue = negative, brightness = magnitude. Makes "becomes a list of numbers" something you see.
+function embStrip(vec) {
+  const N = 24, step = vec.length / N;
+  let mx = 1e-6; for (const v of vec) mx = Math.max(mx, Math.abs(v));
+  let cells = '';
+  for (let i = 0; i < N; i++) {
+    const v = vec[Math.floor(i * step)] || 0, a = Math.min(1, Math.abs(v) / mx);
+    const col = v >= 0 ? `rgba(150,130,240,${(0.12 + 0.82 * a).toFixed(2)})` : `rgba(90,160,240,${(0.12 + 0.82 * a).toFixed(2)})`;
+    cells += `<span class="emb-cell" style="background:${col}"></span>`;
+  }
+  return cells;
+}
+
+export function renderKnobs(root, model, view = 'trained', trace = null) {
   const arch = model.arch || model;
   const trained = model.trained || null, random = model.random || null;
   const hasValues = !!(trained && random);
@@ -71,17 +85,25 @@ export function renderKnobs(root, model, view = 'trained') {
   arrow();
 
   for (const g of arch.groups) {
-    let title, blurb;
-    if (g.kind === 'embedding') { title = 'Embedding'; blurb = `Each character becomes a list of ${arch.config.n_embd} numbers, plus where it sits in the text.`; }
+    let title, blurb, extra = '';
+    if (g.kind === 'embedding') { title = 'Embedding'; blurb = `Each character becomes a list of ${arch.config.n_embd} numbers, plus where it sits in the text.`;
+      if (trace && trace.embVec) extra = `<div class="emb-demo"><span class="tok">${esc(glyph(trace.lastChar))}</span><span class="emb-arrow">→</span><span class="emb-strip" title="the real embedding of “${esc(glyph(trace.lastChar))}”">${embStrip(trace.embVec)}</span></div>`; }
     else if (g.kind === 'output') { title = 'Output head'; blurb = 'Turns the final numbers into a score for every possible next character.'; }
     else { const i = g.index, n = arch.config.n_layer; title = `Block ${i}`; blurb = `Look back at earlier characters (attention), then think it over (MLP). Layer ${i + 1} of ${n}.`; }
-    station(title, g.kind, blurb, '', g);
+    station(title, g.kind, blurb, extra, g);
     arrow();
   }
 
-  // Prediction — the model's next-character guess.
-  station('Next char', 'predict', "The model's best guess for the character that comes next.",
-    '<div class="st-toks"><span class="tok pred">?</span></div>');
+  // Prediction — the model's real next-character guess for the traced text.
+  let predExtra = '<div class="st-toks"><span class="tok pred">?</span></div>';
+  if (trace && trace.top && trace.top.length) {
+    const top0 = trace.top[0].p || 1;
+    predExtra = '<div class="pred-list">' + trace.top.slice(0, 4).map((o, i) =>
+      `<div class="pred-row${i === 0 ? ' top' : ''}"><span class="tok pred">${esc(glyph(o.char))}</span>`
+      + `<span class="pred-bar"><span class="pred-fill" style="width:${Math.round((o.p / top0) * 100)}%"></span></span>`
+      + `<span class="pred-p">${Math.round(o.p * 100)}%</span></div>`).join('') + '</div>';
+  }
+  station('Next char', 'predict', 'The model reads all of that and guesses what comes next.', predExtra);
 
   root.appendChild(flow);
 
