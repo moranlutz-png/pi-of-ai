@@ -42,11 +42,11 @@
   .dd-btn .dd-cd { width:11px; opacity:.55; }
   .dd-btn .dd-sz { font:10.5px var(--mono); color:var(--dimmer); }
   /* macOS-style menus: frosted, compact, thin rows with a blue accent on the active row. */
-  .dd-menu, .dd-sub { background:rgba(48,48,50,.68); border:1px solid rgba(255,255,255,.12);
+  .dd-menu, .dd-sub { border:1px solid rgba(255,255,255,.12);
     backdrop-filter:blur(40px) saturate(190%); -webkit-backdrop-filter:blur(40px) saturate(190%);
     box-shadow:0 16px 40px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.1); }
   .dd-menu { position:absolute; top:calc(100% + 6px); left:0; z-index:30; min-width:208px;
-    border-radius:10px; padding:4px; }
+    border-radius:10px; padding:4px; background:rgba(48,48,50,.54); }
   .dd-menu[hidden] { display:none; }
   .dd-head { padding:5px 9px 3px; font-size:9px; letter-spacing:.09em; text-transform:uppercase; color:var(--dimmer); }
   .dd-item { position:relative; display:flex; align-items:center; gap:9px; padding:5px 9px; border-radius:6px;
@@ -61,7 +61,7 @@
   .dd-item .chk { width:13px; text-align:center; color:#6ea8ff; font-size:12px; }
   .dd-item .dd-cae { color:var(--dimmer); font-size:12px; margin-left:1px; }
   /* Flyout submenu of per-tier actions — same frosted sheet, opens right on hover. */
-  .dd-sub { position:absolute; left:100%; top:-5px; min-width:172px; z-index:40; border-radius:9px; padding:4px; display:none; }
+  .dd-sub { position:absolute; left:100%; top:-5px; min-width:172px; z-index:40; border-radius:9px; padding:4px; display:none; background:rgba(48,48,50,.9); }
   .dd-item:hover > .dd-sub, .dd-sub:hover { display:block; }
   .dd-sub .dd-subitem { display:flex; align-items:center; gap:9px; width:100%; box-sizing:border-box;
     text-align:left; background:transparent; border:0; border-radius:6px; padding:6px 10px;
