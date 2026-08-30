@@ -174,14 +174,19 @@
   input[type=range]:focus { outline:none; }
   input[type=range]::-webkit-slider-runnable-track { height:4px; border-radius:3px;
     background:linear-gradient(to right, rgba(255,255,255,.92) var(--fill), rgba(255,255,255,.17) var(--fill)); }
-  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:16px; height:16px;
-    margin-top:-6px; border-radius:50%; background:#fff;
-    box-shadow:0 1px 3px rgba(0,0,0,.5), 0 0 0 .5px rgba(0,0,0,.14); }
+  /* Horizontal-oval knob, hidden until you hover (or drag) the slider. */
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:22px; height:13px;
+    margin-top:-4.5px; border-radius:7px; background:transparent; box-shadow:none;
+    transition:background .12s, box-shadow .12s; }
+  input[type=range]:hover::-webkit-slider-thumb, input[type=range]:active::-webkit-slider-thumb {
+    background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.5), 0 0 0 .5px rgba(0,0,0,.14); }
   input[type=range]:active::-webkit-slider-thumb { background:#eee; }
   input[type=range]::-moz-range-track { height:4px; border-radius:3px; background:rgba(255,255,255,.17); }
   input[type=range]::-moz-range-progress { height:4px; border-radius:3px; background:rgba(255,255,255,.92); }
-  input[type=range]::-moz-range-thumb { width:16px; height:16px; border:0; border-radius:50%; background:#fff;
-    box-shadow:0 1px 3px rgba(0,0,0,.5); }
+  input[type=range]::-moz-range-thumb { width:22px; height:13px; border:0; border-radius:7px; background:transparent;
+    box-shadow:none; transition:background .12s, box-shadow .12s; }
+  input[type=range]:hover::-moz-range-thumb, input[type=range]:active::-moz-range-thumb {
+    background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.5); }
   .genrand-t { color:var(--dimmer); font:11.5px var(--mono); }
   /* Dashboard .act / .ghost buttons. */
   .composer-actions .act { display:inline-flex; align-items:center; gap:7px; background:var(--panel2);
