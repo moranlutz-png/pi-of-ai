@@ -49,7 +49,7 @@ export function renderKnobs(root, model, view = 'trained', trace = null) {
     maxParams = Math.max(maxParams, t.params);
     if (hasValues) { const s = cellStat(t.name, view, trained, random).v; if (s != null) maxStat = Math.max(maxStat, s); }
   }
-  const size = (p) => Math.round(13 + (Math.sqrt(p) / Math.sqrt(maxParams)) * 40);   // 13..53px
+  const size = (p) => Math.round(8 + (Math.sqrt(p) / Math.sqrt(maxParams)) * 18);   // 8..26px — secondary to the data strip
 
   root.innerHTML = '';
   root.dataset.view = view;
@@ -71,7 +71,7 @@ export function renderKnobs(root, model, view = 'trained', trace = null) {
           + ` style="width:${px}px;height:${px}px;background:hsl(${hue} 45% ${lit}%);border-color:hsl(${hue} 45% ${Math.min(lit + 18, 82)}%)"></span>`;
       }).join('');
       const share = arch.total_params ? `${(100 * group.params / arch.total_params).toFixed(1)}%` : '';
-      knobs = `<div class="st-knobs">${cells}</div><div class="st-meta">${group.tensors.length} tensors · ${share}</div>`;
+      knobs = `<div class="st-knobs">${cells}</div><div class="st-meta">weights · ${share} of the model</div>`;
     }
     s.innerHTML = `<div class="st-title">${esc(title)}</div><div class="st-blurb">${esc(blurb)}</div>${extraHtml || ''}${knobs}`;
     flow.appendChild(s);
@@ -89,7 +89,8 @@ export function renderKnobs(root, model, view = 'trained', trace = null) {
     if (g.kind === 'embedding') { title = 'Embedding'; blurb = `Each character becomes a list of ${arch.config.n_embd} numbers, plus where it sits in the text.`;
       if (trace && trace.embVec) extra = `<div class="emb-demo"><span class="tok">${esc(glyph(trace.lastChar))}</span><span class="emb-arrow">→</span><span class="emb-strip" title="the real embedding of “${esc(glyph(trace.lastChar))}”">${embStrip(trace.embVec)}</span></div>`; }
     else if (g.kind === 'output') { title = 'Output head'; blurb = 'Turns the final numbers into a score for every possible next character.'; }
-    else { const i = g.index, n = arch.config.n_layer; title = `Block ${i}`; blurb = `Look back at earlier characters (attention), then think it over (MLP). Layer ${i + 1} of ${n}.`; }
+    else { const i = g.index, n = arch.config.n_layer; title = `Block ${i}`; blurb = `Look back at earlier characters (attention), then think it over (MLP). Layer ${i + 1} of ${n}.`;
+      if (trace && trace.blockVecs && trace.blockVecs[i]) extra = `<div class="emb-demo"><span class="emb-lbl">so far</span><span class="emb-strip" title="the running vector after block ${i}">${embStrip(trace.blockVecs[i])}</span></div>`; }
     station(title, g.kind, blurb, extra, g);
     arrow();
   }

@@ -111,8 +111,10 @@
   .tok.pred { border-style:solid; color:var(--ink); }
   /* Embedding station: the traced character becoming its real vector of numbers. */
   .emb-demo { display:flex; align-items:center; gap:6px; margin-top:6px; }
+  .emb-lbl { font:9px var(--mono); color:var(--dimmer); flex:0 0 auto; }
   .emb-arrow { color:var(--dimmer); font-size:12px; }
-  .emb-strip { display:flex; gap:1px; height:18px; flex:1; border-radius:2px; overflow:hidden; }
+  .emb-strip { display:flex; gap:1px; height:22px; flex:1; border-radius:3px; overflow:hidden;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.09); }
   .emb-cell { flex:1; min-width:2px; }
   /* Next-char station: the model's real top predictions for the traced text. */
   .pred-list { display:flex; flex-direction:column; gap:5px; margin-top:6px; }
@@ -469,7 +471,7 @@
         <div class="banner" id="banner" hidden></div>
         <p class="viewhint" id="viewhint"></p>
         <div id="knobs"></div>
-        <p class="legend">Squares are <b>weight tensors</b> — size = count, brightness = spread.</p>
+        <p class="legend">The <b>strip</b> is your text as numbers, nudged along by each block. The <b>squares</b> are that block's weights — size = how many, brightness = how spread out.</p>
       </div>
       <div class="inspector">
         <div class="insp-head">Model Inspector</div>
@@ -643,8 +645,9 @@ function computeTrace() {
     const ids = gpt.encode(text);
     const lastId = ids[ids.length - 1];
     const embVec = Array.from(te.subarray(lastId * C, lastId * C + C));
-    const { logits } = gpt.primeCache(ids.slice(-gpt.cfg.block_size));
-    return { lastChar: gpt.vocab[lastId], embVec, top: gpt.topProbs(logits, 0.8, 5) };
+    // One forward pass gives both the running vector after each block AND the final logits.
+    const { logits, hidden } = gpt.forward(ids, { collectHidden: true });
+    return { lastChar: gpt.vocab[lastId], embVec, blockVecs: hidden, top: gpt.topProbs(logits, 0.8, 5) };
   } catch (_) { return null; }
 }
 function drawFlow() { renderKnobs($('knobs'), model, curView, computeTrace()); }

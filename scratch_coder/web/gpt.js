@@ -109,7 +109,7 @@ export class ScratchGPT {
   }
 
   // Whole prompt at once. collectAttention -> attn[layer][head][T][T], masked at 0.
-  forward(ids, { collectAttention = false } = {}) {
+  forward(ids, { collectAttention = false, collectHidden = false } = {}) {
     const { n_embd: C, n_head: H, n_layer: L, vocab_size: V } = this.cfg;
     const hd = C / H, T = ids.length, W = this.W, sc = scale(hd);
     const te = W['tok_emb.weight'], pe = W['pos_emb.weight'];
@@ -118,6 +118,7 @@ export class ScratchGPT {
     for (let t = 0; t < T; t++) { const row = new Float32Array(C); for (let i = 0; i < C; i++) row[i] = te[ids[t] * C + i] + pe[t * C + i]; x.push(row); }
 
     const attn = collectAttention ? [] : null;
+    const hidden = collectHidden ? [] : null;   // the last token's vector after each block
     for (let l = 0; l < L; l++) {
       const p = `blocks.${l}.`;
       const q = [], k = [], v = [];
@@ -147,9 +148,10 @@ export class ScratchGPT {
         const m2 = linear(m1, W[p + 'mlp.c_proj.weight'], W[p + 'mlp.c_proj.bias'], 4 * C, C);
         for (let i = 0; i < C; i++) x[t][i] += m2[i];
       }
+      if (collectHidden) hidden.push(Float32Array.from(x[T - 1]));
     }
     const xf = layernorm(x[T - 1], W['ln_f.weight'], W['ln_f.bias']);
-    return { logits: linear(xf, W['head.weight'], null, C, V), attn };
+    return { logits: linear(xf, W['head.weight'], null, C, V), attn, hidden };
   }
 
   // --- KV-cache generation: the optimisation real runtimes use ---------------
