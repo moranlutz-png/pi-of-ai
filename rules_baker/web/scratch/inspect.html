@@ -449,8 +449,11 @@
   .inspector .tierbar { margin:0; }
 
   /* ===== Section tabs: one sticky bar so all five views are visible and reachable ===== */
-  .tabbar { position:sticky; top:0; z-index:30; display:flex; align-items:center; gap:16px;
-    margin:-26px -30px 22px; padding:13px 30px; background:var(--bg); }
+  .tabbar { position:sticky; top:0; z-index:30; display:flex; align-items:center; gap:12px 16px;
+    flex-wrap:wrap; margin:-26px -30px 22px; padding:13px 30px; background:var(--bg); }
+  /* When the view is narrow (e.g. a terminal/editor is open beside it) the tab pill drops to a
+     full second row beneath the brand + model dropdown, rather than cramming onto one line. */
+  @media (max-width:820px) { .tabbar .tabs { margin-left:0; flex-basis:100%; justify-content:flex-start; } }
   .tabbar-brand { display:flex; align-items:center; gap:9px; font:13px var(--mono); font-weight:600;
     color:var(--ink); white-space:nowrap; }
   .tabbar-brand svg { width:15px; height:15px; }
