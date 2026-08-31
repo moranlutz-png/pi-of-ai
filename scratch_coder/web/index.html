@@ -109,6 +109,10 @@
   .tpop-legend { display:flex; align-items:center; gap:8px; margin-top:10px; font-size:11px; color:var(--dimmer); }
   .tpl-grad { flex:1; height:9px; border-radius:3px;
     background:linear-gradient(to right, #4aa0ff, #2b2b30, #ffab48); }
+  .tpop-zoomwrap { margin-top:13px; }
+  .tpop-zoomwrap[hidden] { display:none; }
+  .tpop-zoomlbl { font-size:11.5px; color:var(--dim); line-height:1.5; margin-bottom:7px; }
+  .tpop-zoom { display:block; max-width:100%; border-radius:6px; background:var(--bg); }
   .tpop-foot { margin-top:11px; padding-top:9px; border-top:1px solid var(--edge);
     font:10.5px var(--mono); color:var(--dimmer); word-break:break-all; }
   .tpop-foot code { color:var(--dim); }
@@ -631,6 +635,10 @@
       <canvas id="tpopCanvas" class="tpop-canvas"></canvas>
       <div class="tpop-io" id="tpopIo"></div>
       <div class="tpop-legend"><span>pushes the number down</span><span class="tpl-grad"></span><span>pushes it up</span></div>
+      <div class="tpop-zoomwrap" id="tpopZoomWrap" hidden>
+        <div class="tpop-zoomlbl" id="tpopZoomLbl"></div>
+        <canvas id="tpopZoom" class="tpop-zoom"></canvas>
+      </div>
       <div class="tpop-foot" id="tpopFoot"></div>
     </div>
   </div>
@@ -740,6 +748,25 @@ function tensorExplain(name, dims) {
     : { title: name, what: '', io: dims.join(' × ') };
 }
 
+// A zoomed patch from the top corner, drawn as big separated squares so you can see that the
+// heatmap is a grid of individual weights (not a photo). transpose keeps it landscape-consistent.
+function drawTensorZoom(canvas, data, rows, cols, transpose) {
+  const NC = Math.min(transpose ? rows : cols, 18), NR = Math.min(transpose ? cols : rows, 8);
+  const cell = 22, gap = 3;
+  canvas.width = NC * (cell + gap) + gap; canvas.height = NR * (cell + gap) + gap;
+  const ctx = canvas.getContext('2d');
+  let mx = 1e-9; for (let i = 0; i < data.length; i++) { const a = Math.abs(data[i]); if (a > mx) mx = a; }
+  for (let y = 0; y < NR; y++) for (let x = 0; x < NC; x++) {
+    const r = transpose ? x : y, c = transpose ? y : x;
+    const t = Math.max(-1, Math.min(1, (data[r * cols + c] || 0) / mx));
+    let R, G, B;
+    if (t >= 0) { R = 43 + 212 * t; G = 43 + 128 * t; B = 48 + 24 * t; }
+    else { const a = -t; R = 43 + 31 * a; G = 43 + 117 * a; B = 48 + 207 * a; }
+    ctx.fillStyle = `rgb(${R | 0},${G | 0},${B | 0})`;
+    ctx.fillRect(gap + x * (cell + gap), gap + y * (cell + gap), cell, cell);
+  }
+}
+
 function openTensorPopup(name, shapeStr) {
   const dims = (shapeStr || '').split(',').map(Number).filter((n) => n > 0);
   const ex = tensorExplain(name, dims);
@@ -749,6 +776,7 @@ function openTensorPopup(name, shapeStr) {
   const canvas = $('tpopCanvas');
   if (!data) {
     canvas.style.display = 'none';
+    $('tpopZoomWrap').hidden = true;
     $('tpopIo').innerHTML = ex.io + ' <span style="color:var(--dimmer)">— load a tier with exported weights to see the actual numbers.</span>';
     $('tpopFoot').innerHTML = `<code>${esc(name)}</code>`;
   } else {
@@ -766,11 +794,13 @@ function openTensorPopup(name, shapeStr) {
     let sum = 0; for (let i = 0; i < data.length; i++) sum += data[i];
     const mean = sum / data.length; let sq = 0; for (let i = 0; i < data.length; i++) { const d = data[i] - mean; sq += d * d; }
     const std = Math.sqrt(sq / data.length);
-    $('tpopIo').innerHTML = ex.io + (dims.length >= 2
-      ? (tpose ? ' <span style="color:var(--dimmer)">Above: every weight as a pixel — columns are outputs, rows are inputs.</span>'
-               : ' <span style="color:var(--dimmer)">Above: every weight as a pixel — rows are outputs, columns are inputs.</span>')
-      : ' <span style="color:var(--dimmer)">Above: each of these numbers as a pixel.</span>');
-    $('tpopFoot').innerHTML = `<code>${esc(name)}</code> · ${data.length.toLocaleString()} numbers · std ${std.toFixed(3)}`;
+    $('tpopIo').innerHTML = ex.io + ` Every one of the <b>${data.length.toLocaleString()}</b> weights is drawn above as a single pixel`
+      + `<span style="color:var(--dimmer)"> — it looks like static because there's no tidy human pattern, and that's normal. Your numbers get multiplied by every one.</span>`;
+    // Zoomed corner so the individual weights are actually visible as squares.
+    drawTensorZoom($('tpopZoom'), data, rows, cols, tpose);
+    $('tpopZoomLbl').innerHTML = 'The top corner, zoomed in — <b>each square is one weight</b> (orange pushes an output up, blue pushes it down):';
+    $('tpopZoomWrap').hidden = false;
+    $('tpopFoot').innerHTML = `<code>${esc(name)}</code> · shape ${dims.join(' × ')} · std ${std.toFixed(3)}`;
   }
   $('tensorPop').hidden = false;
 }
