@@ -96,17 +96,22 @@
     padding:16px 18px; max-width:min(92vw,520px); max-height:90vh; overflow:auto;
     box-shadow:0 24px 60px rgba(0,0,0,.6); text-align:center; }
   .tpop-head, .tpop-meta, .tpop-legend { text-align:left; }
-  .tpop-head { display:flex; align-items:baseline; gap:10px; margin-bottom:4px; }
-  .tpop-head b { font:13px var(--mono); color:var(--ink); word-break:break-all; }
-  .tpop-role { color:var(--dim); font-size:12px; flex:1; }
+  .tpop-head { display:flex; align-items:baseline; gap:10px; margin-bottom:2px; }
+  .tpop-title { font-size:16px; font-weight:700; color:var(--ink); flex:1; }
   .tpop-x { background:transparent; border:0; color:var(--dim); font-size:16px; cursor:pointer; line-height:1; padding:2px 4px; }
   .tpop-x:hover { color:var(--ink); }
-  .tpop-canvas { display:inline-block; margin:10px auto 8px;
+  .tpop-what { color:var(--dim); font-size:13px; line-height:1.6; margin:2px 0 0; max-width:46ch; }
+  .tpop-what b { color:var(--ink); }
+  .tpop-canvas { display:inline-block; margin:12px auto 8px;
     image-rendering:pixelated; border-radius:8px; border:1px solid var(--edge); background:var(--bg); }
-  .tpop-meta { font:11px var(--mono); color:var(--dim); line-height:1.7; }
+  .tpop-io { font-size:12px; color:var(--dim); line-height:1.55; }
+  .tpop-io b { color:var(--ink); }
   .tpop-legend { display:flex; align-items:center; gap:8px; margin-top:10px; font-size:11px; color:var(--dimmer); }
   .tpl-grad { flex:1; height:9px; border-radius:3px;
     background:linear-gradient(to right, #4aa0ff, #2b2b30, #ffab48); }
+  .tpop-foot { margin-top:11px; padding-top:9px; border-top:1px solid var(--edge);
+    font:10.5px var(--mono); color:var(--dimmer); word-break:break-all; }
+  .tpop-foot code { color:var(--dim); }
   .knob.buffer { background:repeating-linear-gradient(45deg,#2a2a2e,#2a2a2e 4px,#232327 4px,#232327 8px) !important;
     border:1px dashed var(--edge2) !important; }
 
@@ -621,10 +626,12 @@
 
   <div class="tpop" id="tensorPop" hidden>
     <div class="tpop-card">
-      <div class="tpop-head"><b id="tpopName"></b><span class="tpop-role" id="tpopRole"></span><button class="tpop-x" id="tpopClose" aria-label="Close">✕</button></div>
+      <div class="tpop-head"><b class="tpop-title" id="tpopTitle"></b><button class="tpop-x" id="tpopClose" aria-label="Close">✕</button></div>
+      <p class="tpop-what" id="tpopWhat"></p>
       <canvas id="tpopCanvas" class="tpop-canvas"></canvas>
-      <div class="tpop-meta" id="tpopMeta"></div>
-      <div class="tpop-legend"><span>− negative</span><span class="tpl-grad"></span><span>positive +</span></div>
+      <div class="tpop-io" id="tpopIo"></div>
+      <div class="tpop-legend"><span>pushes the number down</span><span class="tpl-grad"></span><span>pushes it up</span></div>
+      <div class="tpop-foot" id="tpopFoot"></div>
     </div>
   </div>
 
@@ -697,33 +704,67 @@ function drawTensorHeatmap(canvas, data, rows, cols) {
   }
   ctx.putImageData(img, 0, 0);
 }
-function openTensorPopup(name, shapeStr, role) {
+// Plain-English explanation of a tensor, keyed by its name (block index woven in). Turns a code
+// name like blocks.0.mlp.c_fc.weight into "Think — widen" and what it actually does.
+function tensorExplain(name, dims) {
+  const bi = (name.match(/^blocks\.(\d+)\./) || [])[1];
+  const key = name.replace(/^blocks\.\d+\./, '');
+  const inN = dims.length >= 2 ? dims[dims.length - 1] : (dims[0] || '?');
+  const outN = dims[0] || '?';
+  const io2d = `Reads <b>${inN}</b> numbers → writes <b>${outN}</b> numbers, for every character.`;
+  const io1d = `<b>${outN}</b> numbers.`;
+  const inB = bi != null ? ` (block ${bi})` : '';
+  const M = {
+    'tok_emb.weight': ['Character dictionary', `A lookup table with one row per character — each row is that character's starting list of <b>${inN}</b> numbers. Turning a character into numbers is just picking its row.`, `${outN} characters × ${inN} numbers each.`],
+    'pos_emb.weight': ['Position markers', `One list of <b>${inN}</b> numbers per slot in the text, added on so the model can tell an early character from a later one.`, `${outN} positions × ${inN} numbers.`],
+    'ln1.weight': [`Steady the numbers${inB}`, `Before looking back, each character's numbers are re-scaled so nothing blows up or fades away.`, io1d],
+    'ln1.bias': [`Steady the numbers${inB}`, `A learned nudge added after re-centring the numbers.`, io1d],
+    'attn.c_attn.weight': [`Attention — the look-back builder${inB}`, `Turns each character's numbers into a "what am I looking for", a "what do I offer", and a "what would I share" — the three things used to look back at earlier characters.`, io2d],
+    'attn.c_attn.bias': [`Attention builder — offset${inB}`, `A learned nudge added to each of the built numbers.`, io1d],
+    'attn.c_proj.weight': [`Attention — blend what it found${inB}`, `After each character gathers information from the ones before it, this mixes that back into its running numbers.`, io2d],
+    'attn.c_proj.bias': [`Attention blend — offset${inB}`, `A learned nudge added after blending.`, io1d],
+    'ln2.weight': [`Steady the numbers${inB}`, `Re-scales the numbers again, this time before the "thinking" step.`, io1d],
+    'ln2.bias': [`Steady the numbers${inB}`, `A learned nudge added after re-centring.`, io1d],
+    'mlp.c_fc.weight': [`Think — widen${inB}`, `Expands each character's numbers to give room to combine features. This is where most of the parameters — and most of the "thinking" — live.`, io2d],
+    'mlp.c_fc.bias': [`Think — widen — offset${inB}`, `A learned nudge added to each widened number.`, io1d],
+    'mlp.c_proj.weight': [`Think — narrow back${inB}`, `Squeezes the widened numbers back down to the running size and adds the result on.`, io2d],
+    'mlp.c_proj.bias': [`Think — narrow back — offset${inB}`, `A learned nudge added after narrowing.`, io1d],
+    'ln_f.weight': ['Final steadying', 'One last re-scale before the model scores the next character.', io1d],
+    'ln_f.bias': ['Final steadying', 'A learned nudge added after the final re-scale.', io1d],
+    'head.weight': ['Next-character scorer', `Scores every possible next character: reads the final <b>${inN}</b> numbers and gives one score to each of the <b>${outN}</b> characters. The highest scores become the guess at the end of the flow.`, `Reads <b>${inN}</b> numbers → one score per character (<b>${outN}</b>).`],
+  };
+  return M[key] ? { title: M[key][0], what: M[key][1], io: M[key][2] }
+    : { title: name, what: '', io: dims.join(' × ') };
+}
+
+function openTensorPopup(name, shapeStr) {
   const dims = (shapeStr || '').split(',').map(Number).filter((n) => n > 0);
-  $('tpopName').textContent = name;
-  $('tpopRole').textContent = role || '';
+  const ex = tensorExplain(name, dims);
+  $('tpopTitle').textContent = ex.title;
+  $('tpopWhat').innerHTML = ex.what;
   const data = gpt && gpt.W && gpt.W[name];
   const canvas = $('tpopCanvas');
   if (!data) {
     canvas.style.display = 'none';
-    $('tpopMeta').innerHTML = `shape <b>${dims.join(' × ') || '?'}</b> — load a tier with exported weights to see the values.`;
+    $('tpopIo').innerHTML = ex.io + ' <span style="color:var(--dimmer)">— load a tier with exported weights to see the actual numbers.</span>';
+    $('tpopFoot').innerHTML = `<code>${esc(name)}</code>`;
   } else {
-    canvas.style.display = 'block';
+    canvas.style.display = 'inline-block';
     // 2D weight -> [out, in]; 1D bias/norm -> reshape to a near-square block so it's visible.
     let rows, cols;
     if (dims.length >= 2) { rows = dims[0]; cols = dims.slice(1).reduce((a, b) => a * b, 1); }
     else { cols = Math.ceil(Math.sqrt(data.length)); rows = Math.ceil(data.length / cols); }
     drawTensorHeatmap(canvas, data, rows, cols);
-    // Scale the display to the tensor's real aspect ratio, bounded so it never overflows.
-    const maxW = 440, maxH = 320; let dw = maxW, dh = maxW * rows / cols;
+    const maxW = 440, maxH = 300; let dw = maxW, dh = maxW * rows / cols;
     if (dh > maxH) { dh = maxH; dw = maxH * cols / rows; }
     canvas.style.width = Math.max(60, Math.round(dw)) + 'px'; canvas.style.height = Math.max(40, Math.round(dh)) + 'px';
-    let mn = Infinity, mxv = -Infinity, sum = 0; for (let i = 0; i < data.length; i++) { const v = data[i]; if (v < mn) mn = v; if (v > mxv) mxv = v; sum += v; }
-    const mean = sum / data.length;
-    let sq = 0; for (let i = 0; i < data.length; i++) { const d = data[i] - mean; sq += d * d; }
+    let sum = 0; for (let i = 0; i < data.length; i++) sum += data[i];
+    const mean = sum / data.length; let sq = 0; for (let i = 0; i < data.length; i++) { const d = data[i] - mean; sq += d * d; }
     const std = Math.sqrt(sq / data.length);
-    $('tpopMeta').innerHTML = `<b>${data.length.toLocaleString()}</b> numbers, shaped <b>${dims.join(' × ') || rows + ' × ' + cols}</b>`
-      + ` &nbsp;·&nbsp; min ${mn.toFixed(3)} · max ${mxv.toFixed(3)} · mean ${mean.toFixed(3)} · std ${std.toFixed(3)}`
-      + `<br><span style="color:var(--dimmer)">Each pixel is one weight. This is a real matrix inside the model — the numbers your text is multiplied by.</span>`;
+    $('tpopIo').innerHTML = ex.io + (dims.length >= 2
+      ? ' <span style="color:var(--dimmer)">Above: every weight as a pixel — rows are outputs, columns are inputs.</span>'
+      : ' <span style="color:var(--dimmer)">Above: each of these numbers as a pixel.</span>');
+    $('tpopFoot').innerHTML = `<code>${esc(name)}</code> · ${data.length.toLocaleString()} numbers · std ${std.toFixed(3)}`;
   }
   $('tensorPop').hidden = false;
 }
