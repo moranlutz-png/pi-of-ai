@@ -689,13 +689,16 @@ function drawFlow() { renderKnobs($('knobs'), model, curView, computeTrace()); }
 
 // Click a weight square to see the tensor itself: its values drawn as a heatmap (blue = negative,
 // orange = positive, brightness = size), plus its shape and simple stats.
-function drawTensorHeatmap(canvas, data, rows, cols) {
-  const cw = Math.min(cols, 320), ch = Math.min(rows, 220);
+function drawTensorHeatmap(canvas, data, rows, cols, transpose = false) {
+  // transpose draws a tall matrix on its side, so the picture is always landscape.
+  const gw = transpose ? rows : cols, gh = transpose ? cols : rows;   // displayed grid dims
+  const cw = Math.min(gw, 360), ch = Math.min(gh, 240);
   canvas.width = cw; canvas.height = ch;
   const ctx = canvas.getContext('2d'), img = ctx.createImageData(cw, ch);
   let mx = 1e-9; for (let i = 0; i < data.length; i++) { const a = Math.abs(data[i]); if (a > mx) mx = a; }
   for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
-    const r = Math.floor(y * rows / ch), c = Math.floor(x * cols / cw);
+    const r = transpose ? Math.floor(x * rows / cw) : Math.floor(y * rows / ch);
+    const c = transpose ? Math.floor(y * cols / ch) : Math.floor(x * cols / cw);
     const t = Math.max(-1, Math.min(1, (data[r * cols + c] || 0) / mx));
     let R, G, B;
     if (t >= 0) { R = Math.round(43 + 212 * t); G = Math.round(43 + 128 * t); B = Math.round(48 + 24 * t); }
@@ -754,15 +757,18 @@ function openTensorPopup(name, shapeStr) {
     let rows, cols;
     if (dims.length >= 2) { rows = dims[0]; cols = dims.slice(1).reduce((a, b) => a * b, 1); }
     else { cols = Math.ceil(Math.sqrt(data.length)); rows = Math.ceil(data.length / cols); }
-    drawTensorHeatmap(canvas, data, rows, cols);
-    const maxW = 440, maxH = 300; let dw = maxW, dh = maxW * rows / cols;
-    if (dh > maxH) { dh = maxH; dw = maxH * cols / rows; }
-    canvas.style.width = Math.max(60, Math.round(dw)) + 'px'; canvas.style.height = Math.max(40, Math.round(dh)) + 'px';
+    const tpose = rows > cols;                    // lay tall matrices on their side (landscape)
+    drawTensorHeatmap(canvas, data, rows, cols, tpose);
+    const vw = tpose ? rows : cols, vh = tpose ? cols : rows;   // displayed aspect
+    const maxW = 460, maxH = 260; let dw = maxW, dh = maxW * vh / vw;
+    if (dh > maxH) { dh = maxH; dw = maxH * vw / vh; }
+    canvas.style.width = Math.max(60, Math.round(dw)) + 'px'; canvas.style.height = Math.max(36, Math.round(dh)) + 'px';
     let sum = 0; for (let i = 0; i < data.length; i++) sum += data[i];
     const mean = sum / data.length; let sq = 0; for (let i = 0; i < data.length; i++) { const d = data[i] - mean; sq += d * d; }
     const std = Math.sqrt(sq / data.length);
     $('tpopIo').innerHTML = ex.io + (dims.length >= 2
-      ? ' <span style="color:var(--dimmer)">Above: every weight as a pixel — rows are outputs, columns are inputs.</span>'
+      ? (tpose ? ' <span style="color:var(--dimmer)">Above: every weight as a pixel — columns are outputs, rows are inputs.</span>'
+               : ' <span style="color:var(--dimmer)">Above: every weight as a pixel — rows are outputs, columns are inputs.</span>')
       : ' <span style="color:var(--dimmer)">Above: each of these numbers as a pixel.</span>');
     $('tpopFoot').innerHTML = `<code>${esc(name)}</code> · ${data.length.toLocaleString()} numbers · std ${std.toFixed(3)}`;
   }
