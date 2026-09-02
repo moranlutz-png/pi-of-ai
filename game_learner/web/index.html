@@ -266,7 +266,8 @@ function stepLive() {
   if (liveG.scored) {
     if (liveG.scored === -1) flashL = 1; else flashR = 1;         // whole side is the goal — flash the edge that was beaten
     trail = [];
-    if (liveG.ai >= WIN || liveG.opp >= WIN) { liveG.ai = 0; liveG.opp = 0; }   // fresh match at 7
+    if (trainMode && training) { liveG.ai = 0; liveG.opp = 0; }                  // while training, restart fresh every point so the screen always shows the current best
+    else if (liveG.ai >= WIN || liveG.opp >= WIN) { liveG.ai = 0; liveG.opp = 0; }   // otherwise, a match to 7
     savedV = { vx: liveG.vx, vy: liveG.vy }; liveG.vx = 0; liveG.vy = 0;         // freeze the (already re-served) ball, then release after the pause
     livePause = PAUSE_FRAMES;
   }
