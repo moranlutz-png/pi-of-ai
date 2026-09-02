@@ -282,9 +282,15 @@ function renderGame() {
   // whole-side goals: brighten the inside of each edge when it was just scored on
   if (flashL > 0.02) { gx.fillStyle = `rgba(120,255,150,${(0.55 * flashL).toFixed(3)})`; gx.fillRect(m, m, 9, Ht - 2 * m); }
   if (flashR > 0.02) { gx.fillStyle = `rgba(255,255,255,${(0.55 * flashR).toFixed(3)})`; gx.fillRect(W - m - 9, m, 9, Ht - 2 * m); }
-  // dashed white court border + centre net (classic Pong)
-  gx.strokeStyle = 'rgba(255,255,255,.92)'; gx.lineWidth = 4; gx.setLineDash([10, 9]);
-  gx.strokeRect(m, m, W - 2 * m, Ht - 2 * m);
+  // top & bottom = WALLS (the ball bounces off these); left & right = GOALS (score here), tinted to each side
+  const seg = (x1, y1, x2, y2, col, lw) => { gx.strokeStyle = col; gx.lineWidth = lw; gx.beginPath(); gx.moveTo(x1, y1); gx.lineTo(x2, y2); gx.stroke(); };
+  gx.setLineDash([10, 9]);
+  seg(m, m, W - m, m, 'rgba(255,255,255,.92)', 4);            // top wall
+  seg(m, Ht - m, W - m, Ht - m, 'rgba(255,255,255,.92)', 4);  // bottom wall
+  gx.setLineDash([9, 7]);
+  seg(m, m, m, Ht - m, 'rgba(120,255,150,.95)', 7);           // left goal — the AI's, green like its paddle
+  seg(W - m, m, W - m, Ht - m, 'rgba(255,255,255,.98)', 7);   // right goal — the opponent's, white like its paddle
+  gx.setLineDash([10, 9]); gx.strokeStyle = 'rgba(255,255,255,.5)'; gx.lineWidth = 4;   // centre net
   gx.beginPath(); gx.moveTo(W / 2, m); gx.lineTo(W / 2, Ht - m); gx.stroke(); gx.setLineDash([]);
   // big blocky scores
   gx.font = '700 56px "Courier New", ui-monospace, monospace'; gx.textAlign = 'center'; gx.textBaseline = 'top';
