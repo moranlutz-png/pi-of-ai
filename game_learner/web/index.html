@@ -173,9 +173,9 @@ const ENGLISH = 0.55, HUMAN_SPEED = 0.05;   // ENGLISH: a moving paddle adds spi
 const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
 const fold = (y) => { y = ((y % 2) + 2) % 2; return y > 1 ? 2 - y : y; };   // reflect a y into 0..1 (wall bounces) — exact arrival prediction, no loop
 function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
-function newG() { return { bx: .5, by: .5, vx: 0, vy: 0, py: .5, oy: .5, ai: 0, opp: 0, steps: 0, track: 0, astep: 0, scored: 0, hits: 0 }; }
+function newG() { return { bx: .5, by: .5, vx: 0, vy: 0, py: .5, oy: .5, ai: 0, opp: 0, steps: 0, track: 0, astep: 0, scored: 0, hits: 0, aim: 0, aimN: 0 }; }
 function serve(g, towardLeft, rnd) { g.bx = .5; g.by = .5; const ang = rnd() * 0.7 - 0.35, sp = 0.02; g.vx = (towardLeft ? -1 : 1) * sp * Math.cos(ang); g.vy = sp * Math.sin(ang); }
-function resetG(g, rnd) { g.py = .5; g.oy = .5; g.ai = 0; g.opp = 0; g.steps = 0; g.track = 0; g.scored = 0; g.hits = 0; g.astep = 0; serve(g, true, rnd); }
+function resetG(g, rnd) { g.py = .5; g.oy = .5; g.ai = 0; g.opp = 0; g.steps = 0; g.track = 0; g.scored = 0; g.hits = 0; g.astep = 0; g.aim = 0; g.aimN = 0; serve(g, true, rnd); }
 function arrivalY(g) { if (g.vx >= 0) return .5; return fold(g.by + g.vy * (g.bx - PADX) / -g.vx); }        // where the ball will reach the AI's side
 function oppArrivalY(g) { if (g.vx <= 0) return .5; return fold(g.by + g.vy * ((1 - PADX) - g.bx) / g.vx); }  // ...and the opponent's side
 function feats(g) { return [(g.by - .5) * 2, (g.bx - .5) * 2, g.vy * 45, g.vx * 45, (g.py - .5) * 2, (g.oy - .5) * 2, (arrivalY(g) - .5) * 2]; }
@@ -197,7 +197,7 @@ function stepG(g, net, rnd, oppNet, humanY) {
   if (g.by < BALLR) { g.by = BALLR; g.vy = -g.vy; } else if (g.by > 1 - BALLR) { g.by = 1 - BALLR; g.vy = -g.vy; }
   g.scored = 0;
   if (g.bx < PADX + BALLR && g.vx < 0) {                          // ball reached the AI's side
-    if (Math.abs(g.by - g.py) <= PADH / 2 + BALLR) { g.vx = -g.vx; g.bx = PADX + BALLR; g.vy += (g.by - g.py) * 0.12 + pdy * ENGLISH; speedup(g); g.hits++; }   // where it hits + how the paddle is moving (english)
+    if (Math.abs(g.by - g.py) <= PADH / 2 + BALLR) { g.vx = -g.vx; g.bx = PADX + BALLR; g.vy += (g.by - g.py) * 0.12 + pdy * ENGLISH; speedup(g); g.hits++; g.aim += Math.min(1, Math.abs(g.oy - oppArrivalY(g)) / 0.5); g.aimN++; }   // hit + english; reward aiming the return away from where the opponent is (offense)
     else { g.opp++; g.scored = -1; serve(g, true, rnd); }         // AI missed -> opponent scores, serve back to the AI
   }
   if (g.bx > 1 - PADX - BALLR && g.vx > 0) {                      // ball reached the opponent's side
@@ -207,9 +207,13 @@ function stepG(g, net, rnd, oppNet, humanY) {
   if (g.vx < 0) { const pa = fold(g.by + g.vy * (g.bx - PADX) / -g.vx); g.track += 1 - Math.min(1, Math.abs(g.py - pa)); g.astep++; }   // rewarded for being where the ball WILL arrive (predicted, with bounces) -> anticipation
   g.steps++;
 }
-function fitness(g) { return (g.ai - g.opp) + 8 * (g.track / Math.max(1, g.astep)); }   // dominated by being at the ball's predicted arrival -> the net must anticipate, not just react
+function fitness(g) {
+  const def = g.track / Math.max(1, g.astep);   // 0..1 — sat at the ball's predicted arrival (anticipation: reach the ball)
+  const off = g.aim / Math.max(1, g.aimN);      // 0..1 — returns aimed away from the opponent (offense: win the point)
+  return (g.ai - g.opp) + 3 * def + 4 * off;    // scoring is the real goal; defence gets you to the ball, offence is an open-ended arms race so self-play never solves out
+}
 function playHeadless(net, seed, oppNet) { const rnd = mulberry32(seed); const g = newG(); resetG(g, rnd); while (g.steps < GAME_STEPS && g.ai < WIN && g.opp < WIN) stepG(g, net, rnd, oppNet); return { fit: fitness(g), margin: g.ai - g.opp }; }
-function benchmarkVsBot(net, seed) { const rnd = mulberry32(seed); const g = newG(); resetG(g, rnd); while (g.steps < GAME_STEPS && g.ai < WIN && g.opp < WIN) stepG(g, net, rnd, null); return g.ai - g.opp; }   // one match vs the fixed bot — a ruler that can't drift
+function benchmarkVsBot(net, seed) { const rnd = mulberry32(seed); const g = newG(); resetG(g, rnd); while (g.steps < BENCH_STEPS) stepG(g, net, rnd, null); return g.ai - g.opp; }   // net points over a FIXED window vs the fixed bot — a ruler that can't drift and isn't capped at 7, so the curve has room to keep climbing
 
 /* ---------- neuroevolution ---------- */
 const POP = 28, ELITE = 5, MUT = 0.22, HOF_EVERY = 4, HOF_MAX = 12, BENCH_STEPS = 1800;
@@ -266,8 +270,7 @@ function stepLive() {
   if (liveG.scored) {
     if (liveG.scored === -1) flashL = 1; else flashR = 1;         // whole side is the goal — flash the edge that was beaten
     trail = [];
-    if (trainMode && training) { liveG.ai = 0; liveG.opp = 0; }                  // while training, restart fresh every point so the screen always shows the current best
-    else if (liveG.ai >= WIN || liveG.opp >= WIN) { liveG.ai = 0; liveG.opp = 0; }   // otherwise, a match to 7
+    if (liveG.ai >= WIN || liveG.opp >= WIN) { liveG.ai = 0; liveG.opp = 0; }    // a match to 7, then start fresh (the live paddle is always the current best brain)
     savedV = { vx: liveG.vx, vy: liveG.vy }; liveG.vx = 0; liveG.vy = 0;         // freeze the (already re-served) ball, then release after the pause
     livePause = PAUSE_FRAMES;
   }
