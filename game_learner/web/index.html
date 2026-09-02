@@ -95,6 +95,7 @@
         <div class="modeseg" id="learnSeg">
           <button class="modebtn active" data-learn="evolve" title="Keep the best of 28 brains and mutate them — simple to watch, but slow (one score per game)">Evolution</button>
           <button class="modebtn" data-learn="gradient" title="One brain learns from every frame (policy gradient) — far fewer games to a rally">Gradient</button>
+          <button class="modebtn" data-learn="wm" title="Learns the ball's physics and plans by imagining the future — a world model">World model</button>
         </div>
         <span class="mode-lbl">Opponent</span>
         <div class="modeseg" id="oppSeg">
@@ -310,8 +311,46 @@ function gradEpisode() {
   games += 1; gen++;                                               // ONE game per learning step — the whole point
   if (selfPlay && gen % 15 === 0) oppNet = cloneNet(net);          // let the self-play opponent keep up
 }
-function trainStep() { if (learnMode === 'gradient') gradEpisode(); else evolve(); }
-function initLearner() { if (learnMode === 'gradient') initGrad(); else initPop(); }
+/* ---------- world model: learns the ball's PHYSICS, then plans by imagining the future ---------- */
+// The policy learners map state -> action. This one is different: it learns the ENVIRONMENT'S
+// DYNAMICS — given the ball's state, predict its NEXT state. It's only ever trained to predict
+// (never told the score). The paddle then PLANS: it rolls this learned model forward to imagine
+// where the ball is heading, and moves there. That imagined path is the purple "dream" on the court.
+const WM_NH = 32, WM_LR = 0.03, WM_HORIZON = 15, WM_DREAM = 26, WM_BATCHES = 8;
+let wm = null, dream = [];
+function randWM() { const n = { w1: new Float32Array(WM_NH * 4), b1: new Float32Array(WM_NH), w2: new Float32Array(4 * WM_NH), b2: new Float32Array(4) }; for (let i = 0; i < n.w1.length; i++) n.w1[i] = gauss() * 0.5; return n; }   // w2 starts at 0 so the residual model begins as "the ball stays put" — a sane prior; learning adds the motion
+const wmNorm = (s) => [(s[0] - .5) * 2, (s[1] - .5) * 2, s[2] * 45, s[3] * 45];
+const wmDenorm = (x) => [x[0] / 2 + .5, x[1] / 2 + .5, x[2] / 45, x[3] / 45];
+function wmFwd(x) { const hid = new Float32Array(WM_NH); for (let j = 0; j < WM_NH; j++) { let s = wm.b1[j]; for (let i = 0; i < 4; i++) s += wm.w1[j * 4 + i] * x[i]; hid[j] = Math.tanh(s); } const out = new Float32Array(4); for (let k = 0; k < 4; k++) { let s = wm.b2[k]; for (let j = 0; j < WM_NH; j++) s += wm.w2[k * WM_NH + j] * hid[j]; out[k] = x[k] + s; } return { hid, out }; }   // residual: predicts the CHANGE, so "carry velocity forward" is near-free and rollouts don't diverge
+function wmNextState(s) { const ns = wmDenorm(wmFwd(wmNorm(s)).out); ns[1] = clamp(ns[1], 0, 1); ns[2] = clamp(ns[2], -MAXBALL * 1.5, MAXBALL * 1.5); ns[3] = clamp(ns[3], -MAXBALL * 1.5, MAXBALL * 1.5); return ns; }
+function ballRule(s) { let [bx, by, vx, vy] = s; bx += vx; by += vy; if (by < BALLR) { by = BALLR; vy = -vy; } else if (by > 1 - BALLR) { by = 1 - BALLR; vy = -vy; } return [bx, by, vx, vy]; }   // the TRUE rule — used only to make observed (before,after) pairs; the model never sees this, only states
+function wmRandState() { const sp = 0.02 + Math.random() * 0.02, ang = Math.random() * 1.2 - 0.6; return [0.2 + Math.random() * 0.7, 0.08 + Math.random() * 0.84, (Math.random() < .5 ? -1 : 1) * sp * Math.cos(ang), sp * Math.sin(ang) * (Math.random() < .5 ? 1 : -1)]; }
+function wmTrainBatch() {
+  const B = 32, gw1 = new Float32Array(wm.w1.length), gb1 = new Float32Array(wm.b1.length), gw2 = new Float32Array(wm.w2.length), gb2 = new Float32Array(wm.b2.length);
+  for (let b = 0; b < B; b++) {
+    const s = wmRandState(), y = wmNorm(ballRule(s)), x = wmNorm(s), { hid, out } = wmFwd(x);   // predict next state, learn from the error (self-supervised)
+    const d = [out[0] - y[0], out[1] - y[1], out[2] - y[2], out[3] - y[3]];
+    for (let k = 0; k < 4; k++) { gb2[k] += d[k]; for (let j = 0; j < WM_NH; j++) gw2[k * WM_NH + j] += d[k] * hid[j]; }
+    for (let j = 0; j < WM_NH; j++) { let dh = 0; for (let k = 0; k < 4; k++) dh += d[k] * wm.w2[k * WM_NH + j]; const dp = dh * (1 - hid[j] * hid[j]); gb1[j] += dp; for (let i = 0; i < 4; i++) gw1[j * 4 + i] += dp * x[i]; }
+  }
+  for (let i = 0; i < wm.w1.length; i++) wm.w1[i] -= WM_LR * gw1[i] / B;
+  for (let i = 0; i < wm.b1.length; i++) wm.b1[i] -= WM_LR * gb1[i] / B;
+  for (let i = 0; i < wm.w2.length; i++) wm.w2[i] -= WM_LR * gw2[i] / B;
+  for (let i = 0; i < wm.b2.length; i++) wm.b2[i] -= WM_LR * gb2[i] / B;
+}
+function wmPlanY(g, N) { let st = [g.bx, g.by, g.vx, g.vy], k = 0; while (k < N && !(st[0] <= PADX + BALLR && st[2] < 0)) { st = wmNextState(st); k++; } return st[1]; }   // short-horizon lookahead, re-planned every frame (accurate where it matters, near the paddle)
+function wmDream(g, steps) { const path = []; let st = [g.bx, g.by, g.vx, g.vy]; for (let k = 0; k < steps; k++) { st = wmNextState(st); path.push([st[0], st[1]]); if (st[0] < PADX || st[0] > 1 - PADX) break; } return path; }
+function wmMove(g) { const ty = g.vx < 0 ? wmPlanY(g, WM_HORIZON) : 0.5; return ty < g.py - 0.02 ? 0 : ty > g.py + 0.02 ? 2 : 1; }
+function benchmarkWM(seed) { const rnd = mulberry32(seed); const g = newG(); resetG(g, rnd); while (g.steps < 1000) stepWorld(g, wmMove(g), rnd, null, null); return g.ai - g.opp; }
+function initWM() { gen = 0; games = 0; margin = 0; bench = 0; history = []; wm = randWM(); liveNet = null; liveActor = null; dream = []; }
+function wmStep() {
+  for (let i = 0; i < WM_BATCHES; i++) wmTrainBatch();
+  const bm = benchmarkWM((Math.random() * 1e9) | 0);
+  margin = bm; history.push(bm); if (history.length > 400) history.shift();
+  games += 1; gen++;
+}
+function trainStep() { if (learnMode === 'wm') wmStep(); else if (learnMode === 'gradient') gradEpisode(); else evolve(); }
+function initLearner() { if (learnMode === 'wm') initWM(); else if (learnMode === 'gradient') initGrad(); else initPop(); }
 
 /* ---------- live champion game (rendered) ---------- */
 const gc = $('game'), gx = gc.getContext('2d');
@@ -325,15 +364,24 @@ let playMode = 'train';                    // 'train' = watch it learn · 'bot' 
 let savedNet = null, humanY = 0.5;         // savedNet: a champion you saved; humanY: your paddle target from the mouse
 function stepLive() {
   const trainMode = playMode === 'train';
+  const wmMode = learnMode === 'wm';
   const aiNet = trainMode ? liveNet : (savedNet || liveNet);      // play modes use the saved champion (frozen)
-  liveActor = aiNet; if (!aiNet) return;
+  liveActor = wmMode ? null : aiNet;
+  if (!wmMode && !aiNet) return;
   if (livePause > 0) {                     // ball held at centre for a beat after a goal
     if (--livePause === 0 && savedV) { liveG.vx = savedV.vx; liveG.vy = savedV.vy; savedV = null; }
     return;
   }
-  const d = decide(aiNet, liveG);
-  lastAct = { a: d.a, hid: d.hid, out: d.out, feats: feats(liveG) };
-  stepG(liveG, aiNet, Math.random, (trainMode && selfPlay) ? oppNet : null, playMode === 'human' ? humanY : null);
+  let a;
+  if (wmMode) {                            // the world-model agent plans by imagining the ball's path
+    a = wm ? wmMove(liveG) : 1;
+    dream = wm ? wmDream(liveG, WM_DREAM) : [];
+    lastAct.a = a;
+  } else {
+    const d = decide(aiNet, liveG); a = d.a;
+    lastAct = { a: d.a, hid: d.hid, out: d.out, feats: feats(liveG) }; dream = [];
+  }
+  stepWorld(liveG, a, Math.random, (!wmMode && trainMode && selfPlay) ? oppNet : null, playMode === 'human' ? humanY : null);
   trail.push([liveG.bx, liveG.by]); if (trail.length > 18) trail.shift();
   if (liveG.scored) {
     if (liveG.scored === -1) flashL = 1; else flashR = 1;         // whole side is the goal — flash the edge that was beaten
@@ -394,6 +442,9 @@ function renderGame() {
     gx.fillStyle = grad; gx.fillRect(-len, -br * 0.72, len + br, br * 1.44);   // tapered streak
     gx.restore();
   }
+  if (learnMode === 'wm' && dream.length) {                                     // the world model's imagined path — purple ghost balls
+    for (let i = 0; i < dream.length; i++) { const t = 1 - i / dream.length, s = br * (0.5 + 0.45 * t); gx.fillStyle = `rgba(190,150,255,${(0.05 + 0.3 * t).toFixed(3)})`; gx.fillRect(X(dream[i][0]) - s, Y(dream[i][1]) - s, s * 2, s * 2); }
+  }
   gx.fillStyle = '#fff'; gx.fillRect(cbx - br, cby - br, br * 2, br * 2);       // solid square head
   // paddles (rectangular)
   gx.fillStyle = '#78ff9a'; gx.fillRect(X(PADX) - pw / 2, Y(liveG.py - PADH / 2), pw, ph);         // AI (left)
@@ -408,6 +459,15 @@ const bc = $('brain'), bx = bc.getContext('2d');
 const IN_LBL = ['ball y', 'ball x', 'ball ↕', 'ball ↔', 'my paddle', 'their paddle', 'will land at'];
 function renderBrain() {
   const W = bc.width, Ht = bc.height; bx.clearRect(0, 0, W, Ht);
+  if (learnMode === 'wm') {                                   // no policy net here — the world model is a dynamics predictor; point to the dream
+    bx.fillStyle = '#8a8f98'; bx.font = '11px ui-monospace, monospace'; bx.textAlign = 'center';
+    bx.fillText("This brain predicts the ball's next move,", W / 2, Ht / 2 - 16);
+    bx.fillText('not the paddle\'s. It rolls that prediction', W / 2, Ht / 2);
+    bx.fillText('forward — the purple ghost trail is its', W / 2, Ht / 2 + 16);
+    bx.fillText('imagined future, and the paddle plans to it.', W / 2, Ht / 2 + 32);
+    $('lampUp').classList.toggle('on', lastAct.a === 0); $('lampStay').classList.toggle('on', lastAct.a === 1); $('lampDown').classList.toggle('on', lastAct.a === 2);
+    return;
+  }
   const colX = [34, W / 2, W - 34];
   const nodeY = (n, k) => (Ht * (k + 1)) / (n + 1);
   const net = liveActor || liveNet; if (!net) return;
@@ -485,14 +545,18 @@ function setTraining(on) {
 $('trainBtn').onclick = () => setTraining(!training);
 $('resetBtn').onclick = () => { initLearner(); liveActor = null; resetG(liveG, Math.random); trail = []; renderCurve(); };
 function updateStatLbl() {
-  $('statLbl').innerHTML = learnMode === 'gradient'
-    ? 'points ahead of the bot each game — the single brain, rising as it learns from every frame'
-    : selfPlay
-      ? 'points ahead of the fixed bot each game — it also trains against its past selves, but is anchored to the bot so it stays sharp instead of drifting'
-      : 'points ahead of the opponent<br>(per game — below the line = losing)';
-  $('methodHint').textContent = learnMode === 'gradient'
-    ? 'Gradient (REINFORCE): one brain learns from every frame — far fewer games to a rally, but you watch a single policy improve, not a population.'
-    : 'Evolution: keep the best of 28 brains each round and mutate them — easy to watch, but slow (just one score of feedback per whole game).';
+  $('statLbl').innerHTML = learnMode === 'wm'
+    ? 'points ahead of the bot each game — it plans with the physics it has learned to predict (watch the purple ghost trail sharpen)'
+    : learnMode === 'gradient'
+      ? 'points ahead of the bot each game — the single brain, rising as it learns from every frame'
+      : selfPlay
+        ? 'points ahead of the fixed bot each game — it also trains against its past selves, but is anchored to the bot so it stays sharp instead of drifting'
+        : 'points ahead of the opponent<br>(per game — below the line = losing)';
+  $('methodHint').textContent = learnMode === 'wm'
+    ? "World model: it learns the ball's PHYSICS, not the score — then plans by imagining where the ball will go (the purple ghost trail). Model-based, not reactive."
+    : learnMode === 'gradient'
+      ? 'Gradient (REINFORCE): one brain learns from every frame — far fewer games to a rally, but you watch a single policy improve, not a population.'
+      : 'Evolution: keep the best of 28 brains each round and mutate them — easy to watch, but slow (just one score of feedback per whole game).';
 }
 function setMode(self) {
   selfPlay = self;
@@ -520,6 +584,7 @@ $('speed').dispatchEvent(new Event('input'));
 function serializeNet(n) { return { v: 1, I, H, O, w1: Array.from(n.w1), b1: Array.from(n.b1), w2: Array.from(n.w2), b2: Array.from(n.b2) }; }
 function deserializeNet(o) { if (!o || o.I !== I || o.H !== H || o.O !== O) return null; return { w1: Float32Array.from(o.w1), b1: Float32Array.from(o.b1), w2: Float32Array.from(o.w2), b2: Float32Array.from(o.b2), fit: 0 }; }
 function saveModel() {
+  if (!liveNet) return;                    // nothing to save in world-model mode (it has no policy net)
   savedNet = cloneNet(liveNet);
   try { localStorage.setItem('game_learner:model', JSON.stringify(serializeNet(savedNet))); } catch (_) {}
   const b = $('saveBtn'); b.textContent = 'Saved ✓'; setTimeout(() => { b.textContent = 'Save AI'; }, 1300);
