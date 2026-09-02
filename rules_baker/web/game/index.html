@@ -91,12 +91,18 @@
       <div class="controls" id="trainControls">
         <button class="btn primary" id="trainBtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg><span id="trainLbl">Train</span></button>
         <button class="btn" id="resetBtn">Reset</button>
+        <span class="mode-lbl">Learns by</span>
+        <div class="modeseg" id="learnSeg">
+          <button class="modebtn active" data-learn="evolve" title="Keep the best of 28 brains and mutate them — simple to watch, but slow (one score per game)">Evolution</button>
+          <button class="modebtn" data-learn="gradient" title="One brain learns from every frame (policy gradient) — far fewer games to a rally">Gradient</button>
+        </div>
         <span class="mode-lbl">Opponent</span>
-        <div class="modeseg">
+        <div class="modeseg" id="oppSeg">
           <button class="modebtn active" data-mode="fixed" title="A simple bot — quick, easy wins, then it plateaus">Fixed bot</button>
           <button class="modebtn" data-mode="self" title="Plays a copy of itself — slower, but keeps improving forever">Self-play</button>
         </div>
         <label class="speed">Speed <input type="range" id="speed" min="0" max="3" step="1" value="1" /> <span class="speedv" id="speedV">normal</span></label>
+        <span class="play-hint" id="methodHint" style="flex-basis:100%"></span>
       </div>
       <div class="controls">
         <button class="btn" id="saveBtn">Save AI</button>
@@ -191,8 +197,8 @@ function speedup(g) { const sp = Math.hypot(g.vx, g.vy) || 1e-6, ns = Math.min(M
 // The opponent, played by a net, sees the board mirrored (it's on the right): ball x and vx flip,
 // its own paddle is oy, and py is "its opponent". up/down mean the same on both sides.
 function oppAction(oppNet, g) { const { out } = fwd(oppNet, [(g.by - .5) * 2, ((1 - g.bx) - .5) * 2, g.vy * 45, -g.vx * 45, (g.oy - .5) * 2, (g.py - .5) * 2, (oppArrivalY(g) - .5) * 2]); return pickAction(out); }
-function stepG(g, net, rnd, oppNet, humanY) {
-  const { a } = decide(net, g);                                   // the AI paddle (left)
+function stepG(g, net, rnd, oppNet, humanY) { stepWorld(g, decide(net, g).a, rnd, oppNet, humanY); }
+function stepWorld(g, a, rnd, oppNet, humanY) {                   // advance the world given the AI's chosen action, so the gradient learner can inject a SAMPLED action
   let pdy = 0; if (a === 0) { g.py -= PADSPEED; pdy = -PADSPEED; } else if (a === 2) { g.py += PADSPEED; pdy = PADSPEED; }
   g.py = clamp(g.py, PADH / 2, 1 - PADH / 2);
   let ody = 0;                                                    // opponent paddle move this step (for its english)
@@ -226,6 +232,7 @@ function benchmarkVsBot(net, seed) { const rnd = mulberry32(seed); const g = new
 const POP = 28, ELITE = 5, MUT = 0.22, HOF_EVERY = 4, HOF_MAX = 12, BENCH_STEPS = 1800;
 let pop = [], gen = 0, games = 0, margin = 0, liveNet = null, history = [];
 let selfPlay = false, oppNet = null, bench = 0, hof = [];   // self-play: opponent is drawn from a hall-of-fame pool; bench = points vs the fixed bot (a stable yardstick)
+let learnMode = 'evolve';   // 'evolve' = keep-the-best-of-28-and-mutate (slow, one score per game) · 'gradient' = policy gradient, learns from every frame (far fewer games)
 function initPop() {
   pop = []; for (let i = 0; i < POP; i++) pop.push(randNet());
   gen = 0; games = 0; margin = 0; bench = 0; hof = []; history = []; liveNet = randNet(); liveActor = null;
@@ -251,6 +258,58 @@ function evolve() {
   while (next.length < POP) next.push(mutate(elite[Math.floor(Math.random() * elite.length)], MUT));
   games += POP + (selfPlay ? 1 : 0); pop = next; gen++;
 }
+
+/* ---------- gradient learner: REINFORCE (policy gradient) ---------- */
+// The SAME tiny net, but it learns from EVERY frame. It samples a move from a softmax over the 3
+// outputs, plays one game, then nudges every weight to make the moves that led to points more
+// likely (and the bad ones less). Because each frame gives a learning signal — not just one score
+// at the end — it needs far fewer games than evolution to reach a rally.
+const GRAD_LR = 1.0, GRAD_GAMMA = 0.99, GRAD_STEPS = 900, GRAD_SHAPE = 0.2, GRAD_ENT = 0.03;
+function softmax3(o) { const m = Math.max(o[0], o[1], o[2]), e0 = Math.exp(o[0] - m), e1 = Math.exp(o[1] - m), e2 = Math.exp(o[2] - m), s = e0 + e1 + e2; return [e0 / s, e1 / s, e2 / s]; }
+function initGrad() {
+  gen = 0; games = 0; margin = 0; bench = 0; hof = []; history = [];
+  liveNet = randNet(); liveActor = null;
+  oppNet = selfPlay ? cloneNet(liveNet) : null;
+}
+function gradEpisode() {
+  const seed = (Math.random() * 1e9) | 0, rnd = mulberry32(seed);
+  const g = newG(); resetG(g, rnd);
+  const net = liveNet, opp = selfPlay ? (oppNet || cloneNet(net)) : null;
+  const xs = [], hids = [], acts = [], probs = [], rews = [];
+  while (g.steps < GRAD_STEPS) {
+    const x = feats(g), { hid, out } = fwd(net, x), p = softmax3(out);
+    const r = rnd(); let a = 0, cum = p[0]; if (r > cum) { a = 1; cum += p[1]; if (r > cum) a = 2; }   // sample the move (exploration lives here)
+    stepWorld(g, a, rnd, opp, null);
+    let rew = 4 * g.scored;                                         // +4 for a point won, -4 for one conceded
+    if (g.vx < 0) { const pa = fold(g.by + g.vy * (g.bx - PADX) / -g.vx); rew += GRAD_SHAPE * (1 - Math.min(1, Math.abs(g.py - pa) / 0.5)); }   // dense nudge toward the ball's landing spot — the fast, per-frame signal evolution never gets
+    xs.push(x); hids.push(hid); acts.push(a); probs.push(p); rews.push(rew);
+  }
+  // discounted returns, then normalise to a zero-mean advantage
+  const n = xs.length, G = new Float32Array(n); let run = 0;
+  for (let t = n - 1; t >= 0; t--) { run = rews[t] + GRAD_GAMMA * run; G[t] = run; }
+  let mean = 0; for (let t = 0; t < n; t++) mean += G[t]; mean /= n;
+  let v = 0; for (let t = 0; t < n; t++) v += (G[t] - mean) * (G[t] - mean); const std = Math.sqrt(v / n) + 1e-6;
+  // accumulate the policy-gradient over the episode, then one ascent step
+  const gw1 = new Float32Array(net.w1.length), gb1 = new Float32Array(net.b1.length), gw2 = new Float32Array(net.w2.length), gb2 = new Float32Array(net.b2.length);
+  for (let t = 0; t < n; t++) {
+    const A = (G[t] - mean) / std, x = xs[t], hid = hids[t], p = probs[t], a = acts[t];
+    const dl = [A * ((a === 0 ? 1 : 0) - p[0]), A * ((a === 1 ? 1 : 0) - p[1]), A * ((a === 2 ? 1 : 0) - p[2])];   // ∇logits of A·logπ(a)
+    const Hent = -(p[0] * Math.log(p[0] + 1e-9) + p[1] * Math.log(p[1] + 1e-9) + p[2] * Math.log(p[2] + 1e-9));
+    for (let k = 0; k < O; k++) dl[k] += GRAD_ENT * (-p[k] * (Math.log(p[k] + 1e-9) + Hent));   // entropy bonus keeps the policy exploring so it can't collapse onto one move and get stuck
+    for (let k = 0; k < O; k++) { gb2[k] += dl[k]; for (let j = 0; j < H; j++) gw2[k * H + j] += dl[k] * hid[j]; }
+    for (let j = 0; j < H; j++) { let dh = 0; for (let k = 0; k < O; k++) dh += dl[k] * net.w2[k * H + j]; const dpre = dh * (1 - hid[j] * hid[j]); gb1[j] += dpre; for (let i = 0; i < I; i++) gw1[j * I + i] += dpre * x[i]; }
+  }
+  for (let i = 0; i < net.w1.length; i++) net.w1[i] += GRAD_LR * gw1[i] / n;   // ASCENT: make good moves more likely
+  for (let i = 0; i < net.b1.length; i++) net.b1[i] += GRAD_LR * gb1[i] / n;
+  for (let i = 0; i < net.w2.length; i++) net.w2[i] += GRAD_LR * gw2[i] / n;
+  for (let i = 0; i < net.b2.length; i++) net.b2[i] += GRAD_LR * gb2[i] / n;
+  const bm = benchmarkVsBot(net, (seed ^ 0x9e3779b9) | 0);         // judge the greedy policy vs the same fixed bot
+  margin = bm; bench = bm; history.push(bm); if (history.length > 400) history.shift();
+  games += 1; gen++;                                               // ONE game per learning step — the whole point
+  if (selfPlay && gen % 15 === 0) oppNet = cloneNet(net);          // let the self-play opponent keep up
+}
+function trainStep() { if (learnMode === 'gradient') gradEpisode(); else evolve(); }
+function initLearner() { if (learnMode === 'gradient') initGrad(); else initPop(); }
 
 /* ---------- live champion game (rendered) ---------- */
 const gc = $('game'), gx = gc.getContext('2d');
@@ -302,7 +361,8 @@ function drawScore(str, cx, topY, cell, color) {
   }
 }
 function renderGame() {
-  const W = gc.width, Ht = gc.height, pw = 11, ph = PADH * Ht, m = 20;   // m = court margin
+  const W = gc.width, Ht = gc.height, pw = 11, m = 20, cw = W - 2 * m, ch = Ht - 2 * m, ph = PADH * ch;   // m = court margin
+  const X = (nx) => m + nx * cw, Y = (ny) => m + ny * ch;   // map the 0..1 play area INTO the dashed court, so the ball bounces on the lines, not the edge of the card
   gx.clearRect(0, 0, W, Ht); gx.fillStyle = BLUE; gx.fillRect(0, 0, W, Ht);
   // whole-side goals: brighten the inside of each edge when it was just scored on
   if (flashL > 0.02) { gx.fillStyle = `rgba(120,255,150,${(0.55 * flashL).toFixed(3)})`; gx.fillRect(m, m, 9, Ht - 2 * m); }
@@ -322,8 +382,8 @@ function renderGame() {
   drawScore('' + liveG.ai, W * 0.40, m + 10, cell, '#c8ffd2');    // AI (green-white)
   drawScore('' + liveG.opp, W * 0.60, m + 10, cell, '#ffffff');   // opponent (white)
   // the ball: a square with a short motion streak behind it (CRT persistence smears it into a slash)
-  const br = BALLR * Ht, cbx = liveG.bx * W, cby = liveG.by * Ht;
-  const sdx = liveG.vx * W, sdy = liveG.vy * Ht, ssp = Math.hypot(sdx, sdy);
+  const br = BALLR * ch, cbx = X(liveG.bx), cby = Y(liveG.by);
+  const sdx = liveG.vx * cw, sdy = liveG.vy * ch, ssp = Math.hypot(sdx, sdy);
   if (ssp > 0.5) {
     const len = br + ssp * 2.6;                                   // ~2-3 frames of travel — a short slash, not a long comet
     gx.save(); gx.translate(cbx, cby); gx.rotate(Math.atan2(sdy, sdx));
@@ -334,8 +394,8 @@ function renderGame() {
   }
   gx.fillStyle = '#fff'; gx.fillRect(cbx - br, cby - br, br * 2, br * 2);       // solid square head
   // paddles (rectangular)
-  gx.fillStyle = '#78ff9a'; gx.fillRect(PADX * W - pw / 2, (liveG.py - PADH / 2) * Ht, pw, ph);         // AI (left)
-  gx.fillStyle = '#ffffff'; gx.fillRect((1 - PADX) * W - pw / 2, (liveG.oy - PADH / 2) * Ht, pw, ph);   // opponent (right)
+  gx.fillStyle = '#78ff9a'; gx.fillRect(X(PADX) - pw / 2, Y(liveG.py - PADH / 2), pw, ph);         // AI (left)
+  gx.fillStyle = '#ffffff'; gx.fillRect(X(1 - PADX) - pw / 2, Y(liveG.oy - PADH / 2), pw, ph);     // opponent (right)
   flashL *= 0.9; flashR *= 0.9;
   $('hudGen').textContent = gen; $('hudGames').textContent = games.toLocaleString();
 }
@@ -404,7 +464,7 @@ function loop() {
   if (playMode === 'train' && training) {
     genAccum += speed;
     const t0 = performance.now();
-    while (genAccum >= 1 && performance.now() - t0 < 11) { evolve(); genAccum--; }
+    while (genAccum >= 1 && performance.now() - t0 < 11) { trainStep(); genAccum--; }
   }
   // live game runs at a steady, watchable pace (1 physics step/frame)
   stepLive();
@@ -422,16 +482,32 @@ function setTraining(on) {
     : '<path d="M8 5v14l11-7z"/>';
 }
 $('trainBtn').onclick = () => setTraining(!training);
-$('resetBtn').onclick = () => { initPop(); liveActor = null; resetG(liveG, Math.random); trail = []; renderCurve(); };
+$('resetBtn').onclick = () => { initLearner(); liveActor = null; resetG(liveG, Math.random); trail = []; renderCurve(); };
+function updateStatLbl() {
+  $('statLbl').innerHTML = learnMode === 'gradient'
+    ? 'points ahead of the bot each game — the single brain, rising as it learns from every frame'
+    : selfPlay
+      ? 'best margin vs the fixed bot so far — it can only go up. Trains against a pool of its past selves, but is judged against the same bot each round'
+      : 'points ahead of the opponent<br>(per game — below the line = losing)';
+  $('methodHint').textContent = learnMode === 'gradient'
+    ? 'Gradient (REINFORCE): one brain learns from every frame — far fewer games to a rally, but you watch a single policy improve, not a population.'
+    : 'Evolution: keep the best of 28 brains each round and mutate them — easy to watch, but slow (just one score of feedback per whole game).';
+}
 function setMode(self) {
   selfPlay = self;
-  document.querySelectorAll('.modebtn').forEach((b) => b.classList.toggle('active', (b.dataset.mode === 'self') === self));
-  $('statLbl').innerHTML = self
-    ? 'best margin vs the fixed bot so far — it can only go up. Trains against a pool of its past selves, but is judged against the same bot each round'
-    : 'points ahead of the opponent<br>(per game — below the line = losing)';
-  initPop(); liveActor = null; resetG(liveG, Math.random); trail = []; renderCurve();   // fresh run for the new mode
+  document.querySelectorAll('#oppSeg .modebtn').forEach((b) => b.classList.toggle('active', (b.dataset.mode === 'self') === self));
+  updateStatLbl();
+  initLearner(); liveActor = null; resetG(liveG, Math.random); trail = []; renderCurve();   // fresh run for the new setup
 }
-document.querySelectorAll('.modebtn').forEach((b) => { b.onclick = () => setMode(b.dataset.mode === 'self'); });
+document.querySelectorAll('#oppSeg .modebtn').forEach((b) => { b.onclick = () => setMode(b.dataset.mode === 'self'); });
+function setLearn(mode) {
+  learnMode = mode;
+  document.querySelectorAll('#learnSeg .modebtn').forEach((b) => b.classList.toggle('active', b.dataset.learn === mode));
+  updateStatLbl();
+  initLearner(); liveActor = null; resetG(liveG, Math.random); trail = []; renderCurve();   // fresh run for the new method
+}
+document.querySelectorAll('#learnSeg .modebtn').forEach((b) => { b.onclick = () => setLearn(b.dataset.learn); });
+updateStatLbl();
 const SPEEDS = [['slow', 0.03], ['normal', 0.08], ['fast', 0.3], ['turbo', 1.4]];
 $('speed').addEventListener('input', () => {
   const el = $('speed'); el.style.setProperty('--fill', ((+el.value) / 3 * 100) + '%');
@@ -463,7 +539,7 @@ function setPlayMode(pm) {
 document.querySelectorAll('.pmbtn').forEach((b) => { b.onclick = () => setPlayMode(b.dataset.pm); });
 gc.addEventListener('mousemove', (e) => { const r = gc.getBoundingClientRect(); humanY = clamp((e.clientY - r.top) / r.height, PADH / 2, 1 - PADH / 2); });
 
-initPop();
+initLearner();
 loop();
 </script>
 </body>
