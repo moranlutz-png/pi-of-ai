@@ -283,6 +283,24 @@ function stepLive() {
   }
 }
 const BLUE = '#2f74d0';
+// classic Atari-Pong score font — each digit a 3x5 grid of solid square blocks
+const DIGITS = {
+  '0': ['111', '101', '101', '101', '111'], '1': ['010', '010', '010', '010', '010'],
+  '2': ['111', '001', '111', '100', '111'], '3': ['111', '001', '111', '001', '111'],
+  '4': ['101', '101', '111', '001', '001'], '5': ['111', '100', '111', '001', '111'],
+  '6': ['111', '100', '111', '101', '111'], '7': ['111', '001', '001', '001', '001'],
+  '8': ['111', '101', '111', '101', '111'], '9': ['111', '101', '111', '001', '111'],
+};
+function drawScore(str, cx, topY, cell, color) {
+  gx.fillStyle = color;
+  const dW = 3 * cell, gap = cell, totalW = str.length * dW + (str.length - 1) * gap;
+  let x0 = cx - totalW / 2;
+  for (const ch of str) {
+    const pat = DIGITS[ch];
+    if (pat) for (let r = 0; r < 5; r++) for (let c = 0; c < 3; c++) if (pat[r][c] === '1') gx.fillRect(x0 + c * cell, topY + r * cell, cell, cell);
+    x0 += dW + gap;
+  }
+}
 function renderGame() {
   const W = gc.width, Ht = gc.height, pw = 11, ph = PADH * Ht, m = 20;   // m = court margin
   gx.clearRect(0, 0, W, Ht); gx.fillStyle = BLUE; gx.fillRect(0, 0, W, Ht);
@@ -299,14 +317,22 @@ function renderGame() {
   seg(W - m, m, W - m, Ht - m, 'rgba(255,255,255,.98)', 7);   // right goal — the opponent's, white like its paddle
   gx.setLineDash([10, 9]); gx.strokeStyle = 'rgba(255,255,255,.5)'; gx.lineWidth = 4;   // centre net
   gx.beginPath(); gx.moveTo(W / 2, m); gx.lineTo(W / 2, Ht - m); gx.stroke(); gx.setLineDash([]);
-  // big blocky scores
-  gx.font = '700 56px "Courier New", ui-monospace, monospace'; gx.textAlign = 'center'; gx.textBaseline = 'top';
-  gx.fillStyle = '#c8ffd2'; gx.fillText(liveG.ai, W * 0.40, m + 6);       // AI (green-white)
-  gx.fillStyle = '#ffffff'; gx.fillText(liveG.opp, W * 0.60, m + 6);      // opponent (white)
-  // ball trail + square ball (Atari style)
-  const br = BALLR * Ht;
-  for (let i = 0; i < trail.length; i++) { const t = i / trail.length; gx.fillStyle = `rgba(255,255,255,${(0.06 + 0.3 * t).toFixed(3)})`; const s = (br * 2) * (0.4 + 0.6 * t); gx.fillRect(trail[i][0] * W - s / 2, trail[i][1] * Ht - s / 2, s, s); }
-  gx.fillStyle = '#fff'; gx.fillRect(liveG.bx * W - br, liveG.by * Ht - br, br * 2, br * 2);
+  // big blocky scores — classic Atari-Pong digits built from square blocks
+  const cell = Math.max(6, Math.round(Ht * 0.026));
+  drawScore('' + liveG.ai, W * 0.40, m + 10, cell, '#c8ffd2');    // AI (green-white)
+  drawScore('' + liveG.opp, W * 0.60, m + 10, cell, '#ffffff');   // opponent (white)
+  // the ball: a square with a short motion streak behind it (CRT persistence smears it into a slash)
+  const br = BALLR * Ht, cbx = liveG.bx * W, cby = liveG.by * Ht;
+  const sdx = liveG.vx * W, sdy = liveG.vy * Ht, ssp = Math.hypot(sdx, sdy);
+  if (ssp > 0.5) {
+    const len = br + ssp * 2.6;                                   // ~2-3 frames of travel — a short slash, not a long comet
+    gx.save(); gx.translate(cbx, cby); gx.rotate(Math.atan2(sdy, sdx));
+    const grad = gx.createLinearGradient(-len, 0, br, 0);
+    grad.addColorStop(0, 'rgba(255,255,255,0)'); grad.addColorStop(1, 'rgba(255,255,255,.85)');
+    gx.fillStyle = grad; gx.fillRect(-len, -br * 0.72, len + br, br * 1.44);   // tapered streak
+    gx.restore();
+  }
+  gx.fillStyle = '#fff'; gx.fillRect(cbx - br, cby - br, br * 2, br * 2);       // solid square head
   // paddles (rectangular)
   gx.fillStyle = '#78ff9a'; gx.fillRect(PADX * W - pw / 2, (liveG.py - PADH / 2) * Ht, pw, ph);         // AI (left)
   gx.fillStyle = '#ffffff'; gx.fillRect((1 - PADX) * W - pw / 2, (liveG.oy - PADH / 2) * Ht, pw, ph);   // opponent (right)
