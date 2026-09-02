@@ -305,8 +305,8 @@ function loop() {
     const t0 = performance.now();
     while (genAccum >= 1 && performance.now() - t0 < 11) { evolve(); genAccum--; }
   }
-  // live game runs at a steady, watchable pace (2 physics steps/frame)
-  stepLive(); stepLive();
+  // live game runs at a steady, watchable pace (1 physics step/frame)
+  stepLive();
   renderGame(); renderBrain(); renderCurve();
   raf = requestAnimationFrame(loop);
 }
