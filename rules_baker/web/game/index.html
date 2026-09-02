@@ -316,7 +316,7 @@ function gradEpisode() {
 // DYNAMICS — given the ball's state, predict its NEXT state. It's only ever trained to predict
 // (never told the score). The paddle then PLANS: it rolls this learned model forward to imagine
 // where the ball is heading, and moves there. That imagined path is the purple "dream" on the court.
-const WM_NH = 32, WM_LR = 0.03, WM_HORIZON = 15, WM_DREAM = 26, WM_BATCHES = 8;
+const WM_NH = 32, WM_LR = 0.03, WM_PLAN = 70, WM_DREAM = 26, WM_BATCHES = 8;
 let wm = null, dream = [];
 function randWM() { const n = { w1: new Float32Array(WM_NH * 4), b1: new Float32Array(WM_NH), w2: new Float32Array(4 * WM_NH), b2: new Float32Array(4) }; for (let i = 0; i < n.w1.length; i++) n.w1[i] = gauss() * 0.5; return n; }   // w2 starts at 0 so the residual model begins as "the ball stays put" — a sane prior; learning adds the motion
 const wmNorm = (s) => [(s[0] - .5) * 2, (s[1] - .5) * 2, s[2] * 45, s[3] * 45];
@@ -338,15 +338,18 @@ function wmTrainBatch() {
   for (let i = 0; i < wm.w2.length; i++) wm.w2[i] -= WM_LR * gw2[i] / B;
   for (let i = 0; i < wm.b2.length; i++) wm.b2[i] -= WM_LR * gb2[i] / B;
 }
-function wmPlanY(g, N) { let st = [g.bx, g.by, g.vx, g.vy], k = 0; while (k < N && !(st[0] <= PADX + BALLR && st[2] < 0)) { st = wmNextState(st); k++; } return st[1]; }   // short-horizon lookahead, re-planned every frame (accurate where it matters, near the paddle)
+// plan by predicting the LANDING: roll the model forward until it says the ball reaches the paddle.
+// If it can't predict that (an untrained "frozen" model never gets there), sit centred — no idea yet.
+// So the paddle only plays WELL once the model has actually learned the physics.
+function wmPlanY(g) { let st = [g.bx, g.by, g.vx, g.vy]; for (let k = 0; k < WM_PLAN; k++) { st = wmNextState(st); if (st[0] <= PADX + BALLR) return st[1]; } return 0.5; }
 function wmDream(g, steps) { const path = []; let st = [g.bx, g.by, g.vx, g.vy]; for (let k = 0; k < steps; k++) { st = wmNextState(st); path.push([st[0], st[1]]); if (st[0] < PADX || st[0] > 1 - PADX) break; } return path; }
-function wmMove(g) { const ty = g.vx < 0 ? wmPlanY(g, WM_HORIZON) : 0.5; return ty < g.py - 0.02 ? 0 : ty > g.py + 0.02 ? 2 : 1; }
-function benchmarkWM(seed) { const rnd = mulberry32(seed); const g = newG(); resetG(g, rnd); while (g.steps < 1000) stepWorld(g, wmMove(g), rnd, null, null); return g.ai - g.opp; }
+function wmMove(g) { const ty = g.vx < 0 ? wmPlanY(g) : 0.5; return ty < g.py - 0.02 ? 0 : ty > g.py + 0.02 ? 2 : 1; }
+// a world model's real objective is PREDICTION: how close its 10-step dream is to what actually happens
+function wmAccuracy() { let e = 0; const N = 40, H = 10; for (let i = 0; i < N; i++) { let s = wmRandState(), tru = s, m = s; for (let t = 0; t < H; t++) { tru = ballRule(tru); m = wmNextState(m); } e += Math.hypot(m[0] - tru[0], m[1] - tru[1]); } return Math.max(0, Math.min(100, 100 * (1 - (e / N) / 0.4))); }
 function initWM() { gen = 0; games = 0; margin = 0; bench = 0; history = []; wm = randWM(); liveNet = null; liveActor = null; dream = []; }
 function wmStep() {
   for (let i = 0; i < WM_BATCHES; i++) wmTrainBatch();
-  const bm = benchmarkWM((Math.random() * 1e9) | 0);
-  margin = bm; history.push(bm); if (history.length > 400) history.shift();
+  margin = wmAccuracy(); history.push(margin); if (history.length > 400) history.shift();   // progress = prediction accuracy (%), not score — that's what it optimizes
   games += 1; gen++;
 }
 function trainStep() { if (learnMode === 'wm') wmStep(); else if (learnMode === 'gradient') gradEpisode(); else evolve(); }
@@ -515,7 +518,8 @@ function renderCurve() {
   svg.innerHTML = `<line x1="${pad}" y1="${zeroY}" x2="${W - pad}" y2="${zeroY}" stroke="rgba(255,255,255,.15)" stroke-width="1" stroke-dasharray="3 4"/>`
     + `<polyline points="${pts}" fill="none" stroke="#3fb950" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
   const bs = $('bestScore');
-  bs.textContent = (margin > 0 ? '+' : '') + Math.round(margin); bs.style.color = margin >= 0 ? '#3fb950' : '#e0796b';   // always the margin vs the fixed bot — honest and stable in every mode
+  if (learnMode === 'wm') { bs.textContent = Math.round(margin) + '%'; bs.style.color = '#3fb950'; }   // world model: prediction accuracy, not score
+  else { bs.textContent = (margin > 0 ? '+' : '') + Math.round(margin); bs.style.color = margin >= 0 ? '#3fb950' : '#e0796b'; }   // the margin vs the fixed bot
   $('curveGen').textContent = 'gen ' + gen;
 }
 
@@ -546,14 +550,14 @@ $('trainBtn').onclick = () => setTraining(!training);
 $('resetBtn').onclick = () => { initLearner(); liveActor = null; resetG(liveG, Math.random); trail = []; renderCurve(); };
 function updateStatLbl() {
   $('statLbl').innerHTML = learnMode === 'wm'
-    ? 'points ahead of the bot each game — it plans with the physics it has learned to predict (watch the purple ghost trail sharpen)'
+    ? 'how accurately its <b>dream</b> predicts the ball 10 steps ahead — it climbs as the model learns the physics, and the paddle plays better as its predictions sharpen'
     : learnMode === 'gradient'
       ? 'points ahead of the bot each game — the single brain, rising as it learns from every frame'
       : selfPlay
         ? 'points ahead of the fixed bot each game — it also trains against its past selves, but is anchored to the bot so it stays sharp instead of drifting'
         : 'points ahead of the opponent<br>(per game — below the line = losing)';
   $('methodHint').textContent = learnMode === 'wm'
-    ? "World model: it learns the ball's PHYSICS, not the score — then plans by imagining where the ball will go (the purple ghost trail). Model-based, not reactive."
+    ? "World model: it learns the ball's PHYSICS, not the score. Untrained it has no idea and just parks in the middle; as its dream (the purple trail) learns to predict the bounces, the paddle plans with it and starts to play."
     : learnMode === 'gradient'
       ? 'Gradient (REINFORCE): one brain learns from every frame — far fewer games to a rally, but you watch a single policy improve, not a population.'
       : 'Evolution: keep the best of 28 brains each round and mutate them — easy to watch, but slow (just one score of feedback per whole game).';
