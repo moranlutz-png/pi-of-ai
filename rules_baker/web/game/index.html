@@ -200,13 +200,13 @@ function evolve() {
 /* ---------- live champion game (rendered) ---------- */
 const gc = $('game'), gx = gc.getContext('2d');
 let liveG = newG(); resetG(liveG, Math.random);
-let liveActor = null;   // the champion on the AI paddle; swapped to the latest after each point
+let liveActor = null;   // the champion on the AI paddle; refreshed to the latest trained net every frame
 let lastAct = { a: 1, hid: new Float32Array(H), out: new Float32Array(O), feats: [0, 0, 0, 0, 0] };
 let trail = [], flashL = 0, flashR = 0;   // whole-side goals flash when a point is scored on them
 let livePause = 0, savedV = null;         // brief hold after a goal before the next serve (live view only)
 const PAUSE_FRAMES = 55;
 function stepLive() {
-  if (!liveActor) liveActor = liveNet; if (!liveActor) return;
+  liveActor = liveNet; if (!liveActor) return;   // always play with the latest champion, so the screen tracks training live
   if (livePause > 0) {                     // ball held at centre for a beat after a goal
     if (--livePause === 0 && savedV) { liveG.vx = savedV.vx; liveG.vy = savedV.vy; savedV = null; }
     return;
@@ -217,7 +217,7 @@ function stepLive() {
   trail.push([liveG.bx, liveG.by]); if (trail.length > 18) trail.shift();
   if (liveG.scored) {
     if (liveG.scored === -1) flashL = 1; else flashR = 1;         // whole side is the goal — flash the edge that was beaten
-    liveActor = liveNet; trail = [];
+    trail = [];
     if (liveG.ai >= WIN || liveG.opp >= WIN) { liveG.ai = 0; liveG.opp = 0; }   // fresh match at 7
     savedV = { vx: liveG.vx, vy: liveG.vy }; liveG.vx = 0; liveG.vy = 0;         // freeze the (already re-served) ball, then release after the pause
     livePause = PAUSE_FRAMES;
