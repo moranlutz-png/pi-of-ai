@@ -80,13 +80,13 @@
   </div>
 
   <h1>Watch an AI learn to play Pong</h1>
-  <p class="lead">Classic Pong: the <b style="color:#3fb950">green</b> AI paddle on the left against a <b style="color:#dfe6f0">white</b> opponent on the right — miss the ball anywhere down your side and they score. Nobody ever shows the AI the right move — it's only ever told its <b>score</b> and told to make it bigger. Each round it tries 28 slightly different tiny "brains", keeps the ones that scored higher, and mutates them (the same core idea behind DeepMind's game-players). Press <b>Train</b> and watch it go from losing every point to beating the opponent — then switch the opponent to <b>Self-play</b> to make it play itself and keep improving forever.</p>
+  <p class="lead">Classic Pong: the <b style="color:#3fb950">green</b> AI paddle on the left against a <b style="color:#dfe6f0">white</b> opponent on the right — miss the ball anywhere down your side and they score. Nobody ever shows the AI the right move — it's only ever told its <b>score</b> and told to make it bigger. Each round it tries 28 slightly different tiny "brains", keeps the ones that scored higher, and mutates them (the same core idea behind DeepMind's game-players). Press <b>Train</b> and watch it go from flailing to reading the ball — moving to where it will land before it gets there — and beating the opponent. Then switch the opponent to <b>Self-play</b> to make it play itself and keep improving.</p>
 
   <div class="stage">
     <div class="arena">
       <div class="gamewrap">
         <canvas id="game" width="720" height="460"></canvas>
-        <div class="hud"><span>Generation <b id="hudGen">0</b></span></div>
+        <div class="hud"><span>Generation <b id="hudGen">0</b> &nbsp;·&nbsp; <b id="hudGames">0</b> games played</span></div>
       </div>
       <div class="controls" id="trainControls">
         <button class="btn primary" id="trainBtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg><span id="trainLbl">Train</span></button>
@@ -131,13 +131,13 @@
     </div>
   </div>
 
-  <p class="foot"><b>How it learns:</b> this is <b>reinforcement learning by evolution</b>. A "brain" is a tiny neural net (6 inputs — where the ball is, where it's heading, where its own paddle is, and where the opponent is — through 10 hidden units to 3 choices: up / stay / down). It is never told the correct move. Each generation, all 28 brains play a full match against the opponent bot; the ones that finished with the best point difference survive and get mutated copies. Selection + mutation, repeated, is enough to discover a winning policy from the score alone. The opponent tracks the ball but moves a little slower than the AI, so it's beatable. Switch the <b>Opponent</b> to <b>Self-play</b> and it plays a copy of itself instead: as it improves, its opponent improves too, so it never stops getting better — the arms-race idea behind AlphaGo. Against the fixed bot you see quick, easy progress that soon plateaus; in self-play the games stay close and the <b>rally length</b> keeps climbing as both sides sharpen. It all runs in your browser — nothing downloaded, nothing sent anywhere.</p>
+  <p class="foot"><b>How it learns:</b> this is <b>reinforcement learning by evolution</b>. A "brain" is a tiny neural net (7 inputs — where the ball is, where it's heading, where its own paddle is, where the opponent is, and <b>where the ball will land</b> on its side — through 10 hidden units to 3 choices: up / stay / down). Because it can sense the ball's landing spot and is rewarded for being there, it learns to move <b>ahead</b> of the ball and wait, rather than chase it. It is never told the correct move. Each generation, all 28 brains play a full match against the opponent bot; the ones that finished with the best point difference survive and get mutated copies. Selection + mutation, repeated, is enough to discover a winning policy from the score alone. The opponent tracks the ball but moves a little slower than the AI, so it's beatable. Switch the <b>Opponent</b> to <b>Self-play</b> and it plays a copy of itself instead: as it improves, its opponent improves too, so it never stops getting better — the arms-race idea behind AlphaGo. Against the fixed bot you see quick, easy progress that soon plateaus; in self-play it trains against a <b>pool of its past selves</b> (so it can't forget old skills or chase strategies in circles), and each round it's scored against the same fixed bot — a ruler that can't drift — so the curve climbs and then holds, instead of wandering up and down. It all runs in your browser — nothing downloaded, nothing sent anywhere.</p>
 
 <script>
 const $ = (id) => document.getElementById(id);
 
 /* ---------- tiny neural net: 5 -> 8 -> 3 ---------- */
-const I = 6, H = 10, O = 3;
+const I = 7, H = 10, O = 3;
 let gaussSpare = null;
 function gauss() {                         // Box–Muller
   if (gaussSpare !== null) { const v = gaussSpare; gaussSpare = null; return v; }
@@ -168,19 +168,22 @@ function fwd(n, x) {
 }
 
 /* ---------- the game: a paddle keeping a ball in play ---------- */
-const PADX = 0.045, PADH = 0.20, BALLR = 0.017, PADSPEED = 0.022, OPP_SPEED = 0.018, MAXBALL = 0.029, GAME_STEPS = 1300, WIN = 7;
+const PADX = 0.045, PADH = 0.20, BALLR = 0.017, PADSPEED = 0.02, OPP_SPEED = 0.018, MAXBALL = 0.04, GAME_STEPS = 1100, WIN = 7;
 const ENGLISH = 0.55, HUMAN_SPEED = 0.05;   // ENGLISH: a moving paddle adds spin/angle to the ball (richer, more creative shots)
 const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
+const fold = (y) => { y = ((y % 2) + 2) % 2; return y > 1 ? 2 - y : y; };   // reflect a y into 0..1 (wall bounces) — exact arrival prediction, no loop
 function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
-function newG() { return { bx: .5, by: .5, vx: 0, vy: 0, py: .5, oy: .5, ai: 0, opp: 0, steps: 0, track: 0, scored: 0, hits: 0 }; }
-function serve(g, towardLeft, rnd) { g.bx = .5; g.by = .5; const ang = rnd() * 0.7 - 0.35, sp = 0.014; g.vx = (towardLeft ? -1 : 1) * sp * Math.cos(ang); g.vy = sp * Math.sin(ang); }
-function resetG(g, rnd) { g.py = .5; g.oy = .5; g.ai = 0; g.opp = 0; g.steps = 0; g.track = 0; g.scored = 0; g.hits = 0; serve(g, true, rnd); }
-function feats(g) { return [(g.by - .5) * 2, (g.bx - .5) * 2, g.vy * 45, g.vx * 45, (g.py - .5) * 2, (g.oy - .5) * 2]; }
+function newG() { return { bx: .5, by: .5, vx: 0, vy: 0, py: .5, oy: .5, ai: 0, opp: 0, steps: 0, track: 0, astep: 0, scored: 0, hits: 0 }; }
+function serve(g, towardLeft, rnd) { g.bx = .5; g.by = .5; const ang = rnd() * 0.7 - 0.35, sp = 0.02; g.vx = (towardLeft ? -1 : 1) * sp * Math.cos(ang); g.vy = sp * Math.sin(ang); }
+function resetG(g, rnd) { g.py = .5; g.oy = .5; g.ai = 0; g.opp = 0; g.steps = 0; g.track = 0; g.scored = 0; g.hits = 0; g.astep = 0; serve(g, true, rnd); }
+function arrivalY(g) { if (g.vx >= 0) return .5; return fold(g.by + g.vy * (g.bx - PADX) / -g.vx); }        // where the ball will reach the AI's side
+function oppArrivalY(g) { if (g.vx <= 0) return .5; return fold(g.by + g.vy * ((1 - PADX) - g.bx) / g.vx); }  // ...and the opponent's side
+function feats(g) { return [(g.by - .5) * 2, (g.bx - .5) * 2, g.vy * 45, g.vx * 45, (g.py - .5) * 2, (g.oy - .5) * 2, (arrivalY(g) - .5) * 2]; }
 function decide(net, g) { const { hid, out } = fwd(net, feats(g)); let a = 0; if (out[1] > out[a]) a = 1; if (out[2] > out[a]) a = 2; return { a, hid, out }; }
 function speedup(g) { const sp = Math.hypot(g.vx, g.vy) || 1e-6, ns = Math.min(MAXBALL, sp * 1.03), k = ns / sp; g.vx *= k; g.vy *= k; }
 // The opponent, played by a net, sees the board mirrored (it's on the right): ball x and vx flip,
 // its own paddle is oy, and py is "its opponent". up/down mean the same on both sides.
-function oppAction(oppNet, g) { const { out } = fwd(oppNet, [(g.by - .5) * 2, ((1 - g.bx) - .5) * 2, g.vy * 45, -g.vx * 45, (g.oy - .5) * 2, (g.py - .5) * 2]); let a = 0; if (out[1] > out[a]) a = 1; if (out[2] > out[a]) a = 2; return a; }
+function oppAction(oppNet, g) { const { out } = fwd(oppNet, [(g.by - .5) * 2, ((1 - g.bx) - .5) * 2, g.vy * 45, -g.vx * 45, (g.oy - .5) * 2, (g.py - .5) * 2, (oppArrivalY(g) - .5) * 2]); let a = 0; if (out[1] > out[a]) a = 1; if (out[2] > out[a]) a = 2; return a; }
 function stepG(g, net, rnd, oppNet, humanY) {
   const { a } = decide(net, g);                                   // the AI paddle (left)
   let pdy = 0; if (a === 0) { g.py -= PADSPEED; pdy = -PADSPEED; } else if (a === 2) { g.py += PADSPEED; pdy = PADSPEED; }
@@ -201,38 +204,41 @@ function stepG(g, net, rnd, oppNet, humanY) {
     if (Math.abs(g.by - g.oy) <= PADH / 2 + BALLR) { g.vx = -g.vx; g.bx = 1 - PADX - BALLR; g.vy += (g.by - g.oy) * 0.12 + ody * ENGLISH; speedup(g); g.hits++; }
     else { g.ai++; g.scored = 1; serve(g, false, rnd); }          // opponent missed -> AI scores
   }
-  g.track += 1 - Math.min(1, Math.abs(g.by - g.py));
+  if (g.vx < 0) { const pa = fold(g.by + g.vy * (g.bx - PADX) / -g.vx); g.track += 1 - Math.min(1, Math.abs(g.py - pa)); g.astep++; }   // rewarded for being where the ball WILL arrive (predicted, with bounces) -> anticipation
   g.steps++;
 }
-function fitness(g) { return (g.ai - g.opp) * 2 + g.track / Math.max(1, g.steps); }   // win points; small tracking bonus so early nets have a gradient to climb
-function playHeadless(net, seed, oppNet) { const rnd = mulberry32(seed); const g = newG(); resetG(g, rnd); while (g.steps < GAME_STEPS && g.ai < WIN && g.opp < WIN) stepG(g, net, rnd, oppNet); return { fit: fitness(g), margin: g.ai - g.opp, rally: g.hits / Math.max(1, g.ai + g.opp) }; }
+function fitness(g) { return (g.ai - g.opp) + 8 * (g.track / Math.max(1, g.astep)); }   // dominated by being at the ball's predicted arrival -> the net must anticipate, not just react
+function playHeadless(net, seed, oppNet) { const rnd = mulberry32(seed); const g = newG(); resetG(g, rnd); while (g.steps < GAME_STEPS && g.ai < WIN && g.opp < WIN) stepG(g, net, rnd, oppNet); return { fit: fitness(g), margin: g.ai - g.opp }; }
+function benchmarkVsBot(net, seed) { const rnd = mulberry32(seed); const g = newG(); resetG(g, rnd); while (g.steps < GAME_STEPS && g.ai < WIN && g.opp < WIN) stepG(g, net, rnd, null); return g.ai - g.opp; }   // one match vs the fixed bot — a ruler that can't drift
 
 /* ---------- neuroevolution ---------- */
-const POP = 28, ELITE = 5, MUT = 0.22, OPP_REFRESH = 2;
-let pop = [], gen = 0, margin = 0, liveNet = null, history = [];
-let selfPlay = false, oppNet = null, rally = 0;   // self-play: opponent is a near-current copy of itself; rally = smoothed rally length (skill)
+const POP = 28, ELITE = 5, MUT = 0.22, HOF_EVERY = 4, HOF_MAX = 12, BENCH_STEPS = 1800;
+let pop = [], gen = 0, games = 0, margin = 0, liveNet = null, history = [];
+let selfPlay = false, oppNet = null, bench = 0, hof = [];   // self-play: opponent is drawn from a hall-of-fame pool; bench = points vs the fixed bot (a stable yardstick)
 function initPop() {
   pop = []; for (let i = 0; i < POP; i++) pop.push(randNet());
-  gen = 0; margin = 0; rally = 0; history = []; liveNet = randNet(); liveActor = null;
+  gen = 0; games = 0; margin = 0; bench = 0; hof = []; history = []; liveNet = randNet(); liveActor = null;
   oppNet = selfPlay ? randNet() : null;            // start self-play against a weak version, then chase the champion
 }
 function evolve() {
   const seed = (Math.random() * 1e9) | 0;                 // one ball sequence per generation, so all nets face the same serves
-  for (const net of pop) { const r = playHeadless(net, seed, oppNet); net.fit = r.fit; net.margin = r.margin; net.rally = r.rally; }
+  for (const net of pop) { const r = playHeadless(net, seed, oppNet); net.fit = r.fit; net.margin = r.margin; }
   pop.sort((a, b) => b.fit - a.fit);
   liveNet = cloneNet(pop[0]);
   margin = pop[0].margin;
   if (selfPlay) {
-    rally = rally * 0.85 + pop[0].rally * 0.15;           // rally length rises as both AIs improve — an honest skill signal
-    history.push(rally);
-    if (gen % OPP_REFRESH === 0) oppNet = cloneNet(liveNet);   // opponent = a near-current copy of itself (the arms race)
+    const bm = benchmarkVsBot(liveNet, (seed ^ 0x9e3779b9) | 0);   // judge the champion against the FIXED bot — a ruler that can't drift
+    bench = history.length ? Math.max(bench, bm) : bm;             // best margin vs the bot so far — never goes down
+    history.push(bench);
+    if (gen % HOF_EVERY === 0) { hof.push(cloneNet(liveNet)); if (hof.length > HOF_MAX) hof.shift(); }   // remember past champions
+    oppNet = hof.length ? cloneNet(hof[Math.floor(Math.random() * hof.length)]) : cloneNet(liveNet);      // next round: face a RANDOM past self, so it can't forget or chase in circles
   } else {
     history.push(margin);                                // vs the fixed bot: raw point margin (rises, then plateaus)
   }
   const elite = pop.slice(0, ELITE).map(cloneNet);
   const next = elite.map(cloneNet);
   while (next.length < POP) next.push(mutate(elite[Math.floor(Math.random() * elite.length)], MUT));
-  pop = next; gen++;
+  games += POP + (selfPlay ? 1 : 0); pop = next; gen++;
 }
 
 /* ---------- live champion game (rendered) ---------- */
@@ -288,13 +294,13 @@ function renderGame() {
   gx.fillStyle = '#78ff9a'; gx.fillRect(PADX * W - pw / 2, (liveG.py - PADH / 2) * Ht, pw, ph);         // AI (left)
   gx.fillStyle = '#ffffff'; gx.fillRect((1 - PADX) * W - pw / 2, (liveG.oy - PADH / 2) * Ht, pw, ph);   // opponent (right)
   flashL *= 0.9; flashR *= 0.9;
-  $('hudGen').textContent = gen;
+  $('hudGen').textContent = gen; $('hudGames').textContent = games.toLocaleString();
 }
 function roundRect(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
 
 /* ---------- brain diagram ---------- */
 const bc = $('brain'), bx = bc.getContext('2d');
-const IN_LBL = ['ball y', 'ball x', 'ball ↕', 'ball ↔', 'my paddle', 'their paddle'];
+const IN_LBL = ['ball y', 'ball x', 'ball ↕', 'ball ↔', 'my paddle', 'their paddle', 'will land at'];
 function renderBrain() {
   const W = bc.width, Ht = bc.height; bx.clearRect(0, 0, W, Ht);
   const colX = [34, W / 2, W - 34];
@@ -344,7 +350,7 @@ function renderCurve() {
   svg.innerHTML = `<line x1="${pad}" y1="${zeroY}" x2="${W - pad}" y2="${zeroY}" stroke="rgba(255,255,255,.15)" stroke-width="1" stroke-dasharray="3 4"/>`
     + `<polyline points="${pts}" fill="none" stroke="#3fb950" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
   const bs = $('bestScore');
-  if (selfPlay) { bs.textContent = rally.toFixed(1); bs.style.color = '#3fb950'; }
+  if (selfPlay) { bs.textContent = (bench > 0 ? '+' : '') + Math.round(bench); bs.style.color = bench >= 0 ? '#3fb950' : '#e0796b'; }
   else { bs.textContent = (margin > 0 ? '+' : '') + margin; bs.style.color = margin >= 0 ? '#3fb950' : '#e0796b'; }
   $('curveGen').textContent = 'gen ' + gen;
 }
@@ -378,7 +384,7 @@ function setMode(self) {
   selfPlay = self;
   document.querySelectorAll('.modebtn').forEach((b) => b.classList.toggle('active', (b.dataset.mode === 'self') === self));
   $('statLbl').innerHTML = self
-    ? 'average rally — returns before a point. It climbs as both AIs improve, since the opponent is a copy of itself'
+    ? 'best margin vs the fixed bot so far — it can only go up. Trains against a pool of its past selves, but is judged against the same bot each round'
     : 'points ahead of the opponent<br>(per game — below the line = losing)';
   initPop(); liveActor = null; resetG(liveG, Math.random); trail = []; renderCurve();   // fresh run for the new mode
 }
