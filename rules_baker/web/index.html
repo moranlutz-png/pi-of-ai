@@ -846,6 +846,11 @@
   body.view-scratch .main > :not(#scratch):not(#terminal):not(#termOverlay) { display:none; }
   body.view-scratch #scratch { display:block; margin:0; }
   body.view-scratch .main { padding:8px; }
+  /* Game Learner — a separate full-page view, same swap-in mechanism as Scratch-Coder. */
+  #gameview { display:none; }
+  body.view-game .main > :not(#gameview):not(#terminal):not(#termOverlay) { display:none; }
+  body.view-game #gameview { display:block; margin:0; }
+  body.view-game .main { padding:8px; }
 </style>
 </head>
 <body>
@@ -857,6 +862,7 @@
     <div class="navlink active" data-scroll="top"><span data-ic="dashboard"></span>Dashboard</div>
     <div class="navlink" id="termDrawerNav"><span data-ic="terminal"></span>Terminal</div>
     <div class="navlink" id="scratchNav"><span data-ic="cpu"></span>Scratch-Coder</div>
+    <div class="navlink" id="gameNav"><span data-ic="zap"></span>Game Learner</div>
 
     <div class="seclabel">Models</div>
     <div id="modelTree"><div class="modelnote">Loading…</div></div>
@@ -1022,6 +1028,11 @@
 
     <div class="sec" id="scratch">
       <iframe id="scratchFrame" src="scratch/inspect.html" title="Scratch-Coder" loading="lazy"
+              style="width:100%; height:calc(100vh - 40px); border:0; background:#262626; display:block;"></iframe>
+    </div>
+
+    <div class="sec" id="gameview">
+      <iframe id="gameFrame" src="game/index.html" title="Game Learner" loading="lazy"
               style="width:100%; height:calc(100vh - 40px); border:0; background:#262626; display:block;"></iframe>
     </div>
 
@@ -1497,6 +1508,7 @@ function clearBusy() { busyEl.hidden = true; stopTips(); }
 // Scratch-Coder page (which is a separate view, not a section) back to the dashboard.
 document.querySelectorAll('.navlink[data-scroll]').forEach(n => n.onclick = () => {
   document.body.classList.remove('view-scratch');
+  document.body.classList.remove('view-game');
   document.querySelectorAll('.navlink').forEach(x => x.classList.remove('active'));
   n.classList.add('active');
   const id = n.dataset.scroll;
@@ -1506,12 +1518,23 @@ document.querySelectorAll('.navlink[data-scroll]').forEach(n => n.onclick = () =
 // Scratch-Coder is its own page: swap the whole main view rather than scroll to it.
 // A function so the Library card can open it too, not just the sidebar item.
 function openScratch() {
+  document.body.classList.remove('view-game');
   document.body.classList.add('view-scratch');
   document.querySelectorAll('.navlink').forEach(x => x.classList.remove('active'));
   document.getElementById('scratchNav')?.classList.add('active');
   document.querySelector('.main')?.scrollTo({ top: 0 });
 }
 document.getElementById('scratchNav')?.addEventListener('click', openScratch);
+
+// Game Learner — its own full-page view, same mechanism as Scratch-Coder.
+function openGame() {
+  document.body.classList.remove('view-scratch');
+  document.body.classList.add('view-game');
+  document.querySelectorAll('.navlink').forEach(x => x.classList.remove('active'));
+  document.getElementById('gameNav')?.classList.add('active');
+  document.querySelector('.main')?.scrollTo({ top: 0 });
+}
+document.getElementById('gameNav')?.addEventListener('click', openGame);
 
 // ---- Sidebar model tree, built from models.json ----
 // The list used to be hardcoded here AND in models.json, so the two drifted.
