@@ -27,10 +27,8 @@
 
   .gamewrap { position:relative; background:#1c1c1e; border:1px solid var(--edge2); border-radius:12px; overflow:hidden; }
   #game { display:block; width:100%; height:auto; }
-  .hud { position:absolute; top:10px; left:12px; right:12px; display:flex; justify-content:space-between;
-    font:11.5px var(--mono); color:var(--dim); pointer-events:none; }
-  .hud b { color:var(--ink); }
-  .hud .rally { color:var(--ok); }
+  .hud { position:absolute; top:8px; left:14px; font:11.5px var(--mono); color:rgba(255,255,255,.7); pointer-events:none; }
+  .hud b { color:#fff; }
 
   .controls { display:flex; align-items:center; gap:10px; margin-top:12px; flex-wrap:wrap; }
   .btn { display:inline-flex; align-items:center; gap:7px; background:var(--panel2); color:var(--ink);
@@ -76,16 +74,13 @@
   </div>
 
   <h1>Watch an AI learn to play Pong</h1>
-  <p class="lead">Real Pong: the <b style="color:#3fb950">green</b> AI paddle on the left against a <b style="color:#aab4c4">grey</b> opponent on the right. Nobody ever shows the AI the right move — it's only ever told its <b>score</b> and told to make it bigger. Each round it tries 28 slightly different tiny "brains", keeps the ones that scored higher, and mutates them (the same core idea behind DeepMind's game-players). Press <b>Train</b> and watch it go from losing every point to beating the opponent.</p>
+  <p class="lead">Classic Pong: the <b style="color:#3fb950">green</b> AI paddle on the left against a <b style="color:#dfe6f0">white</b> opponent on the right — miss the ball anywhere down your side and they score. Nobody ever shows the AI the right move — it's only ever told its <b>score</b> and told to make it bigger. Each round it tries 28 slightly different tiny "brains", keeps the ones that scored higher, and mutates them (the same core idea behind DeepMind's game-players). Press <b>Train</b> and watch it go from losing every point to beating the opponent.</p>
 
   <div class="stage">
     <div class="arena">
       <div class="gamewrap">
         <canvas id="game" width="720" height="460"></canvas>
-        <div class="hud">
-          <span>Generation <b id="hudGen">0</b></span>
-          <span class="score"><b id="hudAi" style="color:#3fb950">0</b> AI &nbsp;·&nbsp; Opponent <b id="hudOpp" style="color:#aab4c4">0</b></span>
-        </div>
+        <div class="hud"><span>Generation <b id="hudGen">0</b></span></div>
       </div>
       <div class="controls">
         <button class="btn primary" id="trainBtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg><span id="trainLbl">Train</span></button>
@@ -207,25 +202,43 @@ const gc = $('game'), gx = gc.getContext('2d');
 let liveG = newG(); resetG(liveG, Math.random);
 let liveActor = null;   // the champion on the AI paddle; swapped to the latest after each point
 let lastAct = { a: 1, hid: new Float32Array(H), out: new Float32Array(O), feats: [0, 0, 0, 0, 0] };
-let trail = [];
+let trail = [], flashL = 0, flashR = 0;   // whole-side goals flash when a point is scored on them
 function stepLive() {
   if (!liveActor) liveActor = liveNet; if (!liveActor) return;
   const d = decide(liveActor, liveG);
   lastAct = { a: d.a, hid: d.hid, out: d.out, feats: feats(liveG) };
   stepG(liveG, liveActor, Math.random);
   trail.push([liveG.bx, liveG.by]); if (trail.length > 18) trail.shift();
-  if (liveG.scored) { liveActor = liveNet; trail = []; if (liveG.ai >= WIN || liveG.opp >= WIN) { liveG.ai = 0; liveG.opp = 0; } }  // next point uses the latest champion; fresh match at 7
+  if (liveG.scored) {
+    if (liveG.scored === -1) flashL = 1; else flashR = 1;         // whole side is the goal — flash the edge that was beaten
+    liveActor = liveNet; trail = [];
+    if (liveG.ai >= WIN || liveG.opp >= WIN) { liveG.ai = 0; liveG.opp = 0; }   // fresh match at 7
+  }
 }
+const BLUE = '#2f74d0';
 function renderGame() {
-  const W = gc.width, Ht = gc.height, pw = 10, ph = PADH * Ht;
-  gx.clearRect(0, 0, W, Ht); gx.fillStyle = '#1c1c1e'; gx.fillRect(0, 0, W, Ht);
-  gx.strokeStyle = 'rgba(255,255,255,.06)'; gx.lineWidth = 2; gx.setLineDash([6, 10]);
-  gx.beginPath(); gx.moveTo(W / 2, 0); gx.lineTo(W / 2, Ht); gx.stroke(); gx.setLineDash([]);
-  for (let i = 0; i < trail.length; i++) { const t = i / trail.length; gx.fillStyle = `rgba(233,233,233,${0.05 + 0.25 * t})`; const r = 3 + 4 * t; gx.beginPath(); gx.arc(trail[i][0] * W, trail[i][1] * Ht, r, 0, 7); gx.fill(); }
-  gx.fillStyle = '#e9e9e9'; gx.beginPath(); gx.arc(liveG.bx * W, liveG.by * Ht, BALLR * Ht, 0, 7); gx.fill();
-  gx.fillStyle = '#3fb950'; roundRect(gx, PADX * W - pw / 2, (liveG.py - PADH / 2) * Ht, pw, ph, 5); gx.fill();          // AI paddle (left)
-  gx.fillStyle = '#8290a6'; roundRect(gx, (1 - PADX) * W - pw / 2, (liveG.oy - PADH / 2) * Ht, pw, ph, 5); gx.fill();    // opponent paddle (right)
-  $('hudGen').textContent = gen; $('hudAi').textContent = liveG.ai; $('hudOpp').textContent = liveG.opp;
+  const W = gc.width, Ht = gc.height, pw = 11, ph = PADH * Ht, m = 20;   // m = court margin
+  gx.clearRect(0, 0, W, Ht); gx.fillStyle = BLUE; gx.fillRect(0, 0, W, Ht);
+  // whole-side goals: brighten the inside of each edge when it was just scored on
+  if (flashL > 0.02) { gx.fillStyle = `rgba(120,255,150,${(0.55 * flashL).toFixed(3)})`; gx.fillRect(m, m, 9, Ht - 2 * m); }
+  if (flashR > 0.02) { gx.fillStyle = `rgba(255,255,255,${(0.55 * flashR).toFixed(3)})`; gx.fillRect(W - m - 9, m, 9, Ht - 2 * m); }
+  // dashed white court border + centre net (classic Pong)
+  gx.strokeStyle = 'rgba(255,255,255,.92)'; gx.lineWidth = 4; gx.setLineDash([10, 9]);
+  gx.strokeRect(m, m, W - 2 * m, Ht - 2 * m);
+  gx.beginPath(); gx.moveTo(W / 2, m); gx.lineTo(W / 2, Ht - m); gx.stroke(); gx.setLineDash([]);
+  // big blocky scores
+  gx.font = '700 56px "Courier New", ui-monospace, monospace'; gx.textAlign = 'center'; gx.textBaseline = 'top';
+  gx.fillStyle = '#c8ffd2'; gx.fillText(liveG.ai, W * 0.40, m + 6);       // AI (green-white)
+  gx.fillStyle = '#ffffff'; gx.fillText(liveG.opp, W * 0.60, m + 6);      // opponent (white)
+  // ball trail + square ball (Atari style)
+  const br = BALLR * Ht;
+  for (let i = 0; i < trail.length; i++) { const t = i / trail.length; gx.fillStyle = `rgba(255,255,255,${(0.06 + 0.3 * t).toFixed(3)})`; const s = (br * 2) * (0.4 + 0.6 * t); gx.fillRect(trail[i][0] * W - s / 2, trail[i][1] * Ht - s / 2, s, s); }
+  gx.fillStyle = '#fff'; gx.fillRect(liveG.bx * W - br, liveG.by * Ht - br, br * 2, br * 2);
+  // paddles (rectangular)
+  gx.fillStyle = '#78ff9a'; gx.fillRect(PADX * W - pw / 2, (liveG.py - PADH / 2) * Ht, pw, ph);         // AI (left)
+  gx.fillStyle = '#ffffff'; gx.fillRect((1 - PADX) * W - pw / 2, (liveG.oy - PADH / 2) * Ht, pw, ph);   // opponent (right)
+  flashL *= 0.9; flashR *= 0.9;
+  $('hudGen').textContent = gen;
 }
 function roundRect(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
 
