@@ -76,15 +76,15 @@
   </div>
 
   <h1>Watch an AI learn to play Pong</h1>
-  <p class="lead">Nobody ever shows it the right move. The AI is only ever told its <b>score</b>, and told to make it bigger. Each round it tries 40 slightly different tiny "brains", keeps the ones that scored higher, and mutates them — the same core idea behind DeepMind's game-playing AIs. Press <b>Train</b> and watch it go from random flailing to keeping the ball alive.</p>
+  <p class="lead">Real Pong: the <b style="color:#3fb950">green</b> AI paddle on the left against a <b style="color:#aab4c4">grey</b> opponent on the right. Nobody ever shows the AI the right move — it's only ever told its <b>score</b> and told to make it bigger. Each round it tries 28 slightly different tiny "brains", keeps the ones that scored higher, and mutates them (the same core idea behind DeepMind's game-players). Press <b>Train</b> and watch it go from losing every point to beating the opponent.</p>
 
   <div class="stage">
     <div class="arena">
       <div class="gamewrap">
         <canvas id="game" width="720" height="460"></canvas>
         <div class="hud">
-          <span>Generation <b id="hudGen">0</b> · best score <b id="hudBest">0</b></span>
-          <span class="rally">current rally: <b id="hudRally">0</b></span>
+          <span>Generation <b id="hudGen">0</b></span>
+          <span class="score"><b id="hudAi" style="color:#3fb950">0</b> AI &nbsp;·&nbsp; Opponent <b id="hudOpp" style="color:#aab4c4">0</b></span>
         </div>
       </div>
       <div class="controls">
@@ -97,7 +97,7 @@
     <div class="side">
       <div class="card">
         <h3>Progress</h3>
-        <div class="stat-row"><span class="stat-big" id="bestScore">0</span><span class="stat-lbl">best score so far<br>(ball returns before a miss)</span></div>
+        <div class="stat-row"><span class="stat-big" id="bestScore">0</span><span class="stat-lbl">points ahead of the opponent<br>(per game — below the line = losing)</span></div>
         <svg id="curve" viewBox="0 0 300 120" preserveAspectRatio="none" role="img" aria-label="best score per generation"></svg>
         <div class="curve-x"><span>gen 0</span><span id="curveGen">now</span></div>
       </div>
@@ -115,7 +115,7 @@
     </div>
   </div>
 
-  <p class="foot"><b>How it learns:</b> this is <b>reinforcement learning by evolution</b>. A "brain" is a tiny neural net (5 inputs — where the ball is, where it's heading, where the paddle is — through 8 hidden units to 3 choices: up / stay / down). It is never told the correct move. Each generation, all 40 brains play the same ball; the ones that scored best survive and get mutated copies. Selection + mutation, repeated, is enough to discover a good policy from the score alone. It runs entirely in your browser — nothing is downloaded, nothing is sent anywhere.</p>
+  <p class="foot"><b>How it learns:</b> this is <b>reinforcement learning by evolution</b>. A "brain" is a tiny neural net (5 inputs — where the ball is, where it's heading, where its own paddle is — through 8 hidden units to 3 choices: up / stay / down). It is never told the correct move. Each generation, all 28 brains play a full match against the opponent bot; the ones that finished with the best point difference survive and get mutated copies. Selection + mutation, repeated, is enough to discover a winning policy from the score alone. The opponent tracks the ball but moves a little slower than the AI, so it's beatable. It all runs in your browser — nothing downloaded, nothing sent anywhere.</p>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -152,52 +152,50 @@ function fwd(n, x) {
 }
 
 /* ---------- the game: a paddle keeping a ball in play ---------- */
-const PADX = 0.05, PADH = 0.20, BALLR = 0.018, PADSPEED = 0.024, MAXSTEPS = 1300, MAXBALL = 0.02;
-function newG() { return { bx: .5, by: .5, vx: 0, vy: 0, py: .5, hits: 0, steps: 0, track: 0, alive: true, miss: 0 }; }
-function resetG(g, vx0, vy0) { g.bx = .5; g.by = .5; g.vx = vx0; g.vy = vy0; g.py = .5; g.hits = 0; g.steps = 0; g.track = 0; g.alive = true; g.miss = 0; }
+const PADX = 0.045, PADH = 0.20, BALLR = 0.017, PADSPEED = 0.026, OPP_SPEED = 0.0155, MAXBALL = 0.024, GAME_STEPS = 1300, WIN = 7;
+const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function newG() { return { bx: .5, by: .5, vx: 0, vy: 0, py: .5, oy: .5, ai: 0, opp: 0, steps: 0, track: 0, scored: 0 }; }
+function serve(g, towardLeft, rnd) { g.bx = .5; g.by = .5; const ang = rnd() * 0.7 - 0.35, sp = 0.014; g.vx = (towardLeft ? -1 : 1) * sp * Math.cos(ang); g.vy = sp * Math.sin(ang); }
+function resetG(g, rnd) { g.py = .5; g.oy = .5; g.ai = 0; g.opp = 0; g.steps = 0; g.track = 0; g.scored = 0; serve(g, true, rnd); }
 function feats(g) { return [(g.by - .5) * 2, (g.bx - .5) * 2, g.vy * 45, g.vx * 45, (g.py - .5) * 2]; }
 function decide(net, g) { const { hid, out } = fwd(net, feats(g)); let a = 0; if (out[1] > out[a]) a = 1; if (out[2] > out[a]) a = 2; return { a, hid, out }; }
-function stepG(g, net) {
-  if (!g.alive) return -1;
-  const { a } = decide(net, g);
-  if (a === 0) g.py -= PADSPEED; else if (a === 2) g.py += PADSPEED;
-  g.py = Math.max(PADH / 2, Math.min(1 - PADH / 2, g.py));
+function speedup(g) { const sp = Math.hypot(g.vx, g.vy) || 1e-6, ns = Math.min(MAXBALL, sp * 1.03), k = ns / sp; g.vx *= k; g.vy *= k; }
+function stepG(g, net, rnd) {
+  const { a } = decide(net, g);                                   // the AI paddle (left)
+  if (a === 0) g.py -= PADSPEED; else if (a === 2) g.py += PADSPEED; g.py = clamp(g.py, PADH / 2, 1 - PADH / 2);
+  g.oy = clamp(g.oy + clamp(g.by - g.oy, -OPP_SPEED, OPP_SPEED), PADH / 2, 1 - PADH / 2);   // opponent bot (right): follows the ball, but slower than the AI — so it can be beaten
   g.bx += g.vx; g.by += g.vy;
   if (g.by < BALLR) { g.by = BALLR; g.vy = -g.vy; } else if (g.by > 1 - BALLR) { g.by = 1 - BALLR; g.vy = -g.vy; }
-  if (g.bx > 1 - BALLR) { g.bx = 1 - BALLR; g.vx = -g.vx; }
-  let hit = 0;
-  if (g.bx < PADX + BALLR && g.vx < 0) {
-    if (Math.abs(g.by - g.py) <= PADH / 2 + BALLR) {
-      g.vx = -g.vx; g.bx = PADX + BALLR; g.vy += (g.by - g.py) * 0.05;
-      const sp = Math.hypot(g.vx, g.vy); if (sp > MAXBALL) { g.vx *= MAXBALL / sp; g.vy *= MAXBALL / sp; }
-      g.hits++; hit = 1;
-    } else { g.alive = false; g.miss = Math.min(1, Math.abs(g.by - g.py)); }
+  g.scored = 0;
+  if (g.bx < PADX + BALLR && g.vx < 0) {                          // ball reached the AI's side
+    if (Math.abs(g.by - g.py) <= PADH / 2 + BALLR) { g.vx = -g.vx; g.bx = PADX + BALLR; g.vy += (g.by - g.py) * 0.09; speedup(g); }
+    else { g.opp++; g.scored = -1; serve(g, true, rnd); }         // AI missed -> opponent scores, serve back to the AI
+  }
+  if (g.bx > 1 - PADX - BALLR && g.vx > 0) {                      // ball reached the opponent's side
+    if (Math.abs(g.by - g.oy) <= PADH / 2 + BALLR) { g.vx = -g.vx; g.bx = 1 - PADX - BALLR; g.vy += (g.by - g.oy) * 0.09; speedup(g); }
+    else { g.ai++; g.scored = 1; serve(g, false, rnd); }          // opponent missed -> AI scores
   }
   g.track += 1 - Math.min(1, Math.abs(g.by - g.py));
   g.steps++;
-  if (g.steps >= MAXSTEPS) g.alive = false;
-  return hit;
 }
-function fitness(g) { return g.hits * 3 + g.track / Math.max(1, g.steps) - g.miss * 0.3; }
-function playHeadless(net, vx0, vy0) { const g = newG(); resetG(g, vx0, vy0); while (g.alive) stepG(g, net); return fitness(g); }
+function fitness(g) { return (g.ai - g.opp) * 2 + g.track / Math.max(1, g.steps); }   // win points; small tracking bonus so early nets have a gradient to climb
+function playHeadless(net, seed) { const rnd = mulberry32(seed); const g = newG(); resetG(g, rnd); while (g.steps < GAME_STEPS && g.ai < WIN && g.opp < WIN) stepG(g, net, rnd); return { fit: fitness(g), margin: g.ai - g.opp }; }
 
 /* ---------- neuroevolution ---------- */
-const POP = 40, ELITE = 6, MUT = 0.22;
-let pop = [], gen = 0, best = 0, liveNet = null, history = [];
+const POP = 28, ELITE = 5, MUT = 0.22;
+let pop = [], gen = 0, margin = 0, peak = -99, liveNet = null, history = [];
 function initPop() {
   pop = []; for (let i = 0; i < POP; i++) pop.push(randNet());
-  gen = 0; best = 0; history = []; liveNet = randNet(); liveActor = null;
+  gen = 0; margin = 0; peak = -99; history = []; liveNet = randNet(); liveActor = null;
 }
-function ballForGen() { const ang = Math.random() * 0.9 - 0.45; return [-0.013, Math.sin(ang) * 0.012]; }
 function evolve() {
-  const [vx0, vy0] = ballForGen();
-  for (const net of pop) { const g = newG(); resetG(g, vx0, vy0); while (g.alive) stepG(g, net); net.fit = fitness(g); net.hits = g.hits; }
+  const seed = (Math.random() * 1e9) | 0;                 // one ball sequence per generation, so all 30 nets are judged on the same serves
+  for (const net of pop) { const r = playHeadless(net, seed); net.fit = r.fit; net.margin = r.margin; }
   pop.sort((a, b) => b.fit - a.fit);
   liveNet = cloneNet(pop[0]);
-  // "score" shown to users = the champion's ball returns (hits) — easier to read than raw fitness.
-  const champHits = pop[0].hits;
-  best = Math.max(best, champHits);
-  history.push(champHits);
+  margin = pop[0].margin; peak = Math.max(peak, margin);  // margin = the champion's points minus the opponent's, this game
+  history.push(margin);
   const elite = pop.slice(0, ELITE).map(cloneNet);
   const next = elite.map(cloneNet);
   while (next.length < POP) next.push(mutate(elite[Math.floor(Math.random() * elite.length)], MUT));
@@ -206,35 +204,28 @@ function evolve() {
 
 /* ---------- live champion game (rendered) ---------- */
 const gc = $('game'), gx = gc.getContext('2d');
-let liveG = newG(); { const [a, b] = ballForGen(); resetG(liveG, a, b); }
-let liveActor = null;   // the champion currently playing; swapped to the latest only at each new life
+let liveG = newG(); resetG(liveG, Math.random);
+let liveActor = null;   // the champion on the AI paddle; swapped to the latest after each point
 let lastAct = { a: 1, hid: new Float32Array(H), out: new Float32Array(O), feats: [0, 0, 0, 0, 0] };
 let trail = [];
 function stepLive() {
   if (!liveActor) liveActor = liveNet; if (!liveActor) return;
   const d = decide(liveActor, liveG);
   lastAct = { a: d.a, hid: d.hid, out: d.out, feats: feats(liveG) };
-  stepG(liveG, liveActor);
+  stepG(liveG, liveActor, Math.random);
   trail.push([liveG.bx, liveG.by]); if (trail.length > 18) trail.shift();
-  if (!liveG.alive) { const [a, b] = ballForGen(); resetG(liveG, a, b); trail = []; liveActor = liveNet; }  // next attempt uses the latest champion
+  if (liveG.scored) { liveActor = liveNet; trail = []; if (liveG.ai >= WIN || liveG.opp >= WIN) { liveG.ai = 0; liveG.opp = 0; } }  // next point uses the latest champion; fresh match at 7
 }
 function renderGame() {
-  const W = gc.width, Ht = gc.height;
-  gx.clearRect(0, 0, W, Ht);
-  gx.fillStyle = '#1c1c1e'; gx.fillRect(0, 0, W, Ht);
-  // net (mid dashed line)
+  const W = gc.width, Ht = gc.height, pw = 10, ph = PADH * Ht;
+  gx.clearRect(0, 0, W, Ht); gx.fillStyle = '#1c1c1e'; gx.fillRect(0, 0, W, Ht);
   gx.strokeStyle = 'rgba(255,255,255,.06)'; gx.lineWidth = 2; gx.setLineDash([6, 10]);
   gx.beginPath(); gx.moveTo(W / 2, 0); gx.lineTo(W / 2, Ht); gx.stroke(); gx.setLineDash([]);
-  // right wall
-  gx.strokeStyle = 'rgba(255,255,255,.08)'; gx.lineWidth = 3; gx.beginPath(); gx.moveTo(W - 2, 0); gx.lineTo(W - 2, Ht); gx.stroke();
-  // ball trail
-  for (let i = 0; i < trail.length; i++) { const t = i / trail.length; gx.fillStyle = `rgba(233,233,233,${0.05 + 0.25 * t})`; const r = 4 + 4 * t; gx.beginPath(); gx.arc(trail[i][0] * W, trail[i][1] * Ht, r, 0, 7); gx.fill(); }
-  // ball
+  for (let i = 0; i < trail.length; i++) { const t = i / trail.length; gx.fillStyle = `rgba(233,233,233,${0.05 + 0.25 * t})`; const r = 3 + 4 * t; gx.beginPath(); gx.arc(trail[i][0] * W, trail[i][1] * Ht, r, 0, 7); gx.fill(); }
   gx.fillStyle = '#e9e9e9'; gx.beginPath(); gx.arc(liveG.bx * W, liveG.by * Ht, BALLR * Ht, 0, 7); gx.fill();
-  // paddle
-  const px = PADX * W, pyTop = (liveG.py - PADH / 2) * Ht, pw = 10, ph = PADH * Ht;
-  gx.fillStyle = '#3fb950'; roundRect(gx, px - pw / 2, pyTop, pw, ph, 5); gx.fill();
-  $('hudGen').textContent = gen; $('hudBest').textContent = best; $('hudRally').textContent = liveG.hits;
+  gx.fillStyle = '#3fb950'; roundRect(gx, PADX * W - pw / 2, (liveG.py - PADH / 2) * Ht, pw, ph, 5); gx.fill();          // AI paddle (left)
+  gx.fillStyle = '#8290a6'; roundRect(gx, (1 - PADX) * W - pw / 2, (liveG.oy - PADH / 2) * Ht, pw, ph, 5); gx.fill();    // opponent paddle (right)
+  $('hudGen').textContent = gen; $('hudAi').textContent = liveG.ai; $('hudOpp').textContent = liveG.opp;
 }
 function roundRect(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
 
@@ -281,16 +272,15 @@ function renderBrain() {
 
 /* ---------- progress curve ---------- */
 function renderCurve() {
-  const svg = $('curve'), W = 300, Ht = 120, pad = 6;
+  const svg = $('curve'), W = 300, Ht = 120, pad = 8;
   if (!history.length) { svg.innerHTML = ''; return; }
-  const mx = Math.max(4, ...history);
-  const pts = history.map((v, i) => {
-    const x = pad + (history.length > 1 ? i / (history.length - 1) : 0) * (W - 2 * pad);
-    const y = Ht - pad - (v / mx) * (Ht - 2 * pad);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(' ');
-  svg.innerHTML = `<polyline points="${pts}" fill="none" stroke="#3fb950" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
-  $('bestScore').textContent = best;
+  const mx = Math.max(4, ...history), mn = Math.min(0, ...history);
+  const yOf = (v) => Ht - pad - ((v - mn) / ((mx - mn) || 1)) * (Ht - 2 * pad);
+  const zeroY = yOf(0).toFixed(1);
+  const pts = history.map((v, i) => `${(pad + (history.length > 1 ? i / (history.length - 1) : 0) * (W - 2 * pad)).toFixed(1)},${yOf(v).toFixed(1)}`).join(' ');
+  svg.innerHTML = `<line x1="${pad}" y1="${zeroY}" x2="${W - pad}" y2="${zeroY}" stroke="rgba(255,255,255,.15)" stroke-width="1" stroke-dasharray="3 4"/>`
+    + `<polyline points="${pts}" fill="none" stroke="#3fb950" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  const bs = $('bestScore'); bs.textContent = (margin > 0 ? '+' : '') + margin; bs.style.color = margin >= 0 ? '#3fb950' : '#e0796b';
   $('curveGen').textContent = 'gen ' + gen;
 }
 
@@ -318,7 +308,7 @@ function setTraining(on) {
     : '<path d="M8 5v14l11-7z"/>';
 }
 $('trainBtn').onclick = () => setTraining(!training);
-$('resetBtn').onclick = () => { initPop(); liveActor = null; const [a, b] = ballForGen(); resetG(liveG, a, b); trail = []; renderCurve(); };
+$('resetBtn').onclick = () => { initPop(); liveActor = null; resetG(liveG, Math.random); trail = []; renderCurve(); };
 const SPEEDS = [['slow', 0.03], ['normal', 0.08], ['fast', 0.3], ['turbo', 1.4]];
 $('speed').addEventListener('input', () => {
   const el = $('speed'); el.style.setProperty('--fill', ((+el.value) / 3 * 100) + '%');
