@@ -99,7 +99,7 @@
         <span class="mode-lbl">Opponent</span>
         <div class="modeseg" id="oppSeg">
           <button class="modebtn active" data-mode="fixed" title="A simple bot — quick, easy wins, then it plateaus">Fixed bot</button>
-          <button class="modebtn" data-mode="self" title="Plays a copy of itself — slower, but keeps improving forever">Self-play</button>
+          <button class="modebtn" data-mode="self" title="Also trains against past copies of itself, anchored to the bot so it stays stable">Self-play</button>
         </div>
         <label class="speed">Speed <input type="range" id="speed" min="0" max="3" step="1" value="1" /> <span class="speedv" id="speedV">normal</span></label>
         <span class="play-hint" id="methodHint" style="flex-basis:100%"></span>
@@ -137,7 +137,7 @@
     </div>
   </div>
 
-  <p class="foot"><b>How it learns:</b> this is <b>reinforcement learning by evolution</b>. A "brain" is a tiny neural net (7 inputs — where the ball is, where it's heading, where its own paddle is, where the opponent is, and <b>where the ball will land</b> on its side — through 10 hidden units to 3 choices: up / stay / down). Because it can sense the ball's landing spot and is rewarded for being there, it learns to move <b>ahead</b> of the ball and wait, rather than chase it. It is never told the correct move. Each generation, all 28 brains play a full match against the opponent bot; the ones that finished with the best point difference survive and get mutated copies. Selection + mutation, repeated, is enough to discover a winning policy from the score alone. The opponent tracks the ball but moves a little slower than the AI, so it's beatable. Switch the <b>Opponent</b> to <b>Self-play</b> and it plays a copy of itself instead: as it improves, its opponent improves too, so it never stops getting better — the arms-race idea behind AlphaGo. Against the fixed bot you see quick, easy progress that soon plateaus; in self-play it trains against a <b>pool of its past selves</b> (so it can't forget old skills or chase strategies in circles), and each round it's scored against the same fixed bot — a ruler that can't drift — so the curve climbs and then holds, instead of wandering up and down. It all runs in your browser — nothing downloaded, nothing sent anywhere.</p>
+  <p class="foot"><b>How it learns:</b> this is <b>reinforcement learning by evolution</b>. A "brain" is a tiny neural net (7 inputs — where the ball is, where it's heading, where its own paddle is, where the opponent is, and <b>where the ball will land</b> on its side — through 10 hidden units to 3 choices: up / stay / down). Because it can sense the ball's landing spot and is rewarded for being there, it learns to move <b>ahead</b> of the ball and wait, rather than chase it. It is never told the correct move. Each generation, all 28 brains play a full match against the opponent bot; the ones that finished with the best point difference survive and get mutated copies. Selection + mutation, repeated, is enough to discover a winning policy from the score alone. The opponent tracks the ball but moves a little slower than the AI, so it's beatable. Switch the <b>Opponent</b> to <b>Self-play</b> and it plays a copy of itself instead: as it improves, its opponent improves too, so it never stops getting better — the arms-race idea behind AlphaGo. Against the fixed bot you see quick, easy progress that soon plateaus; in self-play it trains against <b>both the fixed bot and a pool of its past selves</b> — the bot <b>anchors</b> it (a pure self-play arms race is famously unstable: a tiny net tends to forget how to play and collapse), while the past selves keep pushing it — and each round it's still scored against that same bot, a ruler that can't drift. It all runs in your browser — nothing downloaded, nothing sent anywhere.</p>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -240,23 +240,25 @@ function initPop() {
 }
 function evolve() {
   const seed = (Math.random() * 1e9) | 0;                 // one ball sequence per generation, so all nets face the same serves
-  for (const net of pop) { const r = playHeadless(net, seed, oppNet); net.fit = r.fit; net.margin = r.margin; }
+  const seed2 = (seed ^ 0x5bd1e995) | 0;
+  for (const net of pop) {
+    if (selfPlay) {                                       // ANCHORED self-play: judged against the fixed bot (so it can never forget how to actually play) PLUS a bonus for beating a past self
+      const rb = playHeadless(net, seed, null), rs = playHeadless(net, seed2, oppNet);
+      net.fit = rb.fit + rs.margin; net.margin = rb.margin;
+    } else { const r = playHeadless(net, seed, null); net.fit = r.fit; net.margin = r.margin; }
+  }
   pop.sort((a, b) => b.fit - a.fit);
   liveNet = cloneNet(pop[0]);
-  margin = pop[0].margin;
+  margin = pop[0].margin;                                 // always the margin vs the fixed bot — one honest, drift-free yardstick for both modes
+  history.push(margin);
   if (selfPlay) {
-    const bm = benchmarkVsBot(liveNet, (seed ^ 0x9e3779b9) | 0);   // judge the champion against the FIXED bot — a ruler that can't drift
-    bench = history.length ? Math.max(bench, bm) : bm;             // best margin vs the bot so far — never goes down
-    history.push(bench);
     if (gen % HOF_EVERY === 0) { hof.push(cloneNet(liveNet)); if (hof.length > HOF_MAX) hof.shift(); }   // remember past champions
-    oppNet = hof.length ? cloneNet(hof[Math.floor(Math.random() * hof.length)]) : cloneNet(liveNet);      // next round: face a RANDOM past self, so it can't forget or chase in circles
-  } else {
-    history.push(margin);                                // vs the fixed bot: raw point margin (rises, then plateaus)
+    oppNet = hof.length ? cloneNet(hof[Math.floor(Math.random() * hof.length)]) : cloneNet(liveNet);      // the self-play opponent is a RANDOM past self
   }
   const elite = pop.slice(0, ELITE).map(cloneNet);
   const next = elite.map(cloneNet);
   while (next.length < POP) next.push(mutate(elite[Math.floor(Math.random() * elite.length)], MUT));
-  games += POP + (selfPlay ? 1 : 0); pop = next; gen++;
+  games += POP * (selfPlay ? 2 : 1); pop = next; gen++;   // self-play plays two games per brain (vs bot + vs a past self)
 }
 
 /* ---------- gradient learner: REINFORCE (policy gradient) ---------- */
@@ -274,7 +276,7 @@ function initGrad() {
 function gradEpisode() {
   const seed = (Math.random() * 1e9) | 0, rnd = mulberry32(seed);
   const g = newG(); resetG(g, rnd);
-  const net = liveNet, opp = selfPlay ? (oppNet || cloneNet(net)) : null;
+  const net = liveNet, opp = (selfPlay && rnd() < 0.5) ? (oppNet || cloneNet(net)) : null;   // ANCHORED: half the episodes vs the fixed bot (so it can't forget), half vs a past self
   const xs = [], hids = [], acts = [], probs = [], rews = [];
   while (g.steps < GRAD_STEPS) {
     const x = feats(g), { hid, out } = fwd(net, x), p = softmax3(out);
@@ -453,8 +455,7 @@ function renderCurve() {
   svg.innerHTML = `<line x1="${pad}" y1="${zeroY}" x2="${W - pad}" y2="${zeroY}" stroke="rgba(255,255,255,.15)" stroke-width="1" stroke-dasharray="3 4"/>`
     + `<polyline points="${pts}" fill="none" stroke="#3fb950" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
   const bs = $('bestScore');
-  if (selfPlay) { bs.textContent = (bench > 0 ? '+' : '') + Math.round(bench); bs.style.color = bench >= 0 ? '#3fb950' : '#e0796b'; }
-  else { bs.textContent = (margin > 0 ? '+' : '') + margin; bs.style.color = margin >= 0 ? '#3fb950' : '#e0796b'; }
+  bs.textContent = (margin > 0 ? '+' : '') + Math.round(margin); bs.style.color = margin >= 0 ? '#3fb950' : '#e0796b';   // always the margin vs the fixed bot — honest and stable in every mode
   $('curveGen').textContent = 'gen ' + gen;
 }
 
@@ -487,7 +488,7 @@ function updateStatLbl() {
   $('statLbl').innerHTML = learnMode === 'gradient'
     ? 'points ahead of the bot each game — the single brain, rising as it learns from every frame'
     : selfPlay
-      ? 'best margin vs the fixed bot so far — it can only go up. Trains against a pool of its past selves, but is judged against the same bot each round'
+      ? 'points ahead of the fixed bot each game — it also trains against its past selves, but is anchored to the bot so it stays sharp instead of drifting'
       : 'points ahead of the opponent<br>(per game — below the line = losing)';
   $('methodHint').textContent = learnMode === 'gradient'
     ? 'Gradient (REINFORCE): one brain learns from every frame — far fewer games to a rally, but you watch a single policy improve, not a population.'
