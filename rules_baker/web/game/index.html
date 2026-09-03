@@ -80,7 +80,7 @@
   </div>
 
   <h1>Watch an AI learn to play Pong</h1>
-  <p class="lead">Classic Pong: the <b style="color:#3fb950">green</b> AI paddle on the left against a <b style="color:#dfe6f0">white</b> opponent on the right — miss the ball anywhere down your side and they score. Nobody ever shows the AI the right move — it's only ever told its <b>score</b> and told to make it bigger. Each round it tries 28 slightly different tiny "brains", keeps the ones that scored higher, and mutates them (the same core idea behind DeepMind's game-players). Press <b>Train</b> and watch it go from flailing to reading the ball — moving to where it will land before it gets there — and beating the opponent. Then switch the opponent to <b>Self-play</b> to make it play itself and keep improving.</p>
+  <p class="lead">The <b style="color:#3fb950">green</b> AI paddle (left) plays Pong against the <b style="color:#dfe6f0">white</b> bot. Nobody shows it how — it only ever sees its <b>score</b>. Press <b>Train</b> and watch it go from flailing to reading the ball.</p>
 
   <div class="stage">
     <div class="arena">
@@ -138,7 +138,7 @@
     </div>
   </div>
 
-  <p class="foot"><b>How it learns:</b> this is <b>reinforcement learning by evolution</b>. A "brain" is a tiny neural net (7 inputs — where the ball is, where it's heading, where its own paddle is, where the opponent is, and <b>where the ball will land</b> on its side — through 10 hidden units to 3 choices: up / stay / down). Because it can sense the ball's landing spot and is rewarded for being there, it learns to move <b>ahead</b> of the ball and wait, rather than chase it. It is never told the correct move. Each generation, all 28 brains play a full match against the opponent bot; the ones that finished with the best point difference survive and get mutated copies. Selection + mutation, repeated, is enough to discover a winning policy from the score alone. The opponent tracks the ball but moves a little slower than the AI, so it's beatable. Switch the <b>Opponent</b> to <b>Self-play</b> and it plays a copy of itself instead: as it improves, its opponent improves too, so it never stops getting better — the arms-race idea behind AlphaGo. Against the fixed bot you see quick, easy progress that soon plateaus; in self-play it trains against <b>both the fixed bot and a pool of its past selves</b> — the bot <b>anchors</b> it (a pure self-play arms race is famously unstable: a tiny net tends to forget how to play and collapse), while the past selves keep pushing it — and each round it's still scored against that same bot, a ruler that can't drift. It all runs in your browser — nothing downloaded, nothing sent anywhere.</p>
+  <p class="foot">It's never told the correct move — it improves from its score alone (or, in World-model mode, from how well it predicts the ball). The toggles pick how it learns and who it plays. Everything runs in your browser — nothing downloaded, nothing sent anywhere.</p>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -464,10 +464,8 @@ function renderBrain() {
   const W = bc.width, Ht = bc.height; bx.clearRect(0, 0, W, Ht);
   if (learnMode === 'wm') {                                   // no policy net here — the world model is a dynamics predictor; point to the dream
     bx.fillStyle = '#8a8f98'; bx.font = '11px ui-monospace, monospace'; bx.textAlign = 'center';
-    bx.fillText("This brain predicts the ball's next move,", W / 2, Ht / 2 - 16);
-    bx.fillText('not the paddle\'s. It rolls that prediction', W / 2, Ht / 2);
-    bx.fillText('forward — the purple ghost trail is its', W / 2, Ht / 2 + 16);
-    bx.fillText('imagined future, and the paddle plans to it.', W / 2, Ht / 2 + 32);
+    bx.fillText('This brain predicts the ball, not the paddle.', W / 2, Ht / 2 - 8);
+    bx.fillText('The purple trail is its imagined future.', W / 2, Ht / 2 + 8);
     $('lampUp').classList.toggle('on', lastAct.a === 0); $('lampStay').classList.toggle('on', lastAct.a === 1); $('lampDown').classList.toggle('on', lastAct.a === 2);
     return;
   }
@@ -550,17 +548,15 @@ $('trainBtn').onclick = () => setTraining(!training);
 $('resetBtn').onclick = () => { initLearner(); liveActor = null; resetG(liveG, Math.random); trail = []; renderCurve(); };
 function updateStatLbl() {
   $('statLbl').innerHTML = learnMode === 'wm'
-    ? 'how accurately its <b>dream</b> predicts the ball 10 steps ahead — it climbs as the model learns the physics, and the paddle plays better as its predictions sharpen'
-    : learnMode === 'gradient'
-      ? 'points ahead of the bot each game — the single brain, rising as it learns from every frame'
-      : selfPlay
-        ? 'points ahead of the fixed bot each game — it also trains against its past selves, but is anchored to the bot so it stays sharp instead of drifting'
-        : 'points ahead of the opponent<br>(per game — below the line = losing)';
+    ? 'prediction accuracy — how well its <b>dream</b> matches the ball'
+    : selfPlay
+      ? 'points ahead of the bot per game (also trains vs past selves)'
+      : 'points ahead of the bot per game';
   $('methodHint').textContent = learnMode === 'wm'
-    ? "World model: it learns the ball's PHYSICS, not the score. Untrained it has no idea and just parks in the middle; as its dream (the purple trail) learns to predict the bounces, the paddle plans with it and starts to play."
+    ? "World model: it learns the ball's physics — the purple dream — then plans with it. Untrained, it just parks in the middle."
     : learnMode === 'gradient'
-      ? 'Gradient (REINFORCE): one brain learns from every frame — far fewer games to a rally, but you watch a single policy improve, not a population.'
-      : 'Evolution: keep the best of 28 brains each round and mutate them — easy to watch, but slow (just one score of feedback per whole game).';
+      ? 'Gradient: one brain learns from every frame — far fewer games to a rally.'
+      : 'Evolution: keep the best of 28 brains and mutate them. Simple, but slow.';
 }
 function setMode(self) {
   selfPlay = self;
