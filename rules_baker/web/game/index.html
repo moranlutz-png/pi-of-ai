@@ -322,13 +322,14 @@ function randWM() { const n = { w1: new Float32Array(WM_NH * 4), b1: new Float32
 const wmNorm = (s) => [(s[0] - .5) * 2, (s[1] - .5) * 2, s[2] * 45, s[3] * 45];
 const wmDenorm = (x) => [x[0] / 2 + .5, x[1] / 2 + .5, x[2] / 45, x[3] / 45];
 function wmFwd(x) { const hid = new Float32Array(WM_NH); for (let j = 0; j < WM_NH; j++) { let s = wm.b1[j]; for (let i = 0; i < 4; i++) s += wm.w1[j * 4 + i] * x[i]; hid[j] = Math.tanh(s); } const out = new Float32Array(4); for (let k = 0; k < 4; k++) { let s = wm.b2[k]; for (let j = 0; j < WM_NH; j++) s += wm.w2[k * WM_NH + j] * hid[j]; out[k] = x[k] + s; } return { hid, out }; }   // residual: predicts the CHANGE, so "carry velocity forward" is near-free and rollouts don't diverge
-function wmNextState(s) { const ns = wmDenorm(wmFwd(wmNorm(s)).out); ns[1] = clamp(ns[1], 0, 1); ns[2] = clamp(ns[2], -MAXBALL * 1.5, MAXBALL * 1.5); ns[3] = clamp(ns[3], -MAXBALL * 1.5, MAXBALL * 1.5); return ns; }
-function ballRule(s) { let [bx, by, vx, vy] = s; bx += vx; by += vy; if (by < BALLR) { by = BALLR; vy = -vy; } else if (by > 1 - BALLR) { by = 1 - BALLR; vy = -vy; } return [bx, by, vx, vy]; }   // the TRUE rule — used only to make observed (before,after) pairs; the model never sees this, only states
+// the model predicts the ball's flight; the court's known walls reflect it (a smooth net can't learn the sharp bounce, so the arena handles it)
+function wmNextState(s) { const ns = wmDenorm(wmFwd(wmNorm(s)).out); ns[2] = clamp(ns[2], -MAXBALL * 1.5, MAXBALL * 1.5); ns[3] = clamp(ns[3], -MAXBALL * 1.5, MAXBALL * 1.5); if (ns[1] < BALLR) { ns[1] = BALLR; ns[3] = -ns[3]; } else if (ns[1] > 1 - BALLR) { ns[1] = 1 - BALLR; ns[3] = -ns[3]; } return ns; }
+function ballRule(s) { let [bx, by, vx, vy] = s; bx += vx; by += vy; if (by < BALLR) { by = BALLR; vy = -vy; } else if (by > 1 - BALLR) { by = 1 - BALLR; vy = -vy; } return [bx, by, vx, vy]; }   // the TRUE physics — used only to score the model's dream against reality
 function wmRandState() { const sp = 0.02 + Math.random() * 0.02, ang = Math.random() * 1.2 - 0.6; return [0.2 + Math.random() * 0.7, 0.08 + Math.random() * 0.84, (Math.random() < .5 ? -1 : 1) * sp * Math.cos(ang), sp * Math.sin(ang) * (Math.random() < .5 ? 1 : -1)]; }
 function wmTrainBatch() {
   const B = 32, gw1 = new Float32Array(wm.w1.length), gb1 = new Float32Array(wm.b1.length), gw2 = new Float32Array(wm.w2.length), gb2 = new Float32Array(wm.b2.length);
   for (let b = 0; b < B; b++) {
-    const s = wmRandState(), y = wmNorm(ballRule(s)), x = wmNorm(s), { hid, out } = wmFwd(x);   // predict next state, learn from the error (self-supervised)
+    const s = wmRandState(), y = wmNorm([s[0] + s[2], s[1] + s[3], s[2], s[3]]), x = wmNorm(s), { hid, out } = wmFwd(x);   // learn the ball's FLIGHT (it keeps moving); the court's walls do the bouncing, in the rollout below
     const d = [out[0] - y[0], out[1] - y[1], out[2] - y[2], out[3] - y[3]];
     for (let k = 0; k < 4; k++) { gb2[k] += d[k]; for (let j = 0; j < WM_NH; j++) gw2[k * WM_NH + j] += d[k] * hid[j]; }
     for (let j = 0; j < WM_NH; j++) { let dh = 0; for (let k = 0; k < 4; k++) dh += d[k] * wm.w2[k * WM_NH + j]; const dp = dh * (1 - hid[j] * hid[j]); gb1[j] += dp; for (let i = 0; i < 4; i++) gw1[j * 4 + i] += dp * x[i]; }
@@ -553,7 +554,7 @@ function updateStatLbl() {
       ? 'points ahead of the bot per game (also trains vs past selves)'
       : 'points ahead of the bot per game';
   $('methodHint').textContent = learnMode === 'wm'
-    ? "World model: it learns the ball's physics — the purple dream — then plans with it. Untrained, it just parks in the middle."
+    ? "World model: it learns how the ball moves (the purple dream) and the court walls bounce it, then it plans with that. Untrained, it just parks in the middle."
     : learnMode === 'gradient'
       ? 'Gradient: one brain learns from every frame — far fewer games to a rally.'
       : 'Evolution: keep the best of 28 brains and mutate them. Simple, but slow.';
