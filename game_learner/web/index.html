@@ -62,6 +62,10 @@
   .curve-x { display:flex; justify-content:space-between; color:var(--dimmer); font:10px var(--mono); margin-top:3px; }
 
   #brain { display:block; width:100%; height:auto; }
+  .telemetry { margin-top:9px; font:11px ui-monospace, monospace; color:#8a9199; line-height:1.9; }
+  .telemetry b { color:#cdd6e0; font-weight:600; }
+  .telemetry .bar { color:#6ea8ff; letter-spacing:1px; }
+  .btn.on { background:rgba(110,168,255,.16); border-color:#6ea8ff; color:#dbe8ff; }
   .brain-legend { display:flex; gap:12px; margin-top:8px; font-size:11px; color:var(--dimmer); flex-wrap:wrap; }
   .brain-legend b { color:var(--ink); font-weight:600; }
   .actlamp { display:inline-flex; align-items:center; gap:5px; }
@@ -99,10 +103,12 @@
         </div>
         <span class="mode-lbl">Opponent</span>
         <div class="modeseg" id="oppSeg">
-          <button class="modebtn active" data-mode="fixed" title="A simple bot — quick, easy wins, then it plateaus">Fixed bot</button>
-          <button class="modebtn" data-mode="self" title="Also trains against past copies of itself, anchored to the bot so it stays stable">Self-play</button>
+          <button class="modebtn active" data-mode="fixed" title="A simple bot that chases the ball — quick, easy wins">Simple bot</button>
+          <button class="modebtn" data-mode="pro" title="A tough bot that anticipates where the ball will land — the AI must aim away and add pace to beat it">Pro bot</button>
+          <button class="modebtn" data-mode="self" title="Trains against past copies of itself, anchored to the bot so it stays stable">Self-play</button>
         </div>
         <label class="speed">Speed <input type="range" id="speed" min="0" max="3" step="1" value="1" /> <span class="speedv" id="speedV">normal</span></label>
+        <button class="btn" id="challengeBtn" title="Move your mouse over the court to control the white paddle and play the AI while it keeps training">🎮 Play the opponent</button>
         <span class="play-hint" id="methodHint" style="flex-basis:100%"></span>
       </div>
       <div class="controls">
@@ -123,6 +129,7 @@
         <div class="stat-row"><span class="stat-big" id="bestScore">0</span><span class="stat-lbl" id="statLbl">points ahead of the opponent<br>(per game — below the line = losing)</span></div>
         <svg id="curve" viewBox="0 0 300 120" preserveAspectRatio="none" role="img" aria-label="best score per generation"></svg>
         <div class="curve-x"><span>gen 0</span><span id="curveGen">now</span></div>
+        <div id="telemetry" class="telemetry"></div>
       </div>
 
       <div class="card">
@@ -205,13 +212,13 @@ function stepWorld(g, a, rnd, oppNet, humanY) {                   // advance the
   let ody = 0;                                                    // opponent paddle move this step (for its english)
   if (humanY != null) { ody = clamp(humanY - g.oy, -HUMAN_SPEED, HUMAN_SPEED); g.oy += ody; }        // a human is on the right paddle
   else if (oppNet) { const oa = oppAction(oppNet, g); if (oa === 0) { g.oy -= PADSPEED; ody = -PADSPEED; } else if (oa === 2) { g.oy += PADSPEED; ody = PADSPEED; } }   // self-play: a past self
-  else { ody = clamp(g.by - g.oy, -OPP_SPEED, OPP_SPEED); g.oy += ody; }                              // fixed bot: follows the ball, slower
+  else { const bt = proBot ? (g.vx > 0 ? oppArrivalY(g) : 0.5) : g.by; ody = clamp(bt - g.oy, -OPP_SPEED, OPP_SPEED); g.oy += ody; }   // Simple bot chases the ball; Pro bot anticipates where it will land (forces the AI to out-place / out-pace it)
   g.oy = clamp(g.oy, PADH / 2, 1 - PADH / 2);
   g.bx += g.vx; g.by += g.vy;
   if (g.by < BALLR) { g.by = BALLR; g.vy = -g.vy; } else if (g.by > 1 - BALLR) { g.by = 1 - BALLR; g.vy = -g.vy; }
   g.scored = 0;
   if (g.bx < PADX + BALLR && g.vx < 0) {                          // ball reached the AI's side
-    if (Math.abs(g.by - g.py) <= PADH / 2 + BALLR) { g.vx = -g.vx; g.bx = PADX + BALLR; g.vy += (g.by - g.py) * 0.12 + pdy * ENGLISH; speedup(g); g.hits++; g.aim += Math.min(1, Math.abs(g.oy - oppArrivalY(g)) / 0.5); g.aimN++; }   // hit + english; reward aiming the return away from where the opponent is (offense)
+    if (Math.abs(g.by - g.py) <= PADH / 2 + BALLR) { g.vx = -g.vx; g.bx = PADX + BALLR; g.vy += (g.by - g.py) * 0.12 + pdy * ENGLISH; speedup(g); g.hits++; g.aim += 0.5 * Math.min(1, Math.abs(oppArrivalY(g) - g.oy) / 0.4) + 0.5 * Math.min(1, Math.abs(g.vy) / 0.03); g.aimN++; }   // offense: reward aiming AWAY from the opponent AND putting pace/english on the ball (both make it hard to return)
     else { g.opp++; g.scored = -1; serve(g, true, rnd); }         // AI missed -> opponent scores, serve back to the AI
   }
   if (g.bx > 1 - PADX - BALLR && g.vx > 0) {                      // ball reached the opponent's side
@@ -233,6 +240,7 @@ function benchmarkVsBot(net, seed) { const rnd = mulberry32(seed); const g = new
 const POP = 28, ELITE = 5, MUT = 0.22, HOF_EVERY = 4, HOF_MAX = 12, BENCH_STEPS = 1800;
 let pop = [], gen = 0, games = 0, margin = 0, liveNet = null, history = [];
 let selfPlay = false, oppNet = null, bench = 0, hof = [];   // self-play: opponent is drawn from a hall-of-fame pool; bench = points vs the fixed bot (a stable yardstick)
+let proBot = false, humanOpp = false;   // proBot: the opponent anticipates the ball · humanOpp: you grab the live opponent paddle with your mouse to play the AI while it trains
 let learnMode = 'evolve';   // 'evolve' = keep-the-best-of-28-and-mutate (slow, one score per game) · 'gradient' = policy gradient, learns from every frame (far fewer games)
 function initPop() {
   pop = []; for (let i = 0; i < POP; i++) pop.push(randNet());
@@ -282,8 +290,10 @@ function gradEpisode() {
   while (g.steps < GRAD_STEPS) {
     const x = feats(g), { hid, out } = fwd(net, x), p = softmax3(out);
     const r = rnd(); let a = 0, cum = p[0]; if (r > cum) { a = 1; cum += p[1]; if (r > cum) a = 2; }   // sample the move (exploration lives here)
+    const preAim = g.aim, preHits = g.hits;
     stepWorld(g, a, rnd, opp, null);
     let rew = 4 * g.scored;                                         // +4 for a point won, -4 for one conceded
+    if (g.hits > preHits) rew += 2 * (g.aim - preAim);              // offense: reward a well-placed, well-paced return (discovers english)
     if (g.vx < 0) { const pa = fold(g.by + g.vy * (g.bx - PADX) / -g.vx); rew += GRAD_SHAPE * (1 - Math.min(1, Math.abs(g.py - pa) / 0.5)); }   // dense nudge toward the ball's landing spot — the fast, per-frame signal evolution never gets
     xs.push(x); hids.push(hid); acts.push(a); probs.push(p); rews.push(rew);
   }
@@ -385,12 +395,13 @@ function stepLive() {
     const d = decide(aiNet, liveG); a = d.a;
     lastAct = { a: d.a, hid: d.hid, out: d.out, feats: feats(liveG) }; dream = [];
   }
-  stepWorld(liveG, a, Math.random, (!wmMode && trainMode && selfPlay) ? oppNet : null, playMode === 'human' ? humanY : null);
+  const liveHuman = playMode === 'human' || (trainMode && humanOpp);   // you can grab the opponent paddle to challenge the live AI while it trains
+  stepWorld(liveG, a, Math.random, (!wmMode && trainMode && selfPlay && !liveHuman) ? oppNet : null, liveHuman ? humanY : null);
   trail.push([liveG.bx, liveG.by]); if (trail.length > 18) trail.shift();
   if (liveG.scored) {
     if (liveG.scored === -1) flashL = 1; else flashR = 1;         // whole side is the goal — flash the edge that was beaten
     trail = [];
-    if (liveG.ai >= WIN || liveG.opp >= WIN) { liveG.ai = 0; liveG.opp = 0; }    // a match to 7, then start fresh (the live paddle is always the current best brain)
+    if (liveG.ai >= WIN || liveG.opp >= WIN) { liveG.ai = 0; liveG.opp = 0; liveG.track = 0; liveG.astep = 0; liveG.aim = 0; liveG.aimN = 0; liveG.hits = 0; }    // a match to 7, then start fresh (the meter reflects recent play)
     savedV = { vx: liveG.vx, vy: liveG.vy }; liveG.vx = 0; liveG.vy = 0;         // freeze the (already re-served) ball, then release after the pause
     livePause = PAUSE_FRAMES;
   }
@@ -532,7 +543,7 @@ function loop() {
   }
   // live game runs at a steady, watchable pace (1 physics step/frame)
   stepLive();
-  renderGame(); renderBrain(); renderCurve();
+  renderGame(); renderBrain(); renderCurve(); renderTelemetry();
   raf = requestAnimationFrame(loop);
 }
 
@@ -559,13 +570,13 @@ function updateStatLbl() {
       ? 'Gradient: one brain learns from every frame — far fewer games to a rally.'
       : 'Evolution: keep the best of 28 brains and mutate them. Simple, but slow.';
 }
-function setMode(self) {
-  selfPlay = self;
-  document.querySelectorAll('#oppSeg .modebtn').forEach((b) => b.classList.toggle('active', (b.dataset.mode === 'self') === self));
+function setMode(mode) {
+  selfPlay = mode === 'self'; proBot = mode === 'pro';
+  document.querySelectorAll('#oppSeg .modebtn').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
   updateStatLbl();
   initLearner(); liveActor = null; resetG(liveG, Math.random); trail = []; renderCurve();   // fresh run for the new setup
 }
-document.querySelectorAll('#oppSeg .modebtn').forEach((b) => { b.onclick = () => setMode(b.dataset.mode === 'self'); });
+document.querySelectorAll('#oppSeg .modebtn').forEach((b) => { b.onclick = () => setMode(b.dataset.mode); });
 function setLearn(mode) {
   learnMode = mode;
   document.querySelectorAll('#learnSeg .modebtn').forEach((b) => b.classList.toggle('active', b.dataset.learn === mode));
@@ -605,6 +616,20 @@ function setPlayMode(pm) {
 }
 document.querySelectorAll('.pmbtn').forEach((b) => { b.onclick = () => setPlayMode(b.dataset.pm); });
 gc.addEventListener('mousemove', (e) => { const r = gc.getBoundingClientRect(); humanY = clamp((e.clientY - r.top) / r.height, PADH / 2, 1 - PADH / 2); });
+$('challengeBtn').onclick = () => {
+  humanOpp = !humanOpp;
+  $('challengeBtn').classList.toggle('on', humanOpp);
+  if (humanOpp) $('methodHint').textContent = 'You are the white paddle — move your mouse over the court. The green AI keeps learning against its own opponent in the background.';
+  else updateStatLbl();
+};
+// live look inside training: how good the champion is at the two things it's learning
+function renderTelemetry() {
+  const el = $('telemetry');
+  if (learnMode === 'wm') { el.innerHTML = '<b>Dream</b> the purple trail is its prediction — accuracy is above'; return; }
+  const def = liveG.astep ? liveG.track / liveG.astep : 0, off = liveG.aimN ? liveG.aim / liveG.aimN : 0;
+  const bar = (v) => { const n = Math.round(clamp(v, 0, 1) * 8); return '<span class="bar">' + '▰'.repeat(n) + '</span>' + '▱'.repeat(8 - n); };
+  el.innerHTML = `<b>Reaching the ball</b>&nbsp; ${bar(def)}<br><b>Attacking shots</b>&nbsp;&nbsp;&nbsp; ${bar(off)} <span style="opacity:.55">&middot; rally ${liveG.hits}</span>`;
+}
 
 initLearner();
 loop();
