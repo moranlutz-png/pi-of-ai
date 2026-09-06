@@ -20,9 +20,12 @@ class Handler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(WEB_DIR), **kwargs)
 
     def end_headers(self) -> None:
-        # Cross-origin isolation -> enables SharedArrayBuffer -> WASM threads.
-        self.send_header("Cross-Origin-Opener-Policy", "same-origin")
-        self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
+        # Cross-origin isolation -> enables SharedArrayBuffer -> WASM threads (for wllama).
+        # The Needle sandbox pulls a runtime from a CDN + a model from Hugging Face, which
+        # cross-origin isolation would block, and it doesn't need threads -> exempt it.
+        if not self.path.startswith("/needle"):
+            self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+            self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
 
