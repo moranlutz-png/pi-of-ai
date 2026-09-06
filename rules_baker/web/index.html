@@ -4555,12 +4555,25 @@ async function renderLibrary() {
       grid.appendChild(card);
     };
     if (scratchTiers && scratchTiers.length) {
-      scratchTiers.forEach((t) => {
-        const label = `Scratch-Coder · ${t.label}`;
-        scratchCard(label, `${t.note || ''} From-scratch character model trained on Python. Selects it as the active model so you can generate here; inspect it from the sidebar.`,
-          t.params ? `${(t.params / 1e6).toFixed(2)}M` : '',
-          () => useScratch('./scratch/tiers/' + t.id, label));
-      });
+      // One card for the whole from-scratch family: pick a size from the dropdown, then use it.
+      const card = document.createElement('div'); card.className = 'libcard';
+      const opts = scratchTiers.map((t, i) =>
+        `<option value="${i}">${esc(t.label)}${t.params ? ' — ' + (t.params / 1e6).toFixed(2) + 'M params' : ''}</option>`).join('');
+      card.innerHTML = `<div class="h">${ICONS.cpu || ICONS.laptop}<span class="nm">Scratch-Coder</span><span class="sz">${scratchTiers.length} sizes</span></div>`
+        + `<div class="tags"><span class="rectag">${ICONS.check} Runs in this tab</span></div>`
+        + `<div class="d">Character-level models trained from scratch on Python — one per device tier. Pick a size, then Use.</div>`
+        + `<div style="display:flex;gap:8px;align-items:center;margin-top:2px">`
+        + `<select class="tierpick" style="flex:1;padding:6px 9px;font-size:12.5px">${opts}</select>`
+        + `<span class="cardgo" data-use>Use ${ICONS.chevronright}</span></div>`;
+      const sel = card.querySelector('.tierpick');
+      const use = () => { const t = scratchTiers[+sel.value]; useScratch('./scratch/tiers/' + t.id, `Scratch-Coder · ${t.label}`); };
+      sel.addEventListener('click', (e) => e.stopPropagation());          // pick a size without loading
+      sel.addEventListener('change', (e) => e.stopPropagation());
+      card.querySelector('[data-use]').addEventListener('click', (e) => { e.stopPropagation(); use(); });
+      card.onclick = use;                                                 // clicking the card (outside the dropdown) loads the chosen size
+      card.tabIndex = 0; card.setAttribute('role', 'button');
+      card.onkeydown = (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); use(); } };
+      grid.appendChild(card);
     } else {
       // Tiers not exported yet — one card for the default model still works.
       scratchCard('Scratch-Coder', 'A character-level model trained from scratch on Python source. Use it here, or inspect it from the sidebar.', '', () => useScratch());
