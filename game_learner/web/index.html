@@ -66,6 +66,9 @@
   .telemetry b { color:#cdd6e0; font-weight:600; }
   .telemetry .bar { color:#6ea8ff; letter-spacing:1px; }
   .btn.on { background:rgba(110,168,255,.16); border-color:#6ea8ff; color:#dbe8ff; }
+  #pop { display:block; width:100%; height:auto; }
+  .pop-cap { margin-top:8px; font:10.5px ui-monospace, monospace; color:#8a9199; line-height:1.5; }
+  .pop-cap .pop-surv { color:#3fb950; }
   .brain-legend { display:flex; gap:12px; margin-top:8px; font-size:11px; color:var(--dimmer); flex-wrap:wrap; }
   .brain-legend b { color:var(--ink); font-weight:600; }
   .actlamp { display:inline-flex; align-items:center; gap:5px; }
@@ -141,6 +144,12 @@
           <span class="actlamp" id="lampStay"><i></i> stay</span>
           <span class="actlamp" id="lampDown"><i></i> down</span>
         </div>
+      </div>
+
+      <div class="card" id="popcard">
+        <h3>The 28 brains this round</h3>
+        <canvas id="pop" width="300" height="88"></canvas>
+        <div class="pop-cap"><b class="pop-surv">green</b> = the best 5 survive; the rest are replaced by mutated copies of them · <span id="popGen">gen 0</span></div>
       </div>
     </div>
   </div>
@@ -242,9 +251,10 @@ let pop = [], gen = 0, games = 0, margin = 0, liveNet = null, history = [];
 let selfPlay = false, oppNet = null, bench = 0, hof = [];   // self-play: opponent is drawn from a hall-of-fame pool; bench = points vs the fixed bot (a stable yardstick)
 let proBot = false, humanOpp = false;   // proBot: the opponent anticipates the ball · humanOpp: you grab the live opponent paddle with your mouse to play the AI while it trains
 let learnMode = 'evolve';   // 'evolve' = keep-the-best-of-28-and-mutate (slow, one score per game) · 'gradient' = policy gradient, learns from every frame (far fewer games)
+let popFits = [];           // this generation's 28 fitnesses, sorted best-first — for the population view
 function initPop() {
   pop = []; for (let i = 0; i < POP; i++) pop.push(randNet());
-  gen = 0; games = 0; margin = 0; bench = 0; hof = []; history = []; liveNet = randNet(); liveActor = null;
+  gen = 0; games = 0; margin = 0; bench = 0; hof = []; history = []; popFits = []; liveNet = randNet(); liveActor = null;
   oppNet = selfPlay ? randNet() : null;            // start self-play against a weak version, then chase the champion
 }
 function evolve() {
@@ -257,6 +267,7 @@ function evolve() {
     } else { const r = playHeadless(net, seed, null); net.fit = r.fit; net.margin = r.margin; }
   }
   pop.sort((a, b) => b.fit - a.fit);
+  popFits = pop.map((n) => n.fit);                        // snapshot the ranked fitnesses before the population is replaced (for the population view)
   liveNet = cloneNet(pop[0]);
   margin = pop[0].margin;                                 // always the margin vs the fixed bot — one honest, drift-free yardstick for both modes
   history.push(margin);
@@ -543,7 +554,7 @@ function loop() {
   }
   // live game runs at a steady, watchable pace (1 physics step/frame)
   stepLive();
-  renderGame(); renderBrain(); renderCurve(); renderTelemetry();
+  renderGame(); renderBrain(); renderCurve(); renderTelemetry(); renderPop();
   raf = requestAnimationFrame(loop);
 }
 
@@ -622,6 +633,27 @@ $('challengeBtn').onclick = () => {
   if (humanOpp) $('methodHint').textContent = 'You are the white paddle — move your mouse over the court. The green AI keeps learning against its own opponent in the background.';
   else updateStatLbl();
 };
+// the population, ranked: watch selection + mutation happen each generation (Evolution only)
+const pc = $('pop'), pcx = pc.getContext('2d');
+function renderPop() {
+  const card = $('popcard');
+  if (learnMode !== 'evolve') { card.style.display = 'none'; return; }
+  card.style.display = '';
+  const W = pc.width, Ht = pc.height, pad = 4, n = popFits.length;
+  pcx.clearRect(0, 0, W, Ht);
+  if (!n) return;
+  let mx = -Infinity, mn = Infinity; for (const f of popFits) { if (f > mx) mx = f; if (f < mn) mn = f; }
+  const range = (mx - mn) || 1, bw = (W - 2 * pad) / n;
+  for (let i = 0; i < n; i++) {                                  // bars sorted best-first (tallest on the left); the best ELITE survive
+    const h = 3 + ((popFits[i] - mn) / range) * (Ht - 2 * pad - 3);
+    pcx.fillStyle = i < ELITE ? '#3fb950' : 'rgba(120,130,142,.5)';
+    pcx.fillRect(pad + i * bw, Ht - pad - h, Math.max(1, bw - 1.5), h);
+  }
+  const cx = pad + ELITE * bw - 0.75;                            // the survival cut
+  pcx.strokeStyle = 'rgba(255,255,255,.28)'; pcx.setLineDash([3, 3]); pcx.lineWidth = 1;
+  pcx.beginPath(); pcx.moveTo(cx, 1); pcx.lineTo(cx, Ht - 1); pcx.stroke(); pcx.setLineDash([]);
+  $('popGen').textContent = 'gen ' + gen;
+}
 // live look inside training: how good the champion is at the two things it's learning
 function renderTelemetry() {
   const el = $('telemetry');
