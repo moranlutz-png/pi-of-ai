@@ -3593,6 +3593,7 @@ let ollamaModel = null;
 
 function runtimeReady() {
   if (activeRuntime === 'scratch') return !!scratchGpt;
+  if (activeRuntime === 'needle') return !!needleV2;
   return activeRuntime === 'ollama' ? !!ollamaModel : !!wllama;
 }
 
@@ -3670,6 +3671,7 @@ async function complete(messages, nPredict, onText) {
   // yet, for either runtime, until proven otherwise below.
   lastStopReason = null;
   if (activeRuntime === 'scratch') return scratchComplete(messages, nPredict, onText);
+  if (activeRuntime === 'needle') return needleComplete(messages, nPredict, onText);
   if (activeRuntime === 'ollama') return ollamaComplete(messages, nPredict, onText);
   return wasmComplete(messages, nPredict, onText);
 }
@@ -3732,6 +3734,65 @@ async function useScratch(dir, label) {
   }
 }
 window.useScratch = useScratch;
+
+// ---- Needle 2 as a usable model ----
+// Cactus's 45M-parameter tool-calling model. Not a chat/coder model: given a request it returns a
+// structured TOOL CALL. Runs via the MIT needle-rs WASM engine (loaded from a CDN) on the 13.7MB
+// needle2.cact weights (fetched once from Hugging Face, then Cache-API cached). It plugs into the
+// same generation path as the others — you just get a tool call back instead of prose.
+let needleV2 = null, needleMod = null;
+const NEEDLE_MODEL_URL = 'https://huggingface.co/Cactus-Compute/needle2/resolve/main/needle2.cact';
+const NEEDLE_TOOLS = JSON.stringify([
+  { name: 'set_light', description: "Turn a room's lights on or off, or set brightness 0-100",
+    parameters: { type: 'object', properties: { room: { type: 'string' }, state: { type: 'string', enum: ['on', 'off'] }, brightness: { type: 'integer' } }, required: ['room'] } },
+  { name: 'get_weather', description: 'Get the current weather for a city',
+    parameters: { type: 'object', properties: { city: { type: 'string' } }, required: ['city'] } },
+  { name: 'set_timer', description: 'Start a countdown timer',
+    parameters: { type: 'object', properties: { minutes: { type: 'integer' } }, required: ['minutes'] } },
+  { name: 'play_music', description: 'Play music by genre, mood or artist',
+    parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
+]);
+async function loadNeedle(onStatus) {
+  if (needleV2) return needleV2;
+  if (!needleMod) { onStatus && onStatus('Loading the Needle runtime…'); needleMod = await import('https://esm.sh/needle-rs'); await needleMod.default(); }
+  onStatus && onStatus('Fetching needle2.cact (13.7 MB — cached after the first time)…');
+  const cache = await caches.open('needle');
+  let resp = await cache.match(NEEDLE_MODEL_URL);
+  if (!resp) { resp = await fetch(NEEDLE_MODEL_URL); if (!resp.ok) throw new Error('model download HTTP ' + resp.status); await cache.put(NEEDLE_MODEL_URL, resp.clone()); }
+  needleV2 = needleMod.NeedleV2Wasm.load(new Uint8Array(await resp.arrayBuffer()));
+  return needleV2;
+}
+async function needleComplete(messages, nPredict, onText) {
+  const v2 = await loadNeedle();
+  const query = [...messages].reverse().find((m) => m.role === 'user')?.content || '';
+  const t0 = performance.now();
+  let out = v2.run(query, NEEDLE_TOOLS);
+  out = typeof out === 'string' ? out : JSON.stringify(out, null, 2);
+  const secs = (performance.now() - t0) / 1000;
+  if (onText) onText(out);
+  $('runStats').textContent = `tool call · ${secs.toFixed(1)}s · Needle 2 · on-device`;
+  return out;
+}
+async function useNeedle() {
+  document.body.classList.remove('view-scratch', 'view-game');
+  document.querySelectorAll('.navlink').forEach((x) => x.classList.remove('active'));
+  document.querySelector('.navlink[data-scroll="top"]')?.classList.add('active');
+  activeRuntime = 'needle';
+  document.querySelectorAll('.rt-pill').forEach((p) => p.classList.remove('active'));   // neither wasm nor ollama
+  modelLabel = 'Needle 2';
+  if (window.__setModelBtn) window.__setModelBtn('Needle 2');
+  document.querySelector('.main')?.scrollTo({ top: 0 });
+  runBtn.disabled = true;
+  status.innerHTML = 'Loading Needle 2…';
+  try {
+    await loadNeedle((t) => { status.innerHTML = esc(t); });
+    runBtn.disabled = false;
+    status.innerHTML = `<span style="color:var(--ok)">✓ Needle 2 ready — a 14 MB tool-calling model in this tab. It answers with a tool call, not prose: try “dim the living room to 20%”.</span>`;
+  } catch (e) {
+    status.innerHTML = `<span style="color:var(--bad)">✗ Needle 2 failed to load: ${esc(e.message || e)}</span>`;
+  }
+}
+window.useNeedle = useNeedle;
 
 async function wasmComplete(messages, nPredict, onText) {
   const t0 = performance.now(); let nTok = 0, full = ''; let degenerate = null;
@@ -4504,6 +4565,8 @@ async function renderLibrary() {
       // Tiers not exported yet — one card for the default model still works.
       scratchCard('Scratch-Coder', 'A character-level model trained from scratch on Python source. Use it here, or inspect it from the sidebar.', '', () => useScratch());
     }
+    // Needle 2 — a real 14MB tool-calling model that also runs entirely in this tab.
+    scratchCard('Needle 2', "Cactus's 45M-parameter tool-calling model — a 13.7 MB agent that runs in this tab. Give it a request and it answers with a structured tool call (lights, timers, weather…), not prose.", '13.7 MB', () => useNeedle());
 
     models.forEach((m) => {
       const card = document.createElement('div'); card.className = 'libcard';
