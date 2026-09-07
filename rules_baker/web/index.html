@@ -3593,7 +3593,7 @@ let ollamaModel = null;
 
 function runtimeReady() {
   if (activeRuntime === 'scratch') return !!scratchGpt;
-  if (activeRuntime === 'needle') return !!needleV2;
+  if (activeRuntime === 'needle') return needleLoaded;
   return activeRuntime === 'ollama' ? !!ollamaModel : !!wllama;
 }
 
@@ -3735,12 +3735,10 @@ async function useScratch(dir, label) {
 }
 window.useScratch = useScratch;
 
-// ---- Needle 2 as a usable model ----
+// ---- Needle 2 as a usable model (runs in a Web Worker so the tab never freezes) ----
 // Cactus's 45M-parameter tool-calling model. Not a chat/coder model: given a request it returns a
-// structured TOOL CALL. Runs via the MIT needle-rs WASM engine (loaded from a CDN) on the 13.7MB
-// needle2.cact weights (fetched once from Hugging Face, then Cache-API cached). It plugs into the
-// same generation path as the others — you just get a tool call back instead of prose.
-let needleV2 = null, needleMod = null;
+// structured TOOL CALL. The MIT needle-rs WASM engine and the blocking v2.run() live in a worker;
+// the main thread just streams the 13.7MB download (with a progress bar) and shows "deciding…".
 const NEEDLE_MODEL_URL = 'https://huggingface.co/Cactus-Compute/needle2/resolve/main/needle2.cact';
 const NEEDLE_TOOLS = JSON.stringify([
   { name: 'set_light', description: "Turn a room's lights on or off, or set brightness 0-100",
@@ -3752,26 +3750,78 @@ const NEEDLE_TOOLS = JSON.stringify([
   { name: 'play_music', description: 'Play music by genre, mood or artist',
     parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
 ]);
-async function loadNeedle(onStatus) {
-  if (needleV2) return needleV2;
-  if (!needleMod) { onStatus && onStatus('Loading the Needle runtime…'); needleMod = await import('https://esm.sh/needle-rs'); await needleMod.default(); }
-  onStatus && onStatus('Fetching needle2.cact (13.7 MB — cached after the first time)…');
+let needleWorker = null, needleLoaded = false, needleJobSeq = 0, needleReadyPromise = null, needleReadyResolve = null, needleReadyReject = null;
+const needleJobs = new Map();
+// The worker is built from an inline blob importing an ABSOLUTE local URL. A URL-based module worker
+// importing a relative path fails opaquely under the page's COOP/COEP isolation, but a blob module
+// worker with an absolute same-origin import works (verified). Kept tiny so it lives here, not a file.
+function ensureNeedleWorker() {
+  if (needleWorker) return;
+  const src = `import init, { NeedleV2Wasm } from '${location.origin}/vendor/needle-rs/needle_wasm.js';
+let v2 = null, engineReady = false;
+self.onmessage = async (e) => {
+  const m = e.data || {};
+  try {
+    if (m.type === 'load') { if (!engineReady) { await init(); engineReady = true; } v2 = NeedleV2Wasm.load(new Uint8Array(m.bytes)); self.postMessage({ type: 'ready' }); }
+    else if (m.type === 'run') { const t0 = performance.now(); let out = v2.run(m.query, m.tools); const ms = performance.now() - t0; if (typeof out !== 'string') out = JSON.stringify(out, null, 2); self.postMessage({ type: 'result', id: m.id, out, ms }); }
+  } catch (err) { self.postMessage({ type: m.type === 'load' ? 'loaderror' : 'error', id: m.id, error: String((err && err.message) || err) }); }
+};`;
+  needleReadyPromise = new Promise((resolve, reject) => { needleReadyResolve = resolve; needleReadyReject = reject; });   // exists before the worker can error, so a load failure is never swallowed
+  needleWorker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), { type: 'module' });
+  needleWorker.onmessage = (e) => {
+    const m = e.data || {};
+    if (m.type === 'ready') { needleLoaded = true; needleReadyResolve(); }
+    else if (m.type === 'loaderror') { needleReadyReject(new Error(m.error)); }
+    else if (m.type === 'result') { const w = needleJobs.get(m.id); if (w) { needleJobs.delete(m.id); w.resolve(m); } }
+    else if (m.type === 'error') { const w = needleJobs.get(m.id); if (w) { needleJobs.delete(m.id); w.reject(new Error(m.error)); } }
+  };
+  needleWorker.onerror = (e) => { needleReadyReject(new Error('Needle worker error: ' + (e.message || 'blocked (see console)'))); };
+}
+// Fetch the model, streaming so we can report progress; cached in the Cache API after the first time.
+async function needleModelBytes(onProgress) {
   const cache = await caches.open('needle');
   let resp = await cache.match(NEEDLE_MODEL_URL);
-  if (!resp) { resp = await fetch(NEEDLE_MODEL_URL); if (!resp.ok) throw new Error('model download HTTP ' + resp.status); await cache.put(NEEDLE_MODEL_URL, resp.clone()); }
-  needleV2 = needleMod.NeedleV2Wasm.load(new Uint8Array(await resp.arrayBuffer()));
-  return needleV2;
+  if (!resp) { const net = await fetch(NEEDLE_MODEL_URL); if (!net.ok) throw new Error('download HTTP ' + net.status); await cache.put(NEEDLE_MODEL_URL, net.clone()); resp = net; }
+  const total = +resp.headers.get('content-length') || 13.7e6;
+  if (!resp.body || !resp.body.getReader) return new Uint8Array(await resp.arrayBuffer());
+  const reader = resp.body.getReader(); const chunks = []; let got = 0;
+  for (; ;) { const { done, value } = await reader.read(); if (done) break; chunks.push(value); got += value.length; onProgress && onProgress(got, total); }
+  const bytes = new Uint8Array(got); let off = 0; for (const c of chunks) { bytes.set(c, off); off += c.length; }
+  return bytes;
+}
+function needleStageHTML(st) {
+  if (st.stage === 'download') {
+    const total = st.total || 13.7e6, pct = Math.min(100, Math.round(100 * st.got / total));
+    return `Downloading Needle 2 — ${(st.got / 1e6).toFixed(1)} / ${(total / 1e6).toFixed(1)} MB <span style="color:var(--dim)">(cached after this)</span>`
+      + `<div style="height:6px;background:rgba(255,255,255,.1);border-radius:4px;margin-top:6px;max-width:300px"><div style="height:100%;width:${pct}%;background:var(--ok);border-radius:4px;transition:width .1s"></div></div>`;
+  }
+  if (st.stage === 'engine') return 'Starting the Needle engine…';
+  return 'Loading Needle 2…';
+}
+async function loadNeedle(onStage) {
+  if (needleLoaded) return;
+  ensureNeedleWorker();
+  const bytes = await needleModelBytes((got, total) => onStage && onStage({ stage: 'download', got, total }));
+  onStage && onStage({ stage: 'engine' });
+  const buf = bytes.buffer;
+  needleWorker.postMessage({ type: 'load', bytes: buf }, [buf]);   // transfer the 13.7MB into the worker
+  await needleReadyPromise;
 }
 async function needleComplete(messages, nPredict, onText) {
-  const v2 = await loadNeedle();
+  await loadNeedle((st) => { status.innerHTML = needleStageHTML(st); });
   const query = [...messages].reverse().find((m) => m.role === 'user')?.content || '';
-  const t0 = performance.now();
-  let out = v2.run(query, NEEDLE_TOOLS);
-  out = typeof out === 'string' ? out : JSON.stringify(out, null, 2);
-  const secs = (performance.now() - t0) / 1000;
-  if (onText) onText(out);
-  $('runStats').textContent = `tool call · ${secs.toFixed(1)}s · Needle 2 · on-device`;
-  return out;
+  const id = ++needleJobSeq;
+  let dots = 0;
+  const anim = setInterval(() => { dots = (dots + 1) % 4; onText && onText('Needle is deciding' + '.'.repeat(dots)); }, 350);   // the tab is free (worker does the work), so this actually animates
+  $('runStats').textContent = 'Needle is deciding… · on-device';
+  const p = new Promise((resolve, reject) => { needleJobs.set(id, { resolve, reject }); });
+  needleWorker.postMessage({ type: 'run', id, query, tools: NEEDLE_TOOLS });
+  let res;
+  try { res = await p; } catch (e) { clearInterval(anim); const msg = 'Needle error: ' + (e.message || e); onText && onText(msg); return msg; }
+  clearInterval(anim);
+  onText && onText(res.out);
+  $('runStats').textContent = `tool call · ${(res.ms / 1000).toFixed(1)}s · Needle 2 · on-device`;
+  return res.out;
 }
 async function useNeedle() {
   document.body.classList.remove('view-scratch', 'view-game');
@@ -3785,9 +3835,9 @@ async function useNeedle() {
   runBtn.disabled = true;
   status.innerHTML = 'Loading Needle 2…';
   try {
-    await loadNeedle((t) => { status.innerHTML = esc(t); });
+    await loadNeedle((st) => { status.innerHTML = needleStageHTML(st); });
     runBtn.disabled = false;
-    status.innerHTML = `<span style="color:var(--ok)">✓ Needle 2 ready — a 14 MB tool-calling model in this tab. It answers with a tool call, not prose: try “dim the living room to 20%”.</span>`;
+    status.innerHTML = `<span style="color:var(--ok)">✓ Needle 2 ready — a 14 MB tool-calling model running in a worker, so the tab stays smooth. It answers with a tool call: try “dim the living room to 20%”.</span>`;
   } catch (e) {
     status.innerHTML = `<span style="color:var(--bad)">✗ Needle 2 failed to load: ${esc(e.message || e)}</span>`;
   }
