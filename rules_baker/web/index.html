@@ -337,6 +337,8 @@
 
   /* ---- Activity heatmap ---- */
   .act-head { display:flex; align-items:center; gap:12px; margin:2px 0 0; }
+  /* Fresh install: recede the blank grid so the invitation in the summary leads instead. */
+  .act-empty .act-scroll, .act-empty .act-legend { opacity:.4; }
   /* Sizing only — the frosted material and chevron are shared with the other
      selects further down, so this rule keeps just what is specific to the year
      picker sitting in a flex row. */
@@ -1336,6 +1338,7 @@ const ICONS = {
   chevronright:`<svg viewBox="0 0 24 24" ${P}><polyline points="9 18 15 12 9 6"/></svg>`,
   chevrondown:`<svg viewBox="0 0 24 24" ${P}><polyline points="6 9 12 15 18 9"/></svg>`,
   check:`<svg viewBox="0 0 24 24" ${P}><polyline points="20 6 9 17 4 12"/></svg>`,
+  star:`<svg viewBox="0 0 24 24" ${P}><polygon points="12 2 15 9 22 9.3 16.5 14 18.5 21 12 17 5.5 21 7.5 14 2 9.3 9 9"/></svg>`,
   thermometer:`<svg viewBox="0 0 24 24" ${P}><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>`,
   hash:`<svg viewBox="0 0 24 24" ${P}><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></svg>`,
   grid:`<svg viewBox="0 0 24 24" ${P}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>`,
@@ -1557,7 +1560,7 @@ function modelItemHtml(m) {
   const alias = m.alias ? `<span class="alias">${esc(m.alias)}</span>` : '';
   const strain = strainTag(m);
   const rec = m.url === recommendedUrl
-    ? `<span class="recdot" title="Recommended for this device">${ICONS.check}</span>`
+    ? `<span class="recdot" title="Recommended for this device">${ICONS.star}</span>`
     : strain ? `<span class="straindot ${strain.level}" title="${esc(strain.text)} — ${esc(strain.note)}">!</span>` : '';
   const cls = (m.url === recommendedUrl ? ' rec' : '') + (strain ? ` ${strain.level}` : '');
   // Name on its own line, alias beneath it — with both on one row the name was
@@ -2090,9 +2093,12 @@ function renderActivity(year) {
     return `<span class="act-cell l${day.level}" title="${esc(label)}"></span>`;
   }).join('')).join('');
 
-  $('actSummary').innerHTML =
-    `<b>${m.total}</b> ${m.total === 1 ? 'thing' : 'things'} over ${m.days} days · `
-    + `<b>${m.activeDays}</b> active ${m.activeDays === 1 ? 'day' : 'days'}`;
+  const empty = m.total === 0;
+  $('activity').classList.toggle('act-empty', empty);   // dims the blank grid + swaps in an invitation, so a fresh install doesn't look broken
+  $('actSummary').innerHTML = empty
+    ? 'No runs logged yet — generate something below and your streak starts here.'
+    : `<b>${m.total}</b> ${m.total === 1 ? 'thing' : 'things'} over ${m.days} days · `
+      + `<b>${m.activeDays}</b> active ${m.activeDays === 1 ? 'day' : 'days'}`;
 }
 
 $('actYear').onchange = () => renderActivity(+$('actYear').value);
@@ -2917,7 +2923,7 @@ function col(k, v, cls='') { return `<div class="col"><div class="k">${k}</div><
       col('Device RAM', mem ? mem + ' GB<small>+</small>' : 'unknown', mem && mem <= 4 ? 'warn' : '')
     + col('CPU threads', cores)
     + col('WASM threads', iso ? 'enabled' : 'single', iso ? 'ok' : 'warn')
-    + col('WebGPU', webgpu ? 'not used' : 'no', '');
+    + col('WebGPU', (webgpu ? 'available' : 'no') + '<small> · CPU used</small>', '');   // by design: CPU/WASM runs everywhere — "not used" read like a failure
 })();
 
 // custom styled dropdown menus for Temp / Max tokens (native <select> kept as the value store)
