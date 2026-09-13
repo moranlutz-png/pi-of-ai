@@ -46,6 +46,8 @@
     border-radius:7px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.5); }
   .speedv { min-width:74px; color:var(--ink); font-weight:600; }
   .mode-lbl { color:var(--dim); font-size:12.5px; margin-left:2px; }
+  /* keep each label with its segmented control so they wrap together, never orphaning the label */
+  .ctlpair { display:inline-flex; align-items:center; gap:8px; }
   .modeseg { display:inline-flex; background:var(--panel); border:1px solid var(--edge2); border-radius:8px; padding:3px; gap:2px; }
   .modebtn, .pmbtn { background:transparent; border:0; border-radius:6px; padding:6px 11px; font:inherit; font-size:12.5px; color:var(--dim); cursor:pointer; }
   .modebtn.active, .pmbtn.active { background:var(--panel2); color:var(--ink); }
@@ -98,18 +100,18 @@
       <div class="controls" id="trainControls">
         <button class="btn primary" id="trainBtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg><span id="trainLbl">Train</span></button>
         <button class="btn" id="resetBtn">Reset</button>
-        <span class="mode-lbl">Learns by</span>
+        <span class="ctlpair"><span class="mode-lbl">Learns by</span>
         <div class="modeseg" id="learnSeg">
           <button class="modebtn active" data-learn="evolve" title="Keep the best of 28 brains and mutate them — simple to watch, but slow (one score per game)">Evolution</button>
           <button class="modebtn" data-learn="gradient" title="One brain learns from every frame (policy gradient) — far fewer games to a rally">Gradient</button>
           <button class="modebtn" data-learn="wm" title="Learns the ball's physics and plans by imagining the future — a world model">World model</button>
-        </div>
-        <span class="mode-lbl">Opponent</span>
+        </div></span>
+        <span class="ctlpair"><span class="mode-lbl">Opponent</span>
         <div class="modeseg" id="oppSeg">
           <button class="modebtn active" data-mode="fixed" title="A simple bot that chases the ball — quick, easy wins">Simple bot</button>
           <button class="modebtn" data-mode="pro" title="A tough bot that anticipates where the ball will land — the AI must aim away and add pace to beat it">Pro bot</button>
           <button class="modebtn" data-mode="self" title="Trains against past copies of itself, anchored to the bot so it stays stable">Self-play</button>
-        </div>
+        </div></span>
         <label class="speed">Speed <input type="range" id="speed" min="0" max="3" step="1" value="1" /> <span class="speedv" id="speedV">normal</span></label>
         <button class="btn" id="challengeBtn" title="Move your mouse over the court to control the white paddle and play the AI while it keeps training">🎮 Play the opponent</button>
         <span class="play-hint" id="methodHint" style="flex-basis:100%"></span>
